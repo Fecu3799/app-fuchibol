@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS"
+  },
+  "include": [
+    "test/**/*.ts",
+    "prisma/**/*.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts"
+  ]
+}

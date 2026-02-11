@@ -1,0 +1,35 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MatchStatus {
+  scheduled
+  locked
+  played
+  canceled
+}
+
+model User {
+  id        String  @id
+  createdAt DateTime @default(now())
+  matches   Match[]
+}
+
+model Match {
+  id          String      @id @default(uuid()) @db.Uuid
+  title       String
+  startsAt    DateTime
+  capacity    Int
+  status      MatchStatus @default(scheduled)
+  revision    Int         @default(1)
+  createdById String
+  createdBy   User        @relation(fields: [createdById], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([createdById])
+}

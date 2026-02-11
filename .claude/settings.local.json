@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --filter api lint:*)",
+      "Bash(npx eslint:*)",
+      "Bash(pnpm --filter api env:setup:*)"
+    ]
+  }
+}

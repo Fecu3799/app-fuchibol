@@ -1,0 +1,22 @@
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Node / builds
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.expo/
+.expo-shared/
+
+# Env (nunca commitear)
+**/.env
+**/.env.*.local
+**/.env.test
+**/.env.production

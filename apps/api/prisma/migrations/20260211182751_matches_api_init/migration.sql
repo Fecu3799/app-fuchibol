@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Match" ALTER COLUMN "id" DROP DEFAULT,
+ALTER COLUMN "updatedAt" DROP DEFAULT;
