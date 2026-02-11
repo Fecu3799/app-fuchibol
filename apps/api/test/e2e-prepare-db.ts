@@ -10,7 +10,9 @@ const envPath = path.join(rootDir, '.env.test');
 if (fs.existsSync(envPath)) {
   dotenv.config({ path: envPath });
 } else if (!process.env.DATABASE_URL_TEST) {
-  console.error('[e2e] .env.test not found and DATABASE_URL_TEST not set.\nRun: pnpm --filter api env:setup');
+  console.error(
+    '[e2e] .env.test not found and DATABASE_URL_TEST not set.\nRun: pnpm --filter api env:setup',
+  );
   process.exit(1);
 }
 

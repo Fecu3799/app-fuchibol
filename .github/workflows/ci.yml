@@ -61,7 +61,7 @@ jobs:
 
       # Generate Prisma client before lint/tests
       - run: pnpm --filter api db:generate
-
+      - run: pnpm --filter api env:setup
       - run: pnpm --filter api lint
       - run: pnpm --filter api test
       - run: pnpm --filter api test:e2e
