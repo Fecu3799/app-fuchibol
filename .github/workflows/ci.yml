@@ -41,7 +41,9 @@ jobs:
     # Env vars for Prisma migrations and e2e tests against the CI Postgres service
     env:
       NODE_ENV: test
+      DATABASE_URL: postgresql://app:app@localhost:5432/app_test?schema=public
       DATABASE_URL_TEST: postgresql://app:app@localhost:5432/app_test?schema=public
+      SHADOW_DATABASE_URL: postgresql://app:app@localhost:5432/app_shadow_test?schema=public
       SHADOW_DATABASE_URL_TEST: postgresql://app:app@localhost:5432/app_shadow_test?schema=public
       TZ: UTC
 
