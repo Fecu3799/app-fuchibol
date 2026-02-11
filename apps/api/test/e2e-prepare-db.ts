@@ -7,12 +7,12 @@ import { Client } from 'pg';
 const rootDir = path.resolve(__dirname, '..');
 const envPath = path.join(rootDir, '.env.test');
 
-if (!fs.existsSync(envPath)) {
-  console.error('[e2e] .env.test not found.\nRun: pnpm --filter api env:setup');
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else if (!process.env.DATABASE_URL_TEST) {
+  console.error('[e2e] .env.test not found and DATABASE_URL_TEST not set.\nRun: pnpm --filter api env:setup');
   process.exit(1);
 }
-
-dotenv.config({ path: envPath });
 
 const requireEnv = (name: string) => {
   const value = process.env[name];

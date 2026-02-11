@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api-ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    # Env vars for Prisma migrations and e2e tests against the CI Postgres service
+    env:
+      NODE_ENV: test
+      DATABASE_URL_TEST: postgresql://app:app@localhost:5432/app_test?schema=public
+      SHADOW_DATABASE_URL_TEST: postgresql://app:app@localhost:5432/app_shadow_test?schema=public
+      TZ: UTC
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Generate Prisma client before lint/tests
+      - run: pnpm --filter api db:generate
+
+      - run: pnpm --filter api lint
+      - run: pnpm --filter api test
+      - run: pnpm --filter api test:e2e
+      - run: pnpm --filter api build
