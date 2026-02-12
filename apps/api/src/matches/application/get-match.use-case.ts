@@ -1,23 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 
-export interface MatchSnapshot {
-  id: string;
-  title: string;
-  startsAt: Date;
-  capacity: number;
-  status: string;
-  revision: number;
-  createdById: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export { type MatchSnapshot };
 
 @Injectable()
 export class GetMatchUseCase {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(matchId: string): Promise<MatchSnapshot> {
+  async execute(matchId: string, actorId?: string): Promise<MatchSnapshot> {
     const match = await this.prisma.client.match.findUnique({
       where: { id: matchId },
     });
@@ -26,6 +17,6 @@ export class GetMatchUseCase {
       throw new NotFoundException('Match not found');
     }
 
-    return match;
+    return buildMatchSnapshot(this.prisma.client, matchId, actorId ?? '');
   }
 }

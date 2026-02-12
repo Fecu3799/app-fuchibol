@@ -1,15 +1,5 @@
-export class MatchSnapshotDto {
-  id: string;
-  title: string;
-  startsAt: Date;
-  capacity: number;
-  status: string;
-  revision: number;
-  createdById: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import type { MatchSnapshot } from '../../application/build-match-snapshot';
 
 export class GetMatchResponseDto {
-  match: MatchSnapshotDto;
+  match: MatchSnapshot;
 }

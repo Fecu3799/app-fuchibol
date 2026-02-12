@@ -19,26 +19,68 @@ enum Role {
 }
 
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  matches      Match[]
+  id             String             @id @default(uuid()) @db.Uuid
+  email          String             @unique
+  passwordHash   String
+  role           Role               @default(USER)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  matches        Match[]
+  participations MatchParticipant[]
 }
 
 model Match {
-  id          String      @id @default(uuid()) @db.Uuid
-  title       String
-  startsAt    DateTime
-  capacity    Int
-  status      MatchStatus @default(scheduled)
-  revision    Int         @default(1)
-  createdById String      @db.Uuid
-  createdBy   User        @relation(fields: [createdById], references: [id])
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id           String             @id @default(uuid()) @db.Uuid
+  title        String
+  startsAt     DateTime
+  capacity     Int
+  status       MatchStatus        @default(scheduled)
+  revision     Int                @default(1)
+  createdById  String             @db.Uuid
+  createdBy    User               @relation(fields: [createdById], references: [id])
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  participants MatchParticipant[]
 
   @@index([createdById])
+}
+
+enum MatchParticipantStatus {
+  INVITED
+  CONFIRMED
+  WAITLISTED
+  DECLINED
+  WITHDRAWN
+}
+
+model MatchParticipant {
+  id               String                 @id @default(uuid()) @db.Uuid
+  matchId          String                 @db.Uuid
+  userId           String                 @db.Uuid
+  status           MatchParticipantStatus
+  waitlistPosition Int?
+  confirmedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([matchId, userId])
+  @@index([matchId, status])
+  @@index([matchId, waitlistPosition])
+}
+
+model IdempotencyRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String
+  actorId      String   @db.Uuid
+  route        String
+  matchId      String   @db.Uuid
+  status       String   @default("completed")
+  responseJson Json
+  createdAt    DateTime @default(now())
+
+  @@unique([key, actorId, route, matchId])
+  @@index([createdAt])
 }

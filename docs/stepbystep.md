@@ -14,6 +14,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 6. [CI/CD: GitHub Actions](#6-cicd-github-actions)
 7. [Slice: Matches API (create + get)](#7-slice-matches-api-create--get)
 8. [Slice: Identity & Access (auth MVP)](#8-slice-identity--access-auth-mvp)
+9. [Slice: Match Participation](#9-slice-match-participation)
 
 ---
 
@@ -669,6 +670,261 @@ curl -X POST http://localhost:3000/api/v1/matches \
 
 ---
 
+## 9. Slice: Match Participation
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Permitir que usuarios se confirmen en un match, queden en waitlist si no hay cupo, se retiren liberando cupo con promocion FIFO automatica, y que admins puedan invitar. Todo con idempotencia obligatoria y optimistic locking.
+
+### Migracion: `20260212_match_participation`
+
+```sql
+-- Enum para estados de participacion
+CREATE TYPE "MatchParticipantStatus" AS ENUM (
+  'INVITED', 'CONFIRMED', 'WAITLISTED', 'DECLINED', 'WITHDRAWN'
+);
+
+-- Tabla de participantes
+CREATE TABLE "MatchParticipant" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "matchId" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "status" "MatchParticipantStatus" NOT NULL,
+    "waitlistPosition" INTEGER,
+    "confirmedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    CONSTRAINT "MatchParticipant_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "MatchParticipant_matchId_userId_key"
+  ON "MatchParticipant"("matchId", "userId");
+CREATE INDEX "MatchParticipant_matchId_status_idx"
+  ON "MatchParticipant"("matchId", "status");
+CREATE INDEX "MatchParticipant_matchId_waitlistPosition_idx"
+  ON "MatchParticipant"("matchId", "waitlistPosition");
+
+ALTER TABLE "MatchParticipant" ADD CONSTRAINT "MatchParticipant_matchId_fkey"
+  FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE;
+ALTER TABLE "MatchParticipant" ADD CONSTRAINT "MatchParticipant_userId_fkey"
+  FOREIGN KEY ("userId") REFERENCES "User"("id");
+
+-- Tabla de idempotencia
+CREATE TABLE "IdempotencyRecord" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "key" TEXT NOT NULL,
+    "actorId" UUID NOT NULL,
+    "route" TEXT NOT NULL,
+    "matchId" UUID NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'completed',
+    "responseJson" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "IdempotencyRecord_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "IdempotencyRecord_key_actorId_route_matchId_key"
+  ON "IdempotencyRecord"("key", "actorId", "route", "matchId");
+CREATE INDEX "IdempotencyRecord_createdAt_idx"
+  ON "IdempotencyRecord"("createdAt");
+```
+
+### Modelos Prisma agregados
+
+```prisma
+enum MatchParticipantStatus {
+  INVITED
+  CONFIRMED
+  WAITLISTED
+  DECLINED
+  WITHDRAWN
+}
+
+model MatchParticipant {
+  id               String                 @id @default(uuid()) @db.Uuid
+  matchId          String                 @db.Uuid
+  userId           String                 @db.Uuid
+  status           MatchParticipantStatus
+  waitlistPosition Int?
+  confirmedAt      DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  match            Match @relation(...)
+  user             User  @relation(...)
+  @@unique([matchId, userId])
+  @@index([matchId, status])
+  @@index([matchId, waitlistPosition])
+}
+
+model IdempotencyRecord {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String
+  actorId      String   @db.Uuid
+  route        String
+  matchId      String   @db.Uuid
+  status       String   @default("completed")
+  responseJson Json
+  createdAt    DateTime @default(now())
+  @@unique([key, actorId, route, matchId])
+  @@index([createdAt])
+}
+```
+
+### Estructura de archivos
+
+```
+src/common/
+└── idempotency/
+    ├── idempotency.module.ts     # Modulo NestJS
+    └── idempotency.service.ts    # Servicio reutilizable de idempotencia
+
+src/matches/
+├── application/
+│   ├── build-match-snapshot.ts           # Builder compartido para snapshot enriquecido
+│   ├── confirm-participation.use-case.ts # Confirmar participacion
+│   ├── decline-participation.use-case.ts # Declinar participacion
+│   ├── withdraw-participation.use-case.ts# Retirarse (libera cupo + promueve FIFO)
+│   ├── invite-participation.use-case.ts  # Invitar (solo admin del match)
+│   └── participation.use-case.spec.ts    # Tests de participacion
+├── api/
+│   └── dto/
+│       └── participation-command.dto.ts  # DTOs: expectedRevision, userId (invite)
+└── matches.module.ts                     # Actualizado con nuevos providers
+```
+
+### Endpoints
+
+| Metodo | Ruta | Auth | Headers | Body | Respuesta |
+|---|---|---|---|---|---|
+| `POST` | `/api/v1/matches/:id/confirm` | JWT | `Idempotency-Key` | `{ expectedRevision }` | MatchSnapshot |
+| `POST` | `/api/v1/matches/:id/decline` | JWT | `Idempotency-Key` | `{ expectedRevision }` | MatchSnapshot |
+| `POST` | `/api/v1/matches/:id/withdraw` | JWT | `Idempotency-Key` | `{ expectedRevision }` | MatchSnapshot |
+| `POST` | `/api/v1/matches/:id/invite` | JWT (admin) | `Idempotency-Key` | `{ expectedRevision, userId }` | MatchSnapshot |
+| `GET` | `/api/v1/matches/:id` | JWT | — | — | `{ match: MatchSnapshot }` (actualizado) |
+
+### MatchSnapshot (respuesta enriquecida)
+
+```typescript
+{
+  id, title, startsAt, capacity, status, revision, createdById,
+  confirmedCount: number,
+  participants: [{ userId, status, waitlistPosition }],  // sin WITHDRAWN
+  waitlist: [{ userId, status, waitlistPosition }],       // ordenado FIFO
+  myStatus: string | null,        // status del actor actual
+  actionsAllowed: string[],       // ['confirm', 'decline', 'withdraw', 'invite']
+  createdAt, updatedAt
+}
+```
+
+### Reglas de negocio implementadas
+
+**Confirm**:
+- Si hay cupo (`confirmedCount < capacity`) -> CONFIRMED con `confirmedAt`.
+- Si no hay cupo -> WAITLISTED con `waitlistPosition` incremental.
+- Si ya CONFIRMED o WAITLISTED -> idempotente (no cambia, devuelve snapshot).
+- Si DECLINED/WITHDRAWN -> permite reingresar como nuevo confirm.
+
+**Decline**:
+- INVITED -> DECLINED.
+- WAITLISTED -> DECLINED (sale de waitlist).
+- CONFIRMED -> 409 "Cannot decline while confirmed. Use withdraw first."
+- Ya DECLINED -> idempotente.
+
+**Withdraw**:
+- CONFIRMED -> WITHDRAWN + libera cupo.
+- Si habia WAITLISTED -> promueve al primero (MIN `waitlistPosition`) a CONFIRMED.
+- WAITLISTED -> WITHDRAWN (sale de waitlist).
+- INVITED/DECLINED/WITHDRAWN -> idempotente.
+
+**Invite**:
+- Solo `match.createdById` puede invitar (403 si no es admin).
+- Si el usuario ya tiene cualquier status -> idempotente.
+- Si no existia -> crea con status INVITED.
+
+### Concurrencia y consistencia
+
+**Optimistic locking**: cada comando recibe `expectedRevision` en el body. Al inicio de la transaccion se verifica que `match.revision === expectedRevision`. Si no coincide -> 409 REVISION_CONFLICT.
+
+**Transacciones**: todas las mutaciones de participacion ocurren dentro de `prisma.$transaction()`. Dentro de la tx:
+1. Leer match y verificar revision.
+2. Leer/crear/actualizar participant.
+3. Si withdraw de confirmed: buscar primer WAITLISTED y promover.
+4. Incrementar `match.revision`.
+5. Construir y retornar snapshot.
+
+**Waitlist FIFO**: usa `waitlistPosition` incremental. Los huecos se mantienen (no se compactan) para minimizar writes. La promocion busca `MIN(waitlistPosition)` entre los WAITLISTED. El snapshot muestra posiciones normalizadas (1, 2, 3...).
+
+### Idempotencia
+
+**Servicio**: `IdempotencyService` en `src/common/idempotency/`.
+
+**Mecanismo**:
+1. Antes de ejecutar, busca `IdempotencyRecord` por `(key, actorId, route, matchId)`.
+2. Si existe -> devuelve `responseJson` cacheado sin ejecutar logica.
+3. Si no existe -> ejecuta logica, guarda respuesta en `IdempotencyRecord`, retorna.
+
+**Header**: `Idempotency-Key` requerido en todos los comandos de participacion. Si falta -> 422.
+
+### Cambios a archivos existentes
+
+| Archivo | Cambio |
+|---|---|
+| `prisma/schema.prisma` | +MatchParticipant, +IdempotencyRecord, +MatchParticipantStatus enum. User y Match con relacion `participants` |
+| `src/matches/matches.module.ts` | +IdempotencyModule import, +4 participation use-cases como providers |
+| `src/matches/api/matches.controller.ts` | +4 endpoints (confirm/decline/withdraw/invite), GET `:id` ahora JWT y pasa actorId al snapshot |
+| `src/matches/api/dto/match-snapshot.dto.ts` | Usa `MatchSnapshot` de `build-match-snapshot.ts` |
+| `src/matches/application/get-match.use-case.ts` | Usa `buildMatchSnapshot`, acepta `actorId` opcional |
+| `src/matches/application/get-match.use-case.spec.ts` | Actualizado para nueva interfaz con participants |
+
+### Tests agregados
+
+| Test | Que valida |
+|---|---|
+| "confirms with capacity -> CONFIRMED" | Confirm crea participant CONFIRMED cuando hay cupo |
+| "confirms when full -> WAITLISTED" | Confirm crea WAITLISTED cuando capacity lleno |
+| "rejects wrong expectedRevision -> 409" | Optimistic locking funciona |
+| "idempotent: same key returns cached response" | Idempotencia: misma key devuelve respuesta cacheada sin re-ejecutar |
+| "withdraw CONFIRMED promotes first WAITLISTED" | Withdraw de confirmado promueve primer waitlisted a CONFIRMED |
+
+### Ejemplos curl
+
+```bash
+# Confirmar participacion (requiere Idempotency-Key)
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/confirm \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -H 'Idempotency-Key: <UUID>' \
+  -d '{"expectedRevision": 1}'
+
+# Declinar
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/decline \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -H 'Idempotency-Key: <UUID>' \
+  -d '{"expectedRevision": 1}'
+
+# Retirarse (libera cupo, promueve waitlist)
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/withdraw \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -H 'Idempotency-Key: <UUID>' \
+  -d '{"expectedRevision": 2}'
+
+# Invitar (solo admin del match)
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/invite \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -H 'Idempotency-Key: <UUID>' \
+  -d '{"expectedRevision": 1, "userId": "<TARGET_USER_UUID>"}'
+
+# Ver match con snapshot enriquecido
+curl http://localhost:3000/api/v1/matches/<MATCH_ID> \
+  -H 'Authorization: Bearer <TOKEN>'
+```
+
+---
+
 ## Resumen de estado actual
 
 ### Que esta implementado
@@ -683,16 +939,21 @@ curl -X POST http://localhost:3000/api/v1/matches \
 - Hash de passwords con argon2
 - Prefijo global `/api/v1`
 - CI/CD con GitHub Actions (lint, test, e2e, build)
-- 10 unit tests pasando
+- Match participation completo (confirm/decline/withdraw/invite)
+- Waitlist FIFO con promocion automatica
+- Optimistic locking con revision en todos los comandos
+- Idempotencia obligatoria con tabla IdempotencyRecord
+- Snapshot enriquecido (participants, confirmedCount, myStatus, actionsAllowed)
+- 15 unit tests pasando
 - Paquete shared con enums tipados
 - Esqueleto mobile Expo
 
 ### Que falta (roadmap segun CLAUDE.md)
 
-- Participants (confirm/decline/withdraw con reglas de negocio)
-- Waitlist con promocion FIFO
-- Optimistic locking con `revision` en updates de admin
-- Idempotency keys en acciones sensibles
+- Lock/unlock de matches (slice 3)
+- Reconfirmacion por cambios mayores (fecha/lugar/capacidad)
+- Abandono (withdraw <1h antes del inicio)
+- Baja de cupo (ultimos confirmados a waitlist)
 - WebSocket (realtime best-effort)
 - Chat con dedupe (`clientMsgId`)
 - Grupos
