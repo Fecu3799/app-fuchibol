@@ -7,11 +7,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
 import { CreateMatchUseCase } from '../application/create-match.use-case';
 import { GetMatchUseCase } from '../application/get-match.use-case';
+import { ListMatchesQuery } from '../application/list-matches.query';
 import { UpdateMatchUseCase } from '../application/update-match.use-case';
 import { LockMatchUseCase } from '../application/lock-match.use-case';
 import { UnlockMatchUseCase } from '../application/unlock-match.use-case';
@@ -23,6 +25,7 @@ import { CreateMatchDto } from './dto/create-match.dto';
 import { CreateMatchResponseDto } from './dto/create-match-response.dto';
 import { GetMatchResponseDto } from './dto/match-snapshot.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
+import { ListMatchesQueryDto } from './dto/list-matches-query.dto';
 import {
   ParticipationCommandDto,
   InviteCommandDto,
@@ -36,6 +39,7 @@ export class MatchesController {
   constructor(
     private readonly createMatchUseCase: CreateMatchUseCase,
     private readonly getMatchUseCase: GetMatchUseCase,
+    private readonly listMatchesQuery: ListMatchesQuery,
     private readonly updateMatchUseCase: UpdateMatchUseCase,
     private readonly lockMatchUseCase: LockMatchUseCase,
     private readonly unlockMatchUseCase: UnlockMatchUseCase,
@@ -54,6 +58,21 @@ export class MatchesController {
     return this.createMatchUseCase.execute({
       ...body,
       createdById: actor.userId,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get()
+  async list(
+    @Query() query: ListMatchesQueryDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.listMatchesQuery.execute({
+      actorId: actor.userId,
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 20,
+      from: query.from,
+      to: query.to,
     });
   }
 

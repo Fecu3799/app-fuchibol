@@ -1,17 +1,23 @@
 {
   "name": "fuchibol-app",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:api": "pnpm --filter api start:dev",
+    "dev:mobile": "pnpm --filter mobile start -- --clear",
+    "test": "pnpm --filter api test",
+    "test:e2e": "pnpm --filter api test:e2e",
+    "lint": "pnpm --filter api lint"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "packageManager": "pnpm@10.29.2",
   "pnpm": {
-    "onlyBuiltDependencies": ["argon2"]
+    "onlyBuiltDependencies": [
+      "argon2",
+      "@prisma/engines",
+      "prisma",
+      "@nestjs/core",
+      "unrs-resolver"
+    ]
   },
   "devDependencies": {
     "eslint": "^10.0.0",

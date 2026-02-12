@@ -16,6 +16,10 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 8. [Slice: Identity & Access (auth MVP)](#8-slice-identity--access-auth-mvp)
 9. [Slice: Match Participation](#9-slice-match-participation)
 10. [Slice: Match Updates + Lock/Unlock + Reconfirmacion](#10-slice-match-updates--lockunlock--reconfirmacion)
+11. [Read Model: Home (List Matches)](#11-read-model-home-list-matches)
+12. [Health Endpoint + CORS + LAN Bind](#12-health-endpoint--cors--lan-bind)
+13. [Mobile: Smoke Test de Conectividad](#13-mobile-smoke-test-de-conectividad)
+14. [Monorepo pnpm Workspaces (cleanup)](#14-monorepo-pnpm-workspaces-cleanup)
 
 ---
 
@@ -1114,4 +1118,394 @@ curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/confirm \
   -H 'Authorization: Bearer <TOKEN>' \
   -H 'Idempotency-Key: another-uuid' \
   -d '{"expectedRevision": 5}'
+```
+
+---
+
+## 11. Read Model: Home (List Matches)
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Endpoint de lectura paginado para la pantalla home del mobile: lista de matches del actor con confirmedCount y myStatus, sin N+1.
+
+### Migracion: `20260212201252_list_matches_indexes`
+
+```sql
+CREATE INDEX "Match_startsAt_idx" ON "Match"("startsAt");
+CREATE INDEX "MatchParticipant_userId_idx" ON "MatchParticipant"("userId");
+```
+
+Indices para:
+- Ordenar/filtrar matches por `startsAt` eficientemente.
+- Buscar participaciones por `userId` para scope=mine.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/matches/application/list-matches.query.ts` | Query handler: paginacion, filtros, scope=mine, confirmedCount, myStatus |
+| `src/matches/application/list-matches.query.spec.ts` | 7 unit tests |
+| `src/matches/api/dto/list-matches-query.dto.ts` | DTO: page, pageSize, from, to (class-validator) |
+| `prisma/migrations/20260212201252_list_matches_indexes/migration.sql` | Indices para startsAt y userId |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `prisma/schema.prisma` | +`@@index([startsAt])` en Match, +`@@index([userId])` en MatchParticipant |
+| `src/matches/matches.module.ts` | +ListMatchesQuery como provider |
+| `src/matches/api/matches.controller.ts` | +`GET /matches` con query params (antes del `:id` route) |
+
+### Endpoint
+
+| Metodo | Ruta | Auth | Query params | Respuesta |
+|---|---|---|---|---|
+| `GET` | `/api/v1/matches` | JWT | `page`, `pageSize`, `from`, `to` | `{ items: MatchHomeItem[], pageInfo }` |
+
+### Query params
+
+| Param | Tipo | Default | Validacion |
+|---|---|---|---|
+| `page` | int | 1 | min 1 |
+| `pageSize` | int | 20 | min 1, max 50 |
+| `from` | ISO date | — | opcional |
+| `to` | ISO date | — | opcional |
+
+### Respuesta: MatchHomeItem
+
+```typescript
+{
+  id: string;
+  title: string;
+  startsAt: Date;
+  location: string | null;
+  capacity: number;
+  status: string;
+  revision: number;
+  isLocked: boolean;
+  lockedAt: Date | null;
+  confirmedCount: number;    // count agregado, no lista de participants
+  myStatus: string | null;   // status del actor en este match
+  isMatchAdmin: boolean;     // match.createdById === actorId
+  updatedAt: Date;
+}
+```
+
+### Respuesta: pageInfo
+
+```typescript
+{
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+```
+
+### Scope: mine (default y unico)
+
+Solo devuelve matches donde:
+- El actor es creador (`match.createdById === actorId`), O
+- El actor tiene participacion (cualquier status en MatchParticipant).
+
+No existe `scope=all` por ahora. No hay grupos implementados.
+
+### Orden
+
+Por `startsAt asc` (proximos primero).
+
+### Performance: evitando N+1
+
+Estrategia en 3 queries (no N+1):
+
+1. **Count** total con filtros (1 query).
+2. **Fetch** matches paginados con `select` minimal (1 query).
+3. **Batch** confirmedCount via `groupBy` sobre `matchParticipant` donde `status=CONFIRMED` y `matchId IN (ids)` (1 query).
+4. **Batch** myStatus via `findMany` sobre `matchParticipant` donde `userId=actorId` y `matchId IN (ids)` (1 query).
+5. **Merge** en memoria (O(n) con Maps).
+
+Total: **4 queries fijas** independientemente de cuantos matches haya en la pagina.
+
+### Tests agregados (7 nuevos, 36 total)
+
+| Test | Que valida |
+|---|---|
+| "returns empty items and correct pageInfo when no matches" | Lista vacia devuelve pageInfo correcto |
+| "returns items with confirmedCount and myStatus" | confirmedCount y myStatus computados correctamente |
+| "scope=mine: where clause filters by actor participation or ownership" | Filtro OR por createdById y participants |
+| "pagination: totalPages and hasNextPage computed correctly" | Paginacion con 25 items y pageSize=10 |
+| "pagination: page 2 has hasPrevPage=true" | hasPrevPage funciona |
+| "date filters are applied to where clause" | from/to generan filtros startsAt.gte/lte |
+| "myStatus is null when actor has no participation" | Sin participacion, myStatus es null |
+
+### Ejemplos curl
+
+```bash
+# Listar mis matches (default: page=1, pageSize=20)
+curl http://localhost:3000/api/v1/matches \
+  -H 'Authorization: Bearer <TOKEN>'
+
+# Listar con paginacion
+curl 'http://localhost:3000/api/v1/matches?page=2&pageSize=10' \
+  -H 'Authorization: Bearer <TOKEN>'
+
+# Filtrar por rango de fechas
+curl 'http://localhost:3000/api/v1/matches?from=2026-06-01T00:00:00Z&to=2026-06-30T23:59:59Z' \
+  -H 'Authorization: Bearer <TOKEN>'
+
+# Combinar filtros
+curl 'http://localhost:3000/api/v1/matches?page=1&pageSize=5&from=2026-06-01T00:00:00Z' \
+  -H 'Authorization: Bearer <TOKEN>'
+```
+
+---
+
+## 12. Health Endpoint + CORS + LAN Bind
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Endpoint de health publico para verificar que el API esta vivo, habilitar CORS para Expo dev, y bindear a `0.0.0.0` para acceso desde iPhone por LAN.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/main.ts` | +`app.enableCors(...)`, bind a `HOST` env var (default `0.0.0.0`) |
+| `src/app.controller.ts` | Reemplaza `getHello()` por `GET /health` con respuesta JSON |
+| `src/app.controller.spec.ts` | Test actualizado para health endpoint |
+| `src/app.module.ts` | Removido `AppService` de providers (ya no se usa) |
+
+### Archivos eliminados
+
+| Archivo | Razon |
+|---|---|
+| `src/app.service.ts` | Ya no se usa; health es inline en el controller |
+
+### Endpoint
+
+| Metodo | Ruta | Auth | Respuesta |
+|---|---|---|---|
+| `GET` | `/api/v1/health` | Publico | `{ status: "ok", service: "app-fuchibol-api", time: "<ISO8601>", version: "0.0.1" }` |
+
+### CORS
+
+Configurado en `main.ts`:
+- `origin: true` — reflect (acepta cualquier origin, ideal para dev con Expo).
+- `methods`: GET, POST, PATCH, PUT, DELETE, OPTIONS.
+- `allowedHeaders`: Content-Type, Authorization, Idempotency-Key, If-Match.
+- `credentials: true`.
+
+### Bind host
+
+`app.listen(port, host)` donde `host` viene de `process.env.HOST` (default `0.0.0.0`). Esto permite acceso desde dispositivos en la misma red local.
+
+### Variables de entorno nuevas (opcionales)
+
+```bash
+HOST="0.0.0.0"   # Default: 0.0.0.0 (accesible por LAN)
+PORT=3000         # Default: 3000
+```
+
+### Tests
+
+| Test | Que valida |
+|---|---|
+| "should return status ok" | Health devuelve `{ status: "ok", service, time }` |
+
+### Ejemplos curl
+
+```bash
+# Desde localhost
+curl http://localhost:3000/api/v1/health
+
+# Desde iPhone (reemplazar con IP local de la Mac)
+curl http://192.168.x.x:3000/api/v1/health
+```
+
+---
+
+## 13. Mobile: Smoke Test de Conectividad
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Preparar el proyecto Expo para testear conectividad contra el backend local por LAN. Sin pantallas, sin navegacion, solo smoke test del health endpoint.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `apps/mobile/.env.example` | Ejemplo de configuracion con `EXPO_PUBLIC_API_BASE_URL` |
+| `apps/mobile/.env` | Env local (gitignored) con IP LAN |
+| `apps/mobile/src/config/env.ts` | Exporta `apiBaseUrl` validado (throw si falta) |
+| `apps/mobile/src/lib/api.ts` | `fetchJson()` generico con timeout 12s |
+| `apps/mobile/src/features/health/healthClient.ts` | `getHealth()` llama `/api/v1/health` |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/App.tsx` | Smoke test: ejecuta health check en useEffect, muestra resultado |
+| `apps/mobile/.gitignore` | Agrega `.env` a ignorados |
+
+### Estructura
+
+```
+apps/mobile/
+├── .env                  # EXPO_PUBLIC_API_BASE_URL (gitignored)
+├── .env.example          # Template para otros devs
+├── App.tsx               # Smoke test UI minima
+└── src/
+    ├── config/
+    │   └── env.ts        # apiBaseUrl validado
+    ├── lib/
+    │   └── api.ts        # fetchJson() con timeout
+    └── features/
+        └── health/
+            └── healthClient.ts  # getHealth()
+```
+
+### Configuracion de env
+
+```bash
+# Obtener IP LAN de la Mac
+ipconfig getifaddr en0
+
+# Crear .env en apps/mobile/
+EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:3000
+```
+
+iPhone NO puede usar `localhost` — debe usar la IP LAN de la Mac.
+
+### Como correr
+
+```bash
+# Terminal 1: backend
+cd apps/api && pnpm start:dev
+
+# Terminal 2: mobile
+cd apps/mobile && npx expo start
+```
+
+Escanear el QR con Expo Go en el iPhone.
+
+### Que deberia verse en logs
+
+```
+[smoke] API base URL: http://192.168.x.x:3000
+[smoke] Health OK: {"status":"ok","service":"app-fuchibol-api","time":"2026-...","version":"0.0.1"}
+```
+
+Si falla:
+```
+[smoke] Health FAILED: http://192.168.x.x:3000 Error: Request timed out after 12000ms...
+```
+
+---
+
+## 14. Monorepo pnpm Workspaces (cleanup)
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Configurar pnpm workspaces reales para que `pnpm install` desde root gestione todas las deps, Expo bundle correctamente en monorepo, y no queden `node_modules` duplicados.
+
+### Problema previo
+
+- No existia `pnpm-workspace.yaml` — cada app instalaba deps por separado.
+- No existia `.npmrc` — pnpm usaba `node-linker=isolated` (incompatible con Metro/Expo).
+- `node_modules` duplicados en root y `apps/api`.
+- Expo fallaba resolviendo `react-native-web` y otros modulos.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `pnpm-workspace.yaml` | Define workspaces: `apps/*` |
+| `.npmrc` | `node-linker=hoisted` para compatibilidad Metro/Expo |
+| `apps/mobile/metro.config.js` | Config Metro para monorepo: watchFolders + nodeModulesPaths |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `package.json` (root) | `private: true`, scripts `dev:api`, `dev:mobile`, `test`, `lint`. Ampliado `onlyBuiltDependencies` con prisma, nestjs/core, unrs-resolver |
+| `apps/mobile/package.json` | +`react-dom`, +`react-native-web` (deps necesarias para Expo monorepo) |
+| `pnpm-lock.yaml` | Regenerado con workspaces + hoisted |
+
+### Archivos eliminados
+
+- `apps/api/node_modules/` (duplicado; ahora hoisted en root)
+
+### Configuracion clave
+
+**pnpm-workspace.yaml**:
+```yaml
+packages:
+  - "apps/*"
+```
+
+**.npmrc**:
+```
+node-linker=hoisted
+```
+
+**metro.config.js** (apps/mobile):
+```js
+const { getDefaultConfig } = require('expo/metro-config');
+const path = require('path');
+const projectRoot = __dirname;
+const workspaceRoot = path.resolve(projectRoot, '../..');
+const config = getDefaultConfig(projectRoot);
+config.watchFolders = [...(config.watchFolders ?? []), workspaceRoot];
+config.resolver.nodeModulesPaths = [
+  path.resolve(projectRoot, 'node_modules'),
+  path.resolve(workspaceRoot, 'node_modules'),
+];
+module.exports = config;
+```
+
+### Scripts root
+
+| Script | Comando |
+|---|---|
+| `pnpm dev:api` | `pnpm --filter api start:dev` |
+| `pnpm dev:mobile` | `pnpm --filter mobile start -- --clear` |
+| `pnpm test` | `pnpm --filter api test` |
+| `pnpm test:e2e` | `pnpm --filter api test:e2e` |
+| `pnpm lint` | `pnpm --filter api lint` |
+
+### Verificaciones
+
+- `pnpm install` desde root: instala todo (1 sola invocacion).
+- `pnpm test`: 36 tests pasando.
+- `expo doctor`: 17/17 checks passed.
+- `expo export --platform ios`: bundle exitoso (575 modules).
+
+### Como usar
+
+```bash
+# Instalar deps (solo desde root, una vez)
+pnpm install
+
+# Levantar API
+pnpm dev:api
+
+# Levantar Mobile (Expo)
+pnpm dev:mobile
+
+# Tests
+pnpm test
+
+# Nota: para mobile, configurar EXPO_PUBLIC_API_BASE_URL en apps/mobile/.env
+# con la IP LAN de la Mac (no localhost).
+# Obtener IP: ipconfig getifaddr en0
 ```

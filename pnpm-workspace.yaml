@@ -1,5 +1,2 @@
 packages:
-  - apps/*
-  - packages/*
-
-nodeLinker: hoisted
+  - "apps/*"

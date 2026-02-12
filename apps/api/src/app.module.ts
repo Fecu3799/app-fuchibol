@@ -1,7 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { DevAuthMiddleware } from './infra/auth/dev-auth.middleware';
 import { PrismaModule } from './infra/prisma/prisma.module';
 import { MatchesModule } from './matches/matches.module';
@@ -15,7 +14,7 @@ import { AuthModule } from './auth/auth.module';
     MatchesModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [],
 })
 export class AppModule implements NestModule {
   constructor(private readonly config: ConfigService) {}
