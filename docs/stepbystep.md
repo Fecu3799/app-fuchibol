@@ -15,6 +15,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 7. [Slice: Matches API (create + get)](#7-slice-matches-api-create--get)
 8. [Slice: Identity & Access (auth MVP)](#8-slice-identity--access-auth-mvp)
 9. [Slice: Match Participation](#9-slice-match-participation)
+10. [Slice: Match Updates + Lock/Unlock + Reconfirmacion](#10-slice-match-updates--lockunlock--reconfirmacion)
 
 ---
 
@@ -959,3 +960,158 @@ curl http://localhost:3000/api/v1/matches/<MATCH_ID> \
 - Grupos
 - Notificaciones
 - Implementacion mobile con React Query
+
+---
+
+## 10. Slice: Match Updates + Lock/Unlock + Reconfirmacion
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Cerrar el contrato del core: actualizar matches con optimistic locking, detectar "cambios mayores" que fuerzan reconfirmacion, y permitir lock/unlock de matches que bloquea acciones de participacion.
+
+### Migracion: `20260212182619_match_updates_lock`
+
+```sql
+ALTER TABLE "Match" ADD COLUMN "isLocked" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "location" TEXT,
+ADD COLUMN "lockedAt" TIMESTAMP(3),
+ADD COLUMN "lockedBy" UUID;
+```
+
+Campos agregados al modelo Match:
+- `location` (String?) — ubicacion/cancha del partido.
+- `isLocked` (Boolean, default false) — si el match esta bloqueado.
+- `lockedAt` (DateTime?) — cuando se bloqueo.
+- `lockedBy` (String? UUID) — userId del admin que lo bloqueo.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/matches/application/update-match.use-case.ts` | PATCH match con optimistic locking, cambios mayores, reconfirmacion |
+| `src/matches/application/lock-match.use-case.ts` | Lock match (admin, idempotente por estado) |
+| `src/matches/application/unlock-match.use-case.ts` | Unlock match (admin, idempotente por estado) |
+| `src/matches/api/dto/update-match.dto.ts` | DTO para PATCH: title?, startsAt?, location?, capacity?, expectedRevision |
+| `src/matches/application/update-lock.use-case.spec.ts` | 14 unit tests para update/lock/unlock |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `prisma/schema.prisma` | +location, +isLocked, +lockedAt, +lockedBy en Match |
+| `src/matches/matches.module.ts` | +UpdateMatchUseCase, +LockMatchUseCase, +UnlockMatchUseCase como providers |
+| `src/matches/api/matches.controller.ts` | +PATCH `:id`, +POST `:id/lock`, +POST `:id/unlock` |
+| `src/matches/application/build-match-snapshot.ts` | Snapshot incluye location, isLocked, lockedAt, lockedBy. actionsAllowed considera lock state |
+| `src/matches/application/confirm-participation.use-case.ts` | +check `isLocked` -> 409 MATCH_LOCKED |
+| `src/matches/application/decline-participation.use-case.ts` | +check `isLocked` -> 409 MATCH_LOCKED |
+| `src/matches/application/invite-participation.use-case.ts` | +check `isLocked` -> 409 MATCH_LOCKED |
+| `src/matches/application/get-match.use-case.spec.ts` | mockMatch actualizado con nuevos campos |
+| `src/matches/application/participation.use-case.spec.ts` | mockMatch actualizado con nuevos campos |
+
+### Endpoints nuevos
+
+| Metodo | Ruta | Auth | Body | Respuesta | Errores |
+|---|---|---|---|---|---|
+| `PATCH` | `/api/v1/matches/:id` | JWT (admin) | `{ expectedRevision, title?, startsAt?, location?, capacity? }` | MatchSnapshot | 403 no admin, 409 revision/capacity |
+| `POST` | `/api/v1/matches/:id/lock` | JWT (admin) | `{ expectedRevision }` | MatchSnapshot | 403 no admin, 409 revision |
+| `POST` | `/api/v1/matches/:id/unlock` | JWT (admin) | `{ expectedRevision }` | MatchSnapshot | 403 no admin, 409 revision |
+
+### Reglas de negocio implementadas
+
+**PATCH match (UpdateMatchUseCase)**:
+- Solo `match.createdById` puede actualizar (403).
+- Optimistic locking: `expectedRevision` debe coincidir (409 REVISION_CONFLICT).
+- "Cambio mayor" = cambio en `startsAt`, `location`, o `capacity`:
+  - Participantes CONFIRMED -> INVITED (fuerza reconfirmacion).
+  - WAITLISTED se mantiene WAITLISTED.
+  - INVITED, DECLINED, WITHDRAWN no cambian.
+- Capacity no puede bajar debajo de `confirmedCount` actual (409 CAPACITY_BELOW_CONFIRMED).
+- Si capacity sube (sin ser cambio mayor): promueve waitlist FIFO hasta llenar cupo.
+- Cambio solo de `title` no es mayor (no fuerza reconfirmacion).
+- `revision` se incrementa en cada update real.
+
+**Lock (LockMatchUseCase)**:
+- Solo admin puede lock (403).
+- Requiere `expectedRevision` (409 REVISION_CONFLICT).
+- Si ya locked -> idempotente (no cambia nada, devuelve snapshot).
+- Setea `isLocked=true`, `lockedAt=now()`, `lockedBy=actorId`, `revision++`.
+
+**Unlock (UnlockMatchUseCase)**:
+- Solo admin puede unlock (403).
+- Requiere `expectedRevision` (409 REVISION_CONFLICT).
+- Si ya unlocked -> idempotente.
+- Setea `isLocked=false`, `lockedAt=null`, `lockedBy=null`, `revision++`.
+
+**Bloqueo de participacion cuando locked**:
+- `confirm` -> 409 MATCH_LOCKED.
+- `decline` -> 409 MATCH_LOCKED.
+- `invite` -> 409 MATCH_LOCKED.
+- `withdraw` -> permitido (un jugador siempre puede bajarse).
+
+**Snapshot actualizado**:
+- Incluye `location`, `isLocked`, `lockedAt`, `lockedBy`.
+- `actionsAllowed` para admin incluye `update`, `lock`/`unlock`.
+- Cuando locked: no muestra `confirm`, `decline`, `invite` en actionsAllowed (excepto `withdraw`).
+
+### Tests agregados (14 nuevos, 29 total)
+
+| Test | Que valida |
+|---|---|
+| "rejects wrong expectedRevision -> 409" | Optimistic locking en PATCH |
+| "rejects non-admin -> 403" | Solo admin puede actualizar |
+| "major change (startsAt) resets CONFIRMED -> INVITED" | Reconfirmacion por cambio de fecha |
+| "major change (location) resets CONFIRMED -> INVITED" | Reconfirmacion por cambio de ubicacion |
+| "capacity below confirmedCount -> 409" | No permite bajar capacity si hay mas confirmados |
+| "title-only change does NOT reset participants" | Cambio menor no fuerza reconfirmacion |
+| "increments revision on real update" | Revision se incrementa |
+| "locks match and increments revision" | Lock funciona correctamente |
+| "already locked -> idempotent (no update)" | Lock idempotente |
+| "lock rejects wrong expectedRevision -> 409" | Optimistic locking en lock |
+| "lock rejects non-admin -> 403" | Solo admin puede lock |
+| "unlocks match and increments revision" | Unlock funciona correctamente |
+| "already unlocked -> idempotent (no update)" | Unlock idempotente |
+| "confirm on locked match -> 409 MATCH_LOCKED" | Lock bloquea confirm |
+
+### Ejemplos curl
+
+```bash
+# PATCH match con expectedRevision (cambio mayor: fuerza reconfirmacion)
+curl -X PATCH http://localhost:3000/api/v1/matches/<MATCH_ID> \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -d '{"expectedRevision": 1, "startsAt": "2026-12-01T20:00:00Z", "location": "Cancha Sur"}'
+
+# PATCH match (cambio menor: solo titulo)
+curl -X PATCH http://localhost:3000/api/v1/matches/<MATCH_ID> \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -d '{"expectedRevision": 2, "title": "Futbol 5 - Viernes"}'
+
+# Lock match
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/lock \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -d '{"expectedRevision": 3}'
+
+# Confirm falla por locked -> 409 MATCH_LOCKED
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/confirm \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -H 'Idempotency-Key: some-uuid' \
+  -d '{"expectedRevision": 4}'
+
+# Unlock match
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/unlock \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -d '{"expectedRevision": 4}'
+
+# Confirm ahora funciona
+curl -X POST http://localhost:3000/api/v1/matches/<MATCH_ID>/confirm \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <TOKEN>' \
+  -H 'Idempotency-Key: another-uuid' \
+  -d '{"expectedRevision": 5}'
+```

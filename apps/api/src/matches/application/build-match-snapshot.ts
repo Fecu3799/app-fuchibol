@@ -15,9 +15,13 @@ export interface MatchSnapshot {
   id: string;
   title: string;
   startsAt: Date;
+  location: string | null;
   capacity: number;
   status: string;
   revision: number;
+  isLocked: boolean;
+  lockedAt: Date | null;
+  lockedBy: string | null;
   createdById: string;
   confirmedCount: number;
   participants: ParticipantView[];
@@ -53,17 +57,27 @@ export async function buildMatchSnapshot(
   const isAdmin = match.createdById === actorId;
 
   const actionsAllowed: string[] = [];
-  if (!myStatus || myStatus === 'DECLINED' || myStatus === 'WITHDRAWN') {
-    actionsAllowed.push('confirm');
+
+  if (!match.isLocked) {
+    if (!myStatus || myStatus === 'DECLINED' || myStatus === 'WITHDRAWN') {
+      actionsAllowed.push('confirm');
+    }
+    if (myStatus === 'INVITED') {
+      actionsAllowed.push('confirm', 'decline');
+    }
+    if (isAdmin) {
+      actionsAllowed.push('invite');
+    }
   }
-  if (myStatus === 'INVITED') {
-    actionsAllowed.push('confirm', 'decline');
-  }
+
+  // Withdraw is always allowed (even when locked)
   if (myStatus === 'CONFIRMED' || myStatus === 'WAITLISTED') {
     actionsAllowed.push('withdraw');
   }
+
   if (isAdmin) {
-    actionsAllowed.push('invite');
+    actionsAllowed.push('update');
+    actionsAllowed.push(match.isLocked ? 'unlock' : 'lock');
   }
 
   const participantViews: ParticipantView[] = participants
@@ -84,9 +98,13 @@ export async function buildMatchSnapshot(
     id: match.id,
     title: match.title,
     startsAt: match.startsAt,
+    location: match.location,
     capacity: match.capacity,
     status: match.status,
     revision: match.revision,
+    isLocked: match.isLocked,
+    lockedAt: match.lockedAt,
+    lockedBy: match.lockedBy,
     createdById: match.createdById,
     confirmedCount: confirmed.length,
     participants: participantViews,

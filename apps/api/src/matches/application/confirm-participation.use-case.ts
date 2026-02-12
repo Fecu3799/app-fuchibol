@@ -45,6 +45,10 @@ export class ConfirmParticipationUseCase {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
+      if (match.isLocked) {
+        throw new ConflictException('MATCH_LOCKED');
+      }
+
       const confirmedCount = await tx.matchParticipant.count({
         where: { matchId: input.matchId, status: 'CONFIRMED' },
       });

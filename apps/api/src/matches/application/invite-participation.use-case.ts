@@ -51,6 +51,10 @@ export class InviteParticipationUseCase {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
+      if (match.isLocked) {
+        throw new ConflictException('MATCH_LOCKED');
+      }
+
       const existing = await tx.matchParticipant.findUnique({
         where: {
           matchId_userId: {

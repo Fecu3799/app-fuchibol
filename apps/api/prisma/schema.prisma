@@ -33,9 +33,13 @@ model Match {
   id           String             @id @default(uuid()) @db.Uuid
   title        String
   startsAt     DateTime
+  location     String?
   capacity     Int
   status       MatchStatus        @default(scheduled)
   revision     Int                @default(1)
+  isLocked     Boolean            @default(false)
+  lockedAt     DateTime?
+  lockedBy     String?            @db.Uuid
   createdById  String             @db.Uuid
   createdBy    User               @relation(fields: [createdById], references: [id])
   createdAt    DateTime           @default(now())
