@@ -5,14 +5,16 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
-  Req,
+  UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { CreateMatchUseCase } from '../application/create-match.use-case';
 import { GetMatchUseCase } from '../application/get-match.use-case';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { CreateMatchResponseDto } from './dto/create-match-response.dto';
 import { GetMatchResponseDto } from './dto/match-snapshot.dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { Actor } from '../../auth/decorators/actor.decorator';
+import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
 
 @Controller('matches')
 export class MatchesController {
@@ -21,15 +23,15 @@ export class MatchesController {
     private readonly getMatchUseCase: GetMatchUseCase,
   ) {}
 
+  @UseGuards(JwtAuthGuard)
   @Post()
   async create(
     @Body() body: CreateMatchDto,
-    @Req() req: Request,
+    @Actor() actor: ActorPayload,
   ): Promise<CreateMatchResponseDto> {
-    const userId = req.user?.id ?? 'dev-user-1';
     return this.createMatchUseCase.execute({
       ...body,
-      createdById: userId,
+      createdById: actor.userId,
     });
   }
 

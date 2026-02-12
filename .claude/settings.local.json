@@ -3,7 +3,8 @@
     "allow": [
       "Bash(pnpm --filter api lint:*)",
       "Bash(npx eslint:*)",
-      "Bash(pnpm --filter api env:setup:*)"
+      "Bash(pnpm --filter api env:setup:*)",
+      "Bash(npx prisma migrate dev:*)"
     ]
   }
 }

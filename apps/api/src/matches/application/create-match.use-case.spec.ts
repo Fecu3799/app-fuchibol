@@ -6,9 +6,6 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 const buildPrisma = () =>
   ({
     client: {
-      user: {
-        upsert: jest.fn(),
-      },
       match: {
         create: jest.fn(),
       },
@@ -34,9 +31,6 @@ describe('CreateMatchUseCase', () => {
 
   it('creates a match with scheduled status', async () => {
     const prisma = buildPrisma();
-    prisma.client.user.upsert = jest
-      .fn()
-      .mockResolvedValue({ id: 'dev-user-1' });
     prisma.client.match.create = jest.fn().mockResolvedValue({
       id: 'match-1',
       revision: 1,
@@ -54,10 +48,6 @@ describe('CreateMatchUseCase', () => {
         createdById: 'dev-user-1',
       }),
     ).resolves.toEqual({ id: 'match-1', revision: 1, status: 'scheduled' });
-    expect(prisma.client.user.upsert).toHaveBeenCalledWith({
-      where: { id: 'dev-user-1' },
-      update: {},
-      create: { id: 'dev-user-1' },
-    });
+    expect(prisma.client.match.create).toHaveBeenCalled();
   });
 });

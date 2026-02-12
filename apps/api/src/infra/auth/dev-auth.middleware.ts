@@ -4,10 +4,15 @@ import { NextFunction, Request, Response } from 'express';
 @Injectable()
 export class DevAuthMiddleware implements NestMiddleware {
   use(req: Request, _res: Response, next: NextFunction) {
+    if (req.headers.authorization) {
+      return next();
+    }
+
     const headerUserId = req.header('x-dev-user-id');
-    const userId =
-      headerUserId && headerUserId.trim() !== '' ? headerUserId : 'dev-user-1';
-    req.user = { id: userId };
+    if (headerUserId && headerUserId.trim() !== '') {
+      req.user = { userId: headerUserId, role: 'USER' };
+    }
+
     next();
   }
 }

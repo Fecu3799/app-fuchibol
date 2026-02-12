@@ -40,12 +40,6 @@ export class CreateMatchUseCase {
       );
     }
 
-    await this.prisma.client.user.upsert({
-      where: { id: input.createdById },
-      update: {},
-      create: { id: input.createdById },
-    });
-
     return this.prisma.client.match.create({
       data: {
         title: input.title,
