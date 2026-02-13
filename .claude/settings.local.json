@@ -4,7 +4,13 @@
       "Bash(pnpm --filter api lint:*)",
       "Bash(npx eslint:*)",
       "Bash(pnpm --filter api env:setup:*)",
-      "Bash(npx prisma migrate dev:*)"
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm --filter api add:*)",
+      "Bash(pnpm --filter api remove:*)",
+      "Bash(node -e:*)",
+      "Bash(npx tsc:*)",
+      "Bash(pnpm --filter api test:e2e:*)"
     ]
   }
 }

@@ -1,4 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { RegisterUseCase } from '../application/register.use-case';
 import { LoginUseCase } from '../application/login.use-case';
 import { RegisterDto } from './dto/register.dto';
@@ -12,11 +13,13 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @Throttle({ mutations: {} })
   async register(@Body() dto: RegisterDto) {
     return this.registerUseCase.execute(dto);
   }
 
   @Post('login')
+  @Throttle({ login: {} })
   async login(@Body() dto: LoginDto) {
     return this.loginUseCase.execute(dto);
   }

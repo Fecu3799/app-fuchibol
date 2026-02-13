@@ -6,5 +6,6 @@
   "setupFiles": ["<rootDir>/jest.setup.ts"],
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "forceExit": true
 }

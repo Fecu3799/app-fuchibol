@@ -1,15 +1,24 @@
+import { randomUUID } from 'expo-crypto';
 import type { ApiErrorBody } from '../types/api';
 import { apiBaseUrl } from '../config/env';
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 
 export class ApiError extends Error {
+  public readonly requestId: string | undefined;
+
   constructor(
     public readonly status: number,
     public readonly body: ApiErrorBody,
   ) {
-    super(body.message ?? `HTTP ${status}`);
+    super(body.detail ?? body.message ?? `HTTP ${status}`);
     this.name = 'ApiError';
+    this.requestId = body.requestId;
+  }
+
+  /** Stable error code from backend (e.g. REVISION_CONFLICT, MATCH_LOCKED). */
+  get code(): string | undefined {
+    return this.body.code;
   }
 }
 
@@ -36,16 +45,19 @@ export async function fetchJson<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const requestId = randomUUID();
+
   try {
     const method = init?.method ?? 'GET';
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(init?.headers as Record<string, string>),
+      'X-Request-Id': requestId,
     };
     const hasAuth = 'Authorization' in headers;
 
     if (__DEV__) {
-      console.log(`[api] ${method} ${url} | auth: ${hasAuth ? 'present' : 'absent'}`);
+      console.log(`[api] ${method} ${url} rid=${requestId} auth=${hasAuth ? 'yes' : 'no'}`);
     }
 
     const res = await fetch(url, {
@@ -55,7 +67,7 @@ export async function fetchJson<T>(
     });
 
     if (__DEV__) {
-      console.log(`[api] ${method} ${url} -> ${res.status}`);
+      console.log(`[api] ${method} ${url} -> ${res.status} rid=${requestId}`);
     }
 
     if (!res.ok) {
@@ -63,10 +75,12 @@ export async function fetchJson<T>(
       try {
         body = await res.json();
       } catch {
-        body = { statusCode: res.status, message: res.statusText };
+        body = { status: res.status, message: res.statusText };
       }
+      // Ensure requestId is always present
+      if (!body.requestId) body.requestId = requestId;
       if (__DEV__) {
-        console.log(`[api] ERROR ${res.status}:`, JSON.stringify(body));
+        console.log(`[api] ERROR ${res.status} code=${body.code ?? '-'} rid=${requestId}`, body.detail ?? body.message);
       }
       throw new ApiError(res.status, body);
     }

@@ -12,6 +12,7 @@ import type { MatchHomeItem } from '../types/api';
 import { useMatches } from '../features/matches/useMatches';
 import { useAuth } from '../contexts/AuthContext';
 import { useLogoutOn401 } from '../lib/use-api-query';
+import { ApiError } from '../lib/api';
 import { apiBaseUrl } from '../config/env';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'Home'>;
@@ -93,6 +94,9 @@ export default function HomeScreen({ navigation }: Props) {
       ) : error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Failed to load matches</Text>
+          {error instanceof ApiError && error.requestId && (
+            <Text style={styles.requestIdText}>RequestId: {error.requestId}</Text>
+          )}
           <Pressable style={styles.retryBtn} onPress={() => refetch()}>
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
@@ -157,6 +161,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   retryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  requestIdText: { fontSize: 11, fontFamily: 'monospace', color: '#999', marginBottom: 8 },
   createBtn: {
     backgroundColor: '#1976d2',
     marginHorizontal: 12,

@@ -26,7 +26,7 @@ export default function LoginScreen() {
       await login(email.trim(), password);
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.body.message);
+        setError(err.body.detail ?? err.body.message ?? 'Login failed');
       } else {
         setError('Connection error. Please try again.');
       }

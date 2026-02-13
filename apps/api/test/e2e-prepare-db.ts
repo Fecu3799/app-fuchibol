@@ -81,6 +81,8 @@ const prepare = async () => {
     ...(process.env as Record<string, string>),
     NODE_ENV: 'test',
     DATABASE_URL: databaseUrlTest,
+    // Allow Prisma to run destructive reset on the verified test database
+    PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION: 'yes',
   };
 
   if (shadowDatabaseUrlTest) {

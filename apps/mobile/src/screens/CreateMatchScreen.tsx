@@ -81,9 +81,8 @@ export default function CreateMatchScreen({ navigation }: Props) {
           logout();
           return;
         }
-        const msg = Array.isArray(err.body.message)
-          ? err.body.message.join(', ')
-          : err.body.message;
+        const detail = err.body.detail ?? err.body.message;
+        const msg = Array.isArray(detail) ? detail.join(', ') : (detail ?? 'Error');
         setError(msg);
       } else {
         setError('Connection error. Please try again.');

@@ -82,7 +82,15 @@ export interface CreateMatchResponse {
 }
 
 export interface ApiErrorBody {
-  statusCode: number;
-  message: string;
+  type?: string;
+  title?: string;
+  status: number;
+  code?: string;
+  detail?: string;
+  errors?: unknown;
+  requestId?: string;
+  // Legacy compat (NestJS default shape)
+  statusCode?: number;
+  message?: string;
   error?: string;
 }

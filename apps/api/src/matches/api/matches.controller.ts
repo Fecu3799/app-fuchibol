@@ -11,6 +11,7 @@ import {
   UnprocessableEntityException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CreateMatchUseCase } from '../application/create-match.use-case';
 import { GetMatchUseCase } from '../application/get-match.use-case';
 import { ListMatchesQuery } from '../application/list-matches.query';
@@ -50,6 +51,7 @@ export class MatchesController {
   ) {}
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post()
   async create(
     @Body() body: CreateMatchDto,
@@ -87,6 +89,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Patch(':id')
   async update(
     @Param('id', new ParseUUIDPipe()) matchId: string,
@@ -103,6 +106,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post(':id/lock')
   async lock(
     @Param('id', new ParseUUIDPipe()) matchId: string,
@@ -117,6 +121,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post(':id/unlock')
   async unlock(
     @Param('id', new ParseUUIDPipe()) matchId: string,
@@ -131,6 +136,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post(':id/confirm')
   async confirm(
     @Param('id', new ParseUUIDPipe()) matchId: string,
@@ -148,6 +154,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post(':id/decline')
   async decline(
     @Param('id', new ParseUUIDPipe()) matchId: string,
@@ -165,6 +172,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post(':id/withdraw')
   async withdraw(
     @Param('id', new ParseUUIDPipe()) matchId: string,
@@ -182,6 +190,7 @@ export class MatchesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
   @Post(':id/invite')
   async invite(
     @Param('id', new ParseUUIDPipe()) matchId: string,

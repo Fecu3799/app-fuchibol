@@ -24,6 +24,9 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 16. [Mobile Slice 1.1: Home real + Detail (read-only)](#16-mobile-slice-11-home-real--detail-read-only)
 17. [Mobile: Create Match](#17-mobile-create-match)
 18. [Mobile: Mejorar CreateMatch UX (pickers + formato)](#18-mobile-mejorar-creatematch-ux-pickers--formato)
+19. [Mobile Slice 1.2: Acciones de participacion (confirm/decline/withdraw)](#19-mobile-slice-12-acciones-de-participacion-confirmdeclinewithdraw)
+20. [Etapa 0 RNF: Observabilidad y contrato de errores](#20-etapa-0-rnf-observabilidad-y-contrato-de-errores)
+21. [RNF Step 1: Seguridad minima + Anti-abuso (Rate Limiting + Helmet)](#21-rnf-step-1-seguridad-minima--anti-abuso-rate-limiting--helmet)
 
 ---
 
@@ -953,11 +956,14 @@ curl http://localhost:3000/api/v1/matches/<MATCH_ID> \
 - Optimistic locking con revision en todos los comandos
 - Idempotencia obligatoria con tabla IdempotencyRecord
 - Snapshot enriquecido (participants, confirmedCount, myStatus, actionsAllowed)
-- 15 unit tests pasando
+- 40 unit tests pasando
 - Paquete shared con enums tipados
 - Esqueleto mobile Expo
 - Mobile Slice 1: Login → Home → Match Detail → Actions (confirm/decline/withdraw)
 - React Query + React Navigation + expo-secure-store + expo-crypto
+- Rate limiting (Redis + in-memory fallback) con 3 perfiles (login/mutations/reads)
+- Helmet + CORS por ambiente + body size limit
+- Error envelope consistente (RATE_LIMITED, REVISION_CONFLICT, etc.)
 
 ### Que falta (roadmap segun CLAUDE.md)
 
@@ -1793,4 +1799,337 @@ pnpm dev:api && pnpm dev:mobile
 # Cambiar formato F5 → F7 → capacity cambia a 14
 # Elegir fecha con picker, hora con picker
 # Submit → navega a MatchDetail
+```
+
+---
+
+## 19. Mobile Slice 1.2: Acciones de participacion (confirm/decline/withdraw)
+
+**Fecha**: 2026-02-13
+
+### Objetivo
+
+Agregar botones de accion en MatchDetail para confirmar, declinar o retirarse de un match. Los botones se muestran segun `actionsAllowed` del snapshot (backend drives UI). Incluye retry automatico en 409 REVISION_CONFLICT y manejo de errores user-friendly.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/features/matches/useMatchAction.ts` | +`formatActionError(err)` para mensajes user-friendly (locked, revision conflict, validation). +401→logout en mutationFn |
+| `src/screens/MatchDetailScreen.tsx` | +botones de accion (Confirm/Decline/Withdraw) renderizados segun `actionsAllowed`. Loading state en botones. Error text inline. Usa `useMatchAction` + `formatActionError` |
+
+### Mecanismo de accion
+
+1. UI lee `match.actionsAllowed` del snapshot y muestra solo botones permitidos
+2. Al tocar un boton, llama `mutation.mutate({ action, revision: match.revision })`
+3. `useMatchAction` genera UUID via `expo-crypto` como `Idempotency-Key`
+4. POST `/api/v1/matches/:id/{action}` con body `{ expectedRevision }` y header `Idempotency-Key`
+5. Si 409 REVISION_CONFLICT: refetch snapshot, retry con nueva revision + nuevo UUID (max 1 retry)
+6. On success: `setQueryData` para update inmediato del detail + `invalidateQueries` para refrescar Home
+
+### Manejo de errores
+
+| Error | Mensaje mostrado |
+|---|---|
+| 401 | Logout automatico (no muestra mensaje) |
+| 409 REVISION_CONFLICT | Retry automatico 1 vez. Si falla de nuevo: "Match was updated, please try again" |
+| 409 MATCH_LOCKED | "Match is locked" |
+| 409 otro | Mensaje del backend |
+| 422 | Mensaje(s) de validacion del backend |
+| Network/timeout | "Connection error. Please try again." |
+
+### Headers enviados por accion
+
+```
+POST /api/v1/matches/:id/confirm
+Headers:
+  Authorization: Bearer {token}
+  Content-Type: application/json
+  Idempotency-Key: {uuid}
+Body:
+  { "expectedRevision": {revision} }
+```
+
+Idem para `/decline` y `/withdraw`.
+
+### Verificacion
+
+```bash
+pnpm dev:api && pnpm dev:mobile
+
+# 1. Crear match → ver detail → tap "Confirm" → myStatus cambia a CONFIRMED
+# 2. Tap "Withdraw" → myStatus desaparece, confirmedCount baja
+# 3. Tap "Confirm" de nuevo → funciona
+# 4. Tap "Decline" (si visible) → myStatus cambia a DECLINED
+# 5. Lock match via curl → entrar al detail → no aparecen botones (excepto withdraw si confirmado)
+# 6. Simular 409: modificar match desde otro cliente → confirmar → retry automatico
+```
+
+---
+
+## 20. Etapa 0 RNF: Observabilidad y contrato de errores
+
+**Fecha**: 2026-02-13
+
+### Objetivo
+
+Correlation ID end-to-end (X-Request-Id), logging estructurado por request con duracion, y error envelope consistente (mini Problem Details) para que mobile reaccione por `code` estable en vez de strings.
+
+### Backend: archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/common/middleware/request-id.middleware.ts` | Lee/genera X-Request-Id, adjunta a `req.requestId`, setea header en response |
+| `src/common/interceptors/http-logging.interceptor.ts` | Loguea 1 linea por request exitoso: method, path, status, duration, requestId, actorId |
+| `src/common/filters/api-exception.filter.ts` | ExceptionFilter global: convierte cualquier error a Problem Details JSON con `code` estable |
+
+### Backend: archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/main.ts` | +`app.use(requestIdMiddleware)`, +`app.useGlobalInterceptors(HttpLoggingInterceptor)`, +`app.useGlobalFilters(ApiExceptionFilter)`. CORS: +`X-Request-Id` en allowedHeaders y exposedHeaders |
+| `src/@types/express/index.d.ts` | +`requestId?: string` en Express.Request |
+
+### Error envelope (Problem Details)
+
+Todas las respuestas de error ahora tienen esta estructura:
+
+```json
+{
+  "type": "about:blank",
+  "title": "CONFLICT",
+  "status": 409,
+  "code": "REVISION_CONFLICT",
+  "detail": "REVISION_CONFLICT",
+  "requestId": "a1b2c3d4-..."
+}
+```
+
+### Mapeo de codes
+
+| HTTP Status | Code default | Codes de dominio |
+|---|---|---|
+| 401 | UNAUTHORIZED | — |
+| 403 | FORBIDDEN | — |
+| 404 | NOT_FOUND | — |
+| 409 | CONFLICT | REVISION_CONFLICT, MATCH_LOCKED, CAPACITY_BELOW_CONFIRMED |
+| 422 | VALIDATION_ERROR | — (+ campo `errors` con array de mensajes) |
+| 500 | INTERNAL | — |
+
+Los codes de dominio se detectan a partir del `message` de las `ConflictException` existentes. No se modifico ninguna logica de dominio.
+
+### Ejemplo 409
+
+```bash
+curl -X POST http://localhost:3000/api/v1/matches/xxx/confirm \
+  -H 'Authorization: Bearer TOKEN' \
+  -H 'Idempotency-Key: uuid' \
+  -H 'X-Request-Id: test-rid-123' \
+  -d '{"expectedRevision": 999}'
+```
+
+```json
+{
+  "type": "about:blank",
+  "title": "CONFLICT",
+  "status": 409,
+  "code": "REVISION_CONFLICT",
+  "detail": "REVISION_CONFLICT",
+  "requestId": "test-rid-123"
+}
+```
+
+### Log de backend
+
+```
+[HTTP] GET /api/v1/matches 200 12ms rid=abc-123 actor=user-uuid
+[ExceptionFilter] POST /api/v1/matches/x/confirm 409 3ms rid=abc-124 actor=user-uuid code=REVISION_CONFLICT
+```
+
+### Mobile: archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/lib/api.ts` | Genera X-Request-Id (UUID via expo-crypto) por request. Loguea con rid. ApiError ahora expone `.requestId` y `.code`. Usa `body.detail` como mensaje principal |
+| `src/types/api.ts` | ApiErrorBody actualizado a Problem Details shape (+type, +title, +code, +detail, +errors, +requestId) |
+| `src/features/matches/useMatchAction.ts` | formatActionError usa `err.code` en vez de `err.body.message`. Retry en 409 detecta por `err.code === 'REVISION_CONFLICT'` |
+| `src/screens/HomeScreen.tsx` | Error state muestra requestId para debug |
+| `src/screens/MatchDetailScreen.tsx` | Error state muestra requestId para debug |
+| `src/screens/LoginScreen.tsx` | Usa `err.body.detail ?? err.body.message` (compat con nuevo envelope) |
+| `src/screens/CreateMatchScreen.tsx` | Idem LoginScreen |
+
+### Debug con X-Request-Id
+
+1. Reproducir error en mobile (ej: tap Confirm en match modificado)
+2. Copiar requestId de la pantalla de error o del log de consola `[api] ERROR 409 code=REVISION_CONFLICT rid=xxx`
+3. Buscar en logs del backend: `grep xxx` o buscar `rid=xxx`
+4. Correlacionar mobile ↔ backend con el mismo ID
+
+### Verificacion
+
+```bash
+pnpm test         # 36 tests pass
+cd apps/api && npx tsc --noEmit    # 0 errors
+cd apps/mobile && npx tsc --noEmit # 0 errors
+```
+
+---
+
+## 21. RNF Step 1: Seguridad minima + Anti-abuso (Rate Limiting + Helmet)
+
+**Fecha**: 2026-02-13
+
+### Objetivo
+
+Rate limiting (throttling) con Redis como storage, hardening HTTP con Helmet, CORS por ambiente, body size limit. Integrado con el error envelope del Step 0 (code estable `RATE_LIMITED`, requestId).
+
+### Dependencias instaladas
+
+```
+@nestjs/throttler  — Rate limiting module para NestJS (v6)
+ioredis            — Redis client (storage para throttler)
+helmet             — Security HTTP headers
+```
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/infra/redis/redis.module.ts` | RedisModule global: crea conexion ioredis, lee `REDIS_URL`, maneja errores sin crash. Si Redis no esta disponible, provee `null` |
+| `src/infra/redis/redis-throttle-storage.ts` | Storage adapter para ThrottlerModule: usa Redis si disponible, fallback automatico a Map en memoria. Cleanup periodico de entries expirados |
+| `src/common/throttle/throttle.module.ts` | AppThrottleModule: configura ThrottlerModule con 3 perfiles nombrados (login/mutations/reads) + guard global |
+| `src/common/guards/app-throttle.guard.ts` | AppThrottleGuard: key por actorId (autenticado) o IP. Para login: IP+email normalizado. Skip health endpoint |
+| `src/common/filters/api-exception.filter.spec.ts` | Tests unitarios del filter: verifica 429→RATE_LIMITED, 409→REVISION_CONFLICT, requestId presente, 500→INTERNAL |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/app.module.ts` | +RedisModule, +AppThrottleModule en imports |
+| `src/main.ts` | +`helmet()`, +CORS por env (`ALLOWED_ORIGINS` en prod, `true` en dev), +`Retry-After` en exposedHeaders, +body size limit `1mb`, +`NestExpressApplication` type |
+| `src/common/filters/api-exception.filter.ts` | 429 ahora mapea a code `RATE_LIMITED` (antes `TOO_MANY_REQUESTS`) |
+| `src/auth/api/auth.controller.ts` | +`@Throttle({ login: {} })` en login, +`@Throttle({ mutations: {} })` en register |
+| `src/matches/api/matches.controller.ts` | +`@Throttle({ mutations: {} })` en todos los endpoints de mutacion (create, update, lock, unlock, confirm, decline, withdraw, invite) |
+| `.env.example` | +REDIS_URL, +ALLOWED_ORIGINS, +THROTTLE_* env vars documentadas |
+
+### Perfiles de rate limiting
+
+| Perfil | TTL | Limit | Aplicado a | Configurable via |
+|---|---|---|---|---|
+| `login` | 10 min (600000ms) | 5 req | POST /auth/login | THROTTLE_LOGIN_TTL, THROTTLE_LOGIN_LIMIT |
+| `mutations` | 1 min (60000ms) | 30 req | Todos los POST/PATCH de mutacion | THROTTLE_MUTATIONS_TTL, THROTTLE_MUTATIONS_LIMIT |
+| `reads` | 1 min (60000ms) | 120 req | Global default (GET endpoints) | THROTTLE_READS_TTL, THROTTLE_READS_LIMIT |
+
+### Keying strategy
+
+| Contexto | Key |
+|---|---|
+| Autenticado | `userId` |
+| No autenticado (general) | IP |
+| Login endpoint | `IP:email` (normalizado lowercase+trim) |
+| Health endpoint | Skip (sin rate limit) |
+
+### Redis integration
+
+- `RedisModule` es `@Global()` — disponible en todo el app via `@Inject(REDIS_CLIENT)`.
+- Conexion lazy con reconnect. Si Redis no arranca, el provider retorna `null`.
+- `RedisThrottleStorage.increment()` intenta Redis primero; si falla, cae a in-memory.
+- Log de warning en fallback: `"Redis throttle error, falling back to memory: ..."`.
+- Cleanup de entries en memoria cada 60s.
+
+### Hardening HTTP
+
+**Helmet**: headers de seguridad por defecto (CSP, X-Frame-Options, etc). Configurado antes de CORS para no interferir.
+
+**CORS por ambiente**:
+- `NODE_ENV !== 'production'`: `origin: true` (acepta cualquier origin, dev/expo).
+- `NODE_ENV === 'production'`: `origin: ALLOWED_ORIGINS` (comma-separated).
+- Headers: Content-Type, Authorization, Idempotency-Key, If-Match, X-Request-Id.
+- Exposed: X-Request-Id, Retry-After.
+
+**Body size limit**: `1mb` JSON via `app.useBodyParser('json', { limit: '1mb' })`.
+
+### Respuesta 429
+
+```json
+{
+  "type": "about:blank",
+  "title": "TOO_MANY_REQUESTS",
+  "status": 429,
+  "code": "RATE_LIMITED",
+  "detail": "Too many requests",
+  "requestId": "a1b2c3d4-..."
+}
+```
+
+### Variables de entorno nuevas
+
+| Variable | Default | Descripcion |
+|---|---|---|
+| `REDIS_URL` | `redis://localhost:6379` | URL de conexion Redis |
+| `ALLOWED_ORIGINS` | (vacio) | Origins CORS permitidos en prod (comma-separated) |
+| `THROTTLE_LOGIN_LIMIT` | 5 | Max requests para login |
+| `THROTTLE_LOGIN_TTL` | 600000 | Ventana de tiempo login (ms) |
+| `THROTTLE_MUTATIONS_LIMIT` | 30 | Max requests para mutaciones |
+| `THROTTLE_MUTATIONS_TTL` | 60000 | Ventana de tiempo mutaciones (ms) |
+| `THROTTLE_READS_LIMIT` | 120 | Max requests para lecturas |
+| `THROTTLE_READS_TTL` | 60000 | Ventana de tiempo lecturas (ms) |
+
+### Tests agregados (4 nuevos, 40 total)
+
+| Test | Que valida |
+|---|---|
+| "should return RATE_LIMITED code for 429" | ThrottlerException → code RATE_LIMITED + requestId |
+| "should return REVISION_CONFLICT code for known 409" | Domain error codes preservados |
+| "should include requestId in every error response" | requestId siempre presente en envelope |
+| "should return INTERNAL for unhandled exceptions" | Errores no-HTTP → 500 INTERNAL |
+
+### Ejemplo curl: disparar 429 en login
+
+```bash
+# Disparar rate limit en login (6 requests rapidos, limit=5)
+for i in $(seq 1 6); do
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -X POST http://localhost:3000/api/v1/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"test@test.com","password":"wrong"}'
+done
+# Las primeras 5 devuelven 401, la 6ta devuelve 429
+
+# Ver respuesta completa del 429:
+curl -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-Id: test-rate-limit' \
+  -d '{"email":"test@test.com","password":"wrong"}'
+```
+
+### Como correr
+
+```bash
+# 1. Levantar infra (Redis + Postgres)
+cd infra && docker compose up -d
+
+# 2. API
+pnpm dev:api
+
+# 3. Verificar
+pnpm test          # 40 tests pass
+cd apps/api && npx tsc --noEmit   # 0 errors
+```
+
+### Estructura de archivos nuevos
+
+```
+src/
+├── infra/
+│   └── redis/
+│       ├── redis.module.ts            # RedisModule (@Global, REDIS_CLIENT provider)
+│       └── redis-throttle-storage.ts  # ThrottlerStorage con Redis + fallback memory
+├── common/
+│   ├── guards/
+│   │   └── app-throttle.guard.ts      # Custom guard: key por actor/IP, skip health
+│   ├── throttle/
+│   │   └── throttle.module.ts         # AppThrottleModule (3 perfiles)
+│   └── filters/
+│       └── api-exception.filter.spec.ts  # Tests del error envelope
 ```

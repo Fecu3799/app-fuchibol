@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { DevAuthMiddleware } from './infra/auth/dev-auth.middleware';
 import { PrismaModule } from './infra/prisma/prisma.module';
+import { AppThrottleModule } from './common/throttle/throttle.module';
 import { MatchesModule } from './matches/matches.module';
 import { AuthModule } from './auth/auth.module';
 
@@ -10,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    AppThrottleModule,
     AuthModule,
     MatchesModule,
   ],
