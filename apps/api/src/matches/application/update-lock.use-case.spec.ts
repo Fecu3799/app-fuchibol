@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { UpdateMatchUseCase } from './update-match.use-case';
 import { LockMatchUseCase } from './lock-match.use-case';
 import { UnlockMatchUseCase } from './unlock-match.use-case';
@@ -55,6 +56,7 @@ function buildTxPrisma(matchOverrides: Record<string, unknown> = {}) {
       idempotencyRecord: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
+        delete: jest.fn(),
       },
     },
   } as unknown as PrismaService;
@@ -281,7 +283,10 @@ describe('UnlockMatchUseCase', () => {
 describe('Confirm blocked by lock', () => {
   it('confirm on locked match -> 409 MATCH_LOCKED', async () => {
     const { prisma } = buildTxPrisma({ isLocked: true });
-    const idempotency = new IdempotencyService(prisma);
+    const config = {
+      get: jest.fn().mockReturnValue(undefined),
+    } as unknown as ConfigService;
+    const idempotency = new IdempotencyService(prisma, config);
     const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
 
     await expect(

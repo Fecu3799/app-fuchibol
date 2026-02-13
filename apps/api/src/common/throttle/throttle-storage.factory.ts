@@ -40,11 +40,15 @@ export function createThrottleStorage(
       });
 
       redis.connect().catch((err: Error) => {
-        logger.warn(`Redis connect failed, throttler using in-memory: ${err.message}`);
+        logger.warn(
+          `Redis connect failed, throttler using in-memory: ${err.message}`,
+        );
         redis = null;
       });
     } catch (err) {
-      logger.warn(`Redis init failed, throttler using in-memory: ${(err as Error).message}`);
+      logger.warn(
+        `Redis init failed, throttler using in-memory: ${(err as Error).message}`,
+      );
       redis = null;
     }
   } else {
@@ -60,7 +64,10 @@ export function createThrottleStorage(
   }, 60_000);
   cleanup.unref();
 
-  async function redisIncrement(key: string, ttlMs: number): Promise<StorageRecord> {
+  async function redisIncrement(
+    key: string,
+    ttlMs: number,
+  ): Promise<StorageRecord> {
     const ttlSec = Math.ceil(ttlMs / 1000);
     const rKey = `throttle:${key}`;
 
@@ -91,7 +98,12 @@ export function createThrottleStorage(
 
     const record = { totalHits: 1, expiresAt: now + ttlMs };
     memStore.set(key, record);
-    return { totalHits: 1, timeToExpire: ttlMs, isBlocked: false, timeToBlockExpire: 0 };
+    return {
+      totalHits: 1,
+      timeToExpire: ttlMs,
+      isBlocked: false,
+      timeToBlockExpire: 0,
+    };
   }
 
   return {
@@ -106,7 +118,9 @@ export function createThrottleStorage(
         try {
           return await redisIncrement(key, ttl);
         } catch (err) {
-          logger.warn(`Redis throttle error, falling back to memory: ${(err as Error).message}`);
+          logger.warn(
+            `Redis throttle error, falling back to memory: ${(err as Error).message}`,
+          );
         }
       }
       return memIncrement(key, ttl);

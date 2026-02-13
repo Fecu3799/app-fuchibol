@@ -10,7 +10,11 @@
       "Bash(pnpm --filter api remove:*)",
       "Bash(node -e:*)",
       "Bash(npx tsc:*)",
-      "Bash(pnpm --filter api test:e2e:*)"
+      "Bash(pnpm --filter api test:e2e:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(pnpm --filter api test:*)",
+      "Bash(pnpm --filter api build:*)"
     ]
   }
 }

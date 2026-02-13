@@ -1,8 +1,12 @@
 import { ConflictException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
 import { WithdrawParticipationUseCase } from './withdraw-participation.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import {
+  IdempotencyService,
+  computeRequestHash,
+} from '../../common/idempotency/idempotency.service';
 
 const mockMatch = {
   id: 'match-1',
@@ -47,6 +51,7 @@ function buildTxPrisma() {
       idempotencyRecord: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
+        delete: jest.fn(),
       },
     },
   } as unknown as PrismaService;
@@ -55,7 +60,10 @@ function buildTxPrisma() {
 }
 
 function buildIdempotency(prisma: PrismaService) {
-  return new IdempotencyService(prisma);
+  const config = {
+    get: jest.fn().mockReturnValue(undefined),
+  } as unknown as ConfigService;
+  return new IdempotencyService(prisma, config);
 }
 
 describe('ConfirmParticipationUseCase', () => {
@@ -118,9 +126,14 @@ describe('ConfirmParticipationUseCase', () => {
   it('idempotent: same key returns cached response', async () => {
     const { prisma, tx } = buildTxPrisma();
     const cachedResponse = { id: 'match-1', confirmedCount: 1 };
-    prisma.client.idempotencyRecord.findUnique = jest
-      .fn()
-      .mockResolvedValue({ responseJson: cachedResponse });
+    prisma.client.idempotencyRecord.findUnique = jest.fn().mockResolvedValue({
+      responseJson: cachedResponse,
+      requestHash: computeRequestHash({
+        matchId: 'match-1',
+        expectedRevision: 1,
+      }),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
 

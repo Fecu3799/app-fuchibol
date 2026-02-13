@@ -27,6 +27,10 @@ export class WithdrawParticipationUseCase {
       actorId: input.actorId,
       route: 'POST /matches/:id/withdraw',
       matchId: input.matchId,
+      requestBody: {
+        matchId: input.matchId,
+        expectedRevision: input.expectedRevision,
+      },
       execute: () => this.run(input),
     });
   }

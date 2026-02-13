@@ -54,4 +54,4 @@ async function bootstrap() {
   const host = process.env.HOST ?? '0.0.0.0';
   await app.listen(port, host);
 }
-bootstrap();
+void bootstrap();

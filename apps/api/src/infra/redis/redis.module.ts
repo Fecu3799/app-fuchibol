@@ -30,7 +30,9 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 
           // Fire-and-forget connect; if it fails the client stays disconnected
           client.connect().catch((err: Error) => {
-            logger.warn(`Redis connect failed (throttler will use in-memory fallback): ${err.message}`);
+            logger.warn(
+              `Redis connect failed (throttler will use in-memory fallback): ${err.message}`,
+            );
           });
 
           return client;

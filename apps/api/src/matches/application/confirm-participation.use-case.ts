@@ -27,6 +27,10 @@ export class ConfirmParticipationUseCase {
       actorId: input.actorId,
       route: 'POST /matches/:id/confirm',
       matchId: input.matchId,
+      requestBody: {
+        matchId: input.matchId,
+        expectedRevision: input.expectedRevision,
+      },
       execute: () => this.run(input),
     });
   }

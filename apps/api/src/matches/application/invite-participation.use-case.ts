@@ -29,6 +29,11 @@ export class InviteParticipationUseCase {
       actorId: input.actorId,
       route: 'POST /matches/:id/invite',
       matchId: input.matchId,
+      requestBody: {
+        matchId: input.matchId,
+        expectedRevision: input.expectedRevision,
+        targetUserId: input.targetUserId,
+      },
       execute: () => this.run(input),
     });
   }

@@ -1,4 +1,9 @@
-import { HttpException, HttpStatus, Logger } from '@nestjs/common';
+import {
+  type ArgumentsHost,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { ApiExceptionFilter } from './api-exception.filter';
 
 // Silence logger output during tests
@@ -15,17 +20,17 @@ function createMockHost(reqOverrides: Record<string, unknown> = {}) {
     __startTime: Date.now(),
     ...reqOverrides,
   };
-  const host = {
+  const host: ArgumentsHost = {
     switchToHttp: () => ({
       getRequest: () => req,
       getResponse: () => ({ status }),
     }),
-  };
-  return { host: host as any, status, json, req };
+  } as unknown as ArgumentsHost;
+  return { host, status, json, req };
 }
 
 afterAll(() => {
-  Logger.overrideLogger(undefined as any);
+  Logger.overrideLogger(['log', 'warn', 'error']);
 });
 
 describe('ApiExceptionFilter', () => {
@@ -33,7 +38,10 @@ describe('ApiExceptionFilter', () => {
 
   it('should return RATE_LIMITED code for 429', () => {
     const { host, status, json } = createMockHost();
-    const exception = new HttpException('Too many requests', HttpStatus.TOO_MANY_REQUESTS);
+    const exception = new HttpException(
+      'Too many requests',
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
 
     filter.catch(exception, host);
 

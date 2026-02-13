@@ -27,6 +27,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 19. [Mobile Slice 1.2: Acciones de participacion (confirm/decline/withdraw)](#19-mobile-slice-12-acciones-de-participacion-confirmdeclinewithdraw)
 20. [Etapa 0 RNF: Observabilidad y contrato de errores](#20-etapa-0-rnf-observabilidad-y-contrato-de-errores)
 21. [RNF Step 1: Seguridad minima + Anti-abuso (Rate Limiting + Helmet)](#21-rnf-step-1-seguridad-minima--anti-abuso-rate-limiting--helmet)
+22. [Idempotency v2: TTL, Replay, Payload Reuse Detection, Cleanup](#22-idempotency-v2-ttl-replay-payload-reuse-detection-cleanup)
 
 ---
 
@@ -2133,3 +2134,74 @@ src/
 │   └── filters/
 │       └── api-exception.filter.spec.ts  # Tests del error envelope
 ```
+
+---
+
+## 22. Idempotency v2: TTL, Replay, Payload Reuse Detection, Cleanup
+
+### Que se hizo
+
+Se mejoro el sistema de idempotencia para hacerlo production-ready:
+
+1. **Request hash (SHA-256)**: se hashea el body del request y se almacena junto al registro. Si se reutiliza la misma key con un body distinto, se responde `409 IDEMPOTENCY_KEY_REUSE`.
+2. **TTL + expiresAt**: cada registro tiene un `expiresAt` (default 48h). Los registros expirados se tratan como nuevos (se eliminan y re-ejecutan).
+3. **Cleanup job**: `IdempotencyCleanupService` borra registros expirados cada hora (configurable via env).
+4. **Unique constraint simplificado**: `(key, actorId, route)` — se removio `matchId` del constraint (queda como campo opcional de debug).
+5. **Columna `status` eliminada**: siempre era "completed", no aportaba valor.
+
+### Migracion
+
+```sql
+DELETE FROM "IdempotencyRecord";
+-- Drop old constraint/index, add new columns, new constraint/index
+ALTER TABLE "IdempotencyRecord" DROP COLUMN IF EXISTS "status";
+ALTER TABLE "IdempotencyRecord" ALTER COLUMN "matchId" DROP NOT NULL;
+ALTER TABLE "IdempotencyRecord" ADD COLUMN "requestHash" TEXT NOT NULL;
+ALTER TABLE "IdempotencyRecord" ADD COLUMN "statusCode" INTEGER NOT NULL DEFAULT 200;
+ALTER TABLE "IdempotencyRecord" ADD COLUMN "expiresAt" TIMESTAMP(3) NOT NULL;
+CREATE UNIQUE INDEX "IdempotencyRecord_key_actorId_route_key" ON "IdempotencyRecord"("key", "actorId", "route");
+CREATE INDEX "IdempotencyRecord_expiresAt_idx" ON "IdempotencyRecord"("expiresAt");
+```
+
+### Archivos creados/modificados
+
+| Accion | Archivo |
+|--------|---------|
+| MODIFY | `apps/api/prisma/schema.prisma` — nuevo schema IdempotencyRecord |
+| CREATE | `apps/api/prisma/migrations/20260213..._idempotency_v2/migration.sql` |
+| MODIFY | `apps/api/src/common/idempotency/idempotency.service.ts` — hash, TTL, reuse detection |
+| CREATE | `apps/api/src/common/idempotency/idempotency-cleanup.service.ts` — cleanup job |
+| MODIFY | `apps/api/src/common/idempotency/idempotency.module.ts` — registra cleanup service |
+| MODIFY | `apps/api/src/common/filters/api-exception.filter.ts` — agrega `IDEMPOTENCY_KEY_REUSE` |
+| MODIFY | `apps/api/src/matches/application/confirm-participation.use-case.ts` — agrega `requestBody` |
+| MODIFY | `apps/api/src/matches/application/decline-participation.use-case.ts` — agrega `requestBody` |
+| MODIFY | `apps/api/src/matches/application/withdraw-participation.use-case.ts` — agrega `requestBody` |
+| MODIFY | `apps/api/src/matches/application/invite-participation.use-case.ts` — agrega `requestBody` |
+| CREATE | `apps/api/src/common/idempotency/idempotency.service.spec.ts` — 6 tests |
+| CREATE | `apps/api/src/common/idempotency/idempotency-cleanup.service.spec.ts` — 1 test |
+| MODIFY | `apps/api/src/matches/application/participation.use-case.spec.ts` — adapt mocks |
+| MODIFY | `apps/api/src/matches/application/update-lock.use-case.spec.ts` — adapt mocks |
+| MODIFY | `apps/api/.env.example` — env vars documentadas |
+
+### Env vars (opcionales)
+
+| Variable | Default | Descripcion |
+|----------|---------|-------------|
+| `IDEMPOTENCY_TTL_MS` | `172800000` (48h) | Tiempo de vida de registros de idempotencia |
+| `IDEMPOTENCY_CLEANUP_INTERVAL_MS` | `3600000` (1h) | Intervalo de limpieza de registros expirados |
+
+### Logica de `IdempotencyService.run()`
+
+1. Calcula `requestHash` = SHA-256 del body serializado.
+2. Busca registro existente por `(key, actorId, route)`.
+3. Si existe y no expiro:
+   - Hash distinto → `409 IDEMPOTENCY_KEY_REUSE`
+   - Hash igual → replay (devuelve `responseJson`)
+4. Si existe y expiro → elimina y re-ejecuta.
+5. Si no existe → ejecuta callback, guarda resultado con `expiresAt`.
+
+### Tests
+
+- `idempotency.service.spec.ts`: first execution, replay, key reuse (409), expired re-execution, hash determinism.
+- `idempotency-cleanup.service.spec.ts`: cleanup deletes expired records.
+- Tests existentes adaptados para nuevo constructor de `IdempotencyService` (requiere `ConfigService`).

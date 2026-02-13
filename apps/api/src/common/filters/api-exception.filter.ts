@@ -32,6 +32,7 @@ const STATUS_CODE_MAP: Record<number, string> = {
 const DOMAIN_CONFLICT_CODES = new Set([
   'REVISION_CONFLICT',
   'MATCH_LOCKED',
+  'IDEMPOTENCY_KEY_REUSE',
 ]);
 
 function resolveCode(status: number, response: unknown): string {
@@ -41,7 +42,8 @@ function resolveCode(status: number, response: unknown): string {
       // Exact known code
       if (DOMAIN_CONFLICT_CODES.has(msg)) return msg;
       // CAPACITY_BELOW_CONFIRMED: has prefix pattern
-      if (msg.startsWith('CAPACITY_BELOW_CONFIRMED')) return 'CAPACITY_BELOW_CONFIRMED';
+      if (msg.startsWith('CAPACITY_BELOW_CONFIRMED'))
+        return 'CAPACITY_BELOW_CONFIRMED';
     }
   }
   return STATUS_CODE_MAP[status] ?? 'INTERNAL';
@@ -58,7 +60,7 @@ function resolveDetail(response: unknown): string | undefined {
   return undefined;
 }
 
-function resolveErrors(status: number, response: unknown): unknown | undefined {
+function resolveErrors(status: number, response: unknown): unknown {
   if (status !== 422) return undefined;
   if (typeof response === 'object' && response !== null) {
     const msg = (response as Record<string, unknown>).message;
@@ -106,7 +108,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (detail) body.detail = detail;
     if (errors) body.errors = errors;
 
-    const ms = Date.now() - ((req as unknown as Record<string, number>).__startTime ?? Date.now());
+    const ms =
+      Date.now() -
+      ((req as unknown as Record<string, number>).__startTime ?? Date.now());
     this.logger.log(
       `${req.method} ${req.path} ${status} ${ms}ms` +
         ` rid=${requestId}` +

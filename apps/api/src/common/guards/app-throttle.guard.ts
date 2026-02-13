@@ -8,30 +8,31 @@ import type { Request } from 'express';
  */
 @Injectable()
 export class AppThrottleGuard extends ThrottlerGuard {
-  protected async getTracker(req: Request): Promise<string> {
+  protected getTracker(req: Request): Promise<string> {
     // Authenticated user → key by userId
     if (req.user?.userId) {
-      return req.user.userId;
+      return Promise.resolve(req.user.userId);
     }
 
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
 
     // Login endpoint → combine IP + normalized email for brute-force protection
     if (req.path.endsWith('/auth/login') && req.method === 'POST') {
-      const email = typeof req.body?.email === 'string'
-        ? req.body.email.toLowerCase().trim()
-        : '';
-      if (email) return `${ip}:${email}`;
+      const email =
+        typeof req.body?.email === 'string'
+          ? req.body.email.toLowerCase().trim()
+          : '';
+      if (email) return Promise.resolve(`${ip}:${email}`);
     }
 
-    return ip;
+    return Promise.resolve(ip);
   }
 
   /**
    * Skip throttling for health endpoint.
    */
-  protected async shouldSkip(context: ExecutionContext): Promise<boolean> {
+  protected shouldSkip(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request>();
-    return req.path.endsWith('/health');
+    return Promise.resolve(req.path.endsWith('/health'));
   }
 }

@@ -82,11 +82,13 @@ model IdempotencyRecord {
   key          String
   actorId      String   @db.Uuid
   route        String
-  matchId      String   @db.Uuid
-  status       String   @default("completed")
+  matchId      String?  @db.Uuid
+  requestHash  String
+  statusCode   Int      @default(200)
   responseJson Json
+  expiresAt    DateTime
   createdAt    DateTime @default(now())
 
-  @@unique([key, actorId, route, matchId])
-  @@index([createdAt])
+  @@unique([key, actorId, route])
+  @@index([expiresAt])
 }

@@ -27,6 +27,10 @@ export class DeclineParticipationUseCase {
       actorId: input.actorId,
       route: 'POST /matches/:id/decline',
       matchId: input.matchId,
+      requestBody: {
+        matchId: input.matchId,
+        expectedRevision: input.expectedRevision,
+      },
       execute: () => this.run(input),
     });
   }
