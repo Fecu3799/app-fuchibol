@@ -20,6 +20,10 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 12. [Health Endpoint + CORS + LAN Bind](#12-health-endpoint--cors--lan-bind)
 13. [Mobile: Smoke Test de Conectividad](#13-mobile-smoke-test-de-conectividad)
 14. [Monorepo pnpm Workspaces (cleanup)](#14-monorepo-pnpm-workspaces-cleanup)
+15. [Mobile Slice 1: Login → Home → Detail → Actions](#15-mobile-slice-1-login--home--detail--actions)
+16. [Mobile Slice 1.1: Home real + Detail (read-only)](#16-mobile-slice-11-home-real--detail-read-only)
+17. [Mobile: Create Match](#17-mobile-create-match)
+18. [Mobile: Mejorar CreateMatch UX (pickers + formato)](#18-mobile-mejorar-creatematch-ux-pickers--formato)
 
 ---
 
@@ -952,18 +956,18 @@ curl http://localhost:3000/api/v1/matches/<MATCH_ID> \
 - 15 unit tests pasando
 - Paquete shared con enums tipados
 - Esqueleto mobile Expo
+- Mobile Slice 1: Login → Home → Match Detail → Actions (confirm/decline/withdraw)
+- React Query + React Navigation + expo-secure-store + expo-crypto
 
 ### Que falta (roadmap segun CLAUDE.md)
 
-- Lock/unlock de matches (slice 3)
-- Reconfirmacion por cambios mayores (fecha/lugar/capacidad)
 - Abandono (withdraw <1h antes del inicio)
 - Baja de cupo (ultimos confirmados a waitlist)
 - WebSocket (realtime best-effort)
 - Chat con dedupe (`clientMsgId`)
 - Grupos
 - Notificaciones
-- Implementacion mobile con React Query
+- Mobile: crear match, admin actions (update/lock/unlock/invite)
 
 ---
 
@@ -1508,4 +1512,285 @@ pnpm test
 # Nota: para mobile, configurar EXPO_PUBLIC_API_BASE_URL en apps/mobile/.env
 # con la IP LAN de la Mac (no localhost).
 # Obtener IP: ipconfig getifaddr en0
+```
+
+---
+
+## 15. Mobile Slice 1: Login → Home → Detail → Actions
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Primer flujo end-to-end en el mobile: login con JWT, ver lista de matches, ver detalle de un match, y ejecutar acciones de participacion (confirm/decline/withdraw). Backend drives UI: los botones se renderizan segun `actionsAllowed` del snapshot.
+
+### Dependencias instaladas
+
+```
+@tanstack/react-query    — Server state management
+@react-navigation/native — Navigation container
+@react-navigation/native-stack — Stack navigator
+react-native-screens     — Native screen primitives
+react-native-safe-area-context — Safe area insets
+expo-secure-store        — Token persistence (encrypted)
+expo-crypto              — UUID generation for idempotency keys
+```
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/types/api.ts` | Interfaces para todas las respuestas API (LoginResponse, MeResponse, MatchHomeItem, PageInfo, ListMatchesResponse, MatchSnapshot, ParticipantView, GetMatchResponse, ApiErrorBody) |
+| `src/lib/token-store.ts` | Wrapper sobre expo-secure-store: `getStoredToken()`, `setStoredToken()`, `removeStoredToken()` |
+| `src/contexts/AuthContext.tsx` | AuthProvider + useAuth hook. Bootstrap: lee token de SecureStore → GET /me → si 401 limpia token. Login/logout manejan persistencia |
+| `src/features/auth/authClient.ts` | `postLogin(email, pw)` y `getMe(token)` |
+| `src/features/matches/matchesClient.ts` | `getMatches(token, params?)`, `getMatch(token, matchId)`, `postMatchAction(token, matchId, action, revision, key)` |
+| `src/features/matches/useMatches.ts` | React Query hook para lista paginada |
+| `src/features/matches/useMatch.ts` | React Query hook para detalle (select: data.match) |
+| `src/features/matches/useMatchAction.ts` | Mutation hook con retry automatico en 409 REVISION_CONFLICT |
+| `src/screens/LoginScreen.tsx` | Email + password inputs, error/loading states |
+| `src/screens/HomeScreen.tsx` | FlatList con matches, pull-to-refresh, logout, tap → detail |
+| `src/screens/MatchDetailScreen.tsx` | Snapshot completo + action buttons (confirm/decline/withdraw) |
+| `src/navigation/AppNavigator.tsx` | Type-safe stacks: AuthStack (Login) y AppStack (Home, MatchDetail). Spinner durante bootstrap |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/lib/api.ts` | +`ApiError` class (status + body), +`buildUrl(path, params?)` helper. `fetchJson` ahora lanza `ApiError` en lugar de `Error` generico |
+| `App.tsx` | Reemplaza smoke test con QueryClientProvider → AuthProvider → RootNavigator. QueryClient: staleTime 30s, retry 1 |
+
+### Estructura resultante
+
+```
+apps/mobile/src/
+├── config/
+│   └── env.ts
+├── contexts/
+│   └── AuthContext.tsx
+├── features/
+│   ├── auth/
+│   │   └── authClient.ts
+│   ├── health/
+│   │   └── healthClient.ts
+│   └── matches/
+│       ├── matchesClient.ts
+│       ├── useMatch.ts
+│       ├── useMatchAction.ts
+│       └── useMatches.ts
+├── lib/
+│   ├── api.ts
+│   └── token-store.ts
+├── navigation/
+│   └── AppNavigator.tsx
+├── screens/
+│   ├── HomeScreen.tsx
+│   ├── LoginScreen.tsx
+│   └── MatchDetailScreen.tsx
+└── types/
+    └── api.ts
+```
+
+### Decisiones de diseno
+
+**Token passing explicito**: cada funcion de API client recibe `token: string` como parametro. No hay interceptores globales. Los hooks leen el token de `useAuth()`.
+
+**Backend drives UI**: los botones de accion en el detalle se renderizan segun `match.actionsAllowed`. No se duplica logica de negocio en mobile.
+
+**Mutation retry pattern**: `useMatchAction` captura 409 REVISION_CONFLICT, refetch del match para obtener revision fresca, reintenta con nuevo UUID de idempotencia. Max 1 retry.
+
+**Cache update on success**: mutation `onSuccess` hace `setQueryData(['match', matchId], data)` (instant update) + `invalidateQueries(['matches'])` (background refresh del home).
+
+**Auth bootstrap**: al iniciar la app, lee SecureStore → intenta GET /me → si 401 limpia token → muestra login. La navegacion cambia automaticamente via `isAuthenticated`.
+
+### Flujo de usuario
+
+1. App inicia → loading spinner mientras bootstrap de auth
+2. Sin token → pantalla Login
+3. Login con email/password → guarda token en SecureStore → GET /me → navega a Home
+4. Home muestra lista de matches con confirmedCount/capacity, myStatus, pull-to-refresh
+5. Tap en match → MatchDetail con info completa + botones de accion
+6. Tap confirm/decline/withdraw → mutation con idempotencia + optimistic locking
+7. Si 409 REVISION_CONFLICT → retry automatico con revision fresca
+8. Exito → cache actualizado inmediatamente, lista se refresca en background
+9. Logout → limpia token + cache, vuelve a Login
+
+### Verificacion
+
+```bash
+# TypeScript check
+cd apps/mobile && npx tsc --noEmit  # OK, 0 errores
+
+# Manual testing
+pnpm dev:api     # Backend
+pnpm dev:mobile  # Expo
+
+# Login con seed user: dev@fuchibol.local / password123
+# Ver matches, tap en uno, confirmar participacion
+```
+
+---
+
+## 16. Mobile Slice 1.1: Home real + Detail (read-only)
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Refinar las pantallas Home y MatchDetail para que consuman datos reales del backend, con manejo correcto de estados (loading, error, empty) y logout automatico en 401. Sin acciones (mutations) — eso va en Slice 1.2.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/lib/use-api-query.ts` | Hook `useLogoutOn401(query)`: observa errores de queries y dispara logout si recibe 401 |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/screens/HomeScreen.tsx` | +error state con retry, +locked indicator `[Locked]` en titulo, +401 handling via `useLogoutOn401`, TouchableOpacity → Pressable |
+| `src/screens/MatchDetailScreen.tsx` | Removidas acciones (confirm/decline/withdraw) — quedan para Slice 1.2. +error state (404: "Match not found", otros: retry). +participant/waitlist counts. +revision para debug. +401 handling via `useLogoutOn401` |
+| `apps/api/tsconfig.json` | +`../../node_modules/@types` en typeRoots (fix para pnpm hoisted) |
+| `apps/api/prisma/seed.ts` | Usa `createPrismaWithPgAdapter` factory (Prisma 7 sin url en schema) |
+
+### Manejo global de 401
+
+Patron elegido: hook `useLogoutOn401(query)` que se llama en cada pantalla autenticada.
+
+```typescript
+// src/lib/use-api-query.ts
+export function useLogoutOn401(query: UseQueryResult<unknown, Error>) {
+  const { logout } = useAuth();
+  useEffect(() => {
+    if (query.error instanceof ApiError && query.error.status === 401) {
+      logout();
+    }
+  }, [query.error, logout]);
+}
+```
+
+Cada pantalla lo usa asi:
+```typescript
+const query = useMatches();
+useLogoutOn401(query);
+```
+
+Si el token expira o es invalido, la query falla con 401, el hook detecta y llama `logout()` que limpia SecureStore + queryClient + cambia `isAuthenticated` a false → navegacion cambia a LoginScreen automaticamente.
+
+### Checklist de verificacion manual
+
+- [ ] Login con dev@fuchibol.local / password123
+- [ ] Home carga lista de matches (o "No matches yet" si vacia)
+- [ ] Pull-to-refresh funciona
+- [ ] Tap en match → Detail carga snapshot real
+- [ ] Detail muestra: title, date, time, location, players, myStatus, participants count, waitlist count, revision
+- [ ] Si backend caido → error state con "Retry"
+- [ ] Si token invalido → redirige a Login
+
+### Como correr
+
+```bash
+pnpm dev:api     # Backend (asegurar Docker con Postgres+Redis corriendo)
+pnpm dev:mobile  # Expo
+
+# EXPO_PUBLIC_API_BASE_URL en apps/mobile/.env debe apuntar a IP LAN
+```
+
+---
+
+## 17. Mobile: Create Match
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Pantalla para crear matches desde el mobile, desbloqueando pruebas E2E sin depender de curl/seed.
+
+### Endpoint consumido
+
+`POST /api/v1/matches` — no requiere Idempotency-Key.
+
+Body: `{ title: string, startsAt: string (ISO 8601), capacity: number (>= 1) }`
+
+Response: `{ id, revision, status }`
+
+Validaciones backend: title no vacio, capacity > 0, startsAt al menos 1 minuto en el futuro.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/screens/CreateMatchScreen.tsx` | Form con title, startsAt (ISO text input), capacity. POST al backend. On success: invalida query de matches y navega a MatchDetail del match creado. Manejo de 401 (logout) y 422 (mostrar mensaje) |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/types/api.ts` | +`CreateMatchResponse` interface |
+| `src/features/matches/matchesClient.ts` | +`createMatch(token, payload)` |
+| `src/navigation/AppNavigator.tsx` | +route `CreateMatch` en AppStack |
+| `src/screens/HomeScreen.tsx` | +boton "+ Create Match" que navega a CreateMatch |
+
+### Flujo
+
+1. Home → tap "+ Create Match"
+2. CreateMatchScreen: llenar title, startsAt (pre-filled con mañana a la hora en punto), capacity (default 10)
+3. Tap "Create Match" → POST /api/v1/matches
+4. Success → `invalidateQueries(['matches'])` + `navigation.replace('MatchDetail', { matchId })`
+5. Error 422 → muestra mensaje de validacion
+6. Error 401 → logout
+
+### Verificacion
+
+```bash
+pnpm dev:api && pnpm dev:mobile
+# Login → tap "+ Create Match" → llenar form → submit
+# → navega a MatchDetail del match creado
+# → back → Home muestra el match en la lista
+```
+
+---
+
+## 18. Mobile: Mejorar CreateMatch UX (pickers + formato)
+
+**Fecha**: 2026-02-12
+
+### Objetivo
+
+Reemplazar inputs crudos de startsAt y capacity por controles nativos: date/time pickers y selector de formato (F5/F7/F8/F11) que calcula capacity automaticamente.
+
+### Dependencia instalada
+
+`@react-native-community/datetimepicker` — pickers nativos iOS/Android.
+
+### Archivo modificado
+
+| Archivo | Cambio |
+|---|---|
+| `src/screens/CreateMatchScreen.tsx` | Reescrito: date picker nativo, time picker nativo (24h, spinner), segmented control para formato (F5→10, F7→14, F8→16, F11→22), capacity read-only. Default: mañana 20:00, F5. Payload sigue siendo `{ title, startsAt: date.toISOString(), capacity }` — no se envia "format" al backend |
+
+### Mapeo formato → capacity
+
+| Formato | Capacity |
+|---|---|
+| F5 | 10 |
+| F7 | 14 |
+| F8 | 16 |
+| F11 | 22 |
+
+### Comportamiento pickers
+
+- **iOS**: display `spinner`, se muestra inline. Boton "Done" para cerrar.
+- **Android**: display `spinner`, se cierra automaticamente al seleccionar.
+- **startsAt**: se construye combinando fecha + hora local y se envia como UTC via `date.toISOString()`.
+
+### Verificacion
+
+```bash
+pnpm dev:api && pnpm dev:mobile
+# Login → "+ Create Match"
+# Cambiar formato F5 → F7 → capacity cambia a 14
+# Elegir fecha con picker, hora con picker
+# Submit → navega a MatchDetail
 ```
