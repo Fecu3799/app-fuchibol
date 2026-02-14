@@ -51,3 +51,21 @@ export function postMatchAction(
     body: JSON.stringify({ expectedRevision }),
   });
 }
+
+export function inviteToMatch(
+  token: string,
+  matchId: string,
+  identifier: string,
+  expectedRevision: number,
+  idempotencyKey: string,
+): Promise<GetMatchResponse> {
+  return fetchJson<GetMatchResponse>(buildUrl(`/api/v1/matches/${matchId}/invite`), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify({ identifier, expectedRevision }),
+  });
+}

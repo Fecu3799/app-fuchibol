@@ -28,6 +28,12 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 20. [Etapa 0 RNF: Observabilidad y contrato de errores](#20-etapa-0-rnf-observabilidad-y-contrato-de-errores)
 21. [RNF Step 1: Seguridad minima + Anti-abuso (Rate Limiting + Helmet)](#21-rnf-step-1-seguridad-minima--anti-abuso-rate-limiting--helmet)
 22. [Idempotency v2: TTL, Replay, Payload Reuse Detection, Cleanup](#22-idempotency-v2-ttl-replay-payload-reuse-detection-cleanup)
+23. [RNF Step 2.2: Tests de concurrencia + Fix SELECT FOR UPDATE](#23-rnf-step-22-tests-de-concurrencia--fix-select-for-update)
+24. [RNF Step 2.3: DB Hygiene — Constraints e Indices](#24-rnf-step-23-db-hygiene--constraints-e-indices)
+25. [Cambios Mayores: Reconfirmacion robusta](#25-cambios-mayores-reconfirmacion-robusta)
+26. [Usernames + Lookup endpoint](#26-usernames--lookup-endpoint)
+27. [Invite por username/email + UI en Match Detail](#27-invite-por-usernameemail--ui-en-match-detail)
+28. [MatchDetail: estado real + participantes + acciones](#28-matchdetail-estado-real--participantes--acciones)
 
 ---
 
@@ -2205,3 +2211,566 @@ CREATE INDEX "IdempotencyRecord_expiresAt_idx" ON "IdempotencyRecord"("expiresAt
 - `idempotency.service.spec.ts`: first execution, replay, key reuse (409), expired re-execution, hash determinism.
 - `idempotency-cleanup.service.spec.ts`: cleanup deletes expired records.
 - Tests existentes adaptados para nuevo constructor de `IdempotencyService` (requiere `ConfigService`).
+
+---
+
+## 23. RNF Step 2.2: Tests de concurrencia + Fix SELECT FOR UPDATE
+
+**Fecha**: 2026-02-13
+
+### Objetivo
+
+Tests de integracion e2e que validan invariantes de concurrencia reales (via Promise.all de requests HTTP) y fix de un bug critico descubierto durante el proceso: `SELECT ... FOR UPDATE` faltante en transacciones.
+
+### Bug descubierto y fix
+
+**Problema**: los use cases usaban `tx.match.findUnique()` dentro de `$transaction` con isolation level READ COMMITTED (default de Postgres/Prisma). Dos transacciones concurrentes podian leer la misma `revision`, pasar ambas el check `revision !== expectedRevision`, y ambas commitear. Resultado: optimistic locking no funcionaba bajo carga concurrente real.
+
+**Fix**: `SELECT 1 FROM "Match" WHERE "id" = $1 FOR UPDATE` al inicio de cada transaccion. Esto adquiere un exclusive row lock en Postgres: la segunda transaccion espera hasta que la primera commitea/rollbackea, luego lee el valor actualizado y falla el revision check correctamente.
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/matches/application/lock-match-row.ts` | Helper `lockMatchRow(tx, matchId)`: ejecuta `SELECT ... FOR UPDATE` via `$queryRawUnsafe` |
+| `test/e2e/participation-concurrency.e2e-spec.ts` | Suite de 6 tests de concurrencia (ver abajo) |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/matches/application/confirm-participation.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/withdraw-participation.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/decline-participation.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/invite-participation.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/update-match.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/lock-match.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/unlock-match.use-case.ts` | +`lockMatchRow(tx, matchId)` antes de `findUnique` |
+| `src/matches/application/participation.use-case.spec.ts` | +`$queryRawUnsafe` mock en `buildTxPrisma()` |
+| `src/matches/application/update-lock.use-case.spec.ts` | +`$queryRawUnsafe` mock en `buildTxPrisma()` |
+
+### Tests de concurrencia (6 escenarios)
+
+| Test | Invariante validado |
+|---|---|
+| "last slot race" | capacity=2, 2 confirms concurrentes con misma revision: exactamente 1 gana (201), otro 409. confirmedCount nunca supera capacity |
+| "double confirm same user" | 2 confirms del mismo usuario concurrentes: solo 1 row en DB (unique [matchId, userId]), estado consistente |
+| "FIFO promotion under race" | withdraw + re-confirm concurrentes: promovido siempre es el primer waitlisted (FIFO), nunca mas confirmados que capacity |
+| "withdraw/confirm interleaving" | u1 withdraw + u2 confirm concurrentes: total confirmados <= capacity |
+| "concurrent PATCH (optimistic locking)" | 2 PATCHes con misma revision: exactamente 1 gana (200), otro 409 REVISION_CONFLICT. Revision incrementa una sola vez |
+| "stress — 5 users race" | 5 confirms con misma revision: exactamente 1 gana, 4 obtienen 409 |
+
+### Patron de test
+
+1. Setup: crear match + invitar usuarios secuencialmente (cada invite incrementa revision)
+2. Race: `Promise.all([request1, request2])` con la misma `expectedRevision`
+3. Assert responses: exactamente N exitos y M conflictos
+4. Assert DB (source of truth): queries directas con Prisma para contar confirmados, verificar estados, validar unique constraints
+
+### Como correr
+
+```bash
+# Solo concurrencia
+cd apps/api && npx jest --config ./test/jest-e2e.json --testPathPatterns="participation-concurrency"
+
+# Todos los e2e (incluye concurrencia)
+pnpm --filter api test:e2e
+
+# Todos los tests (unit + e2e)
+pnpm --filter api test && pnpm --filter api test:e2e
+```
+
+### Resultado: 24 e2e tests + 47 unit tests = 71 total, todos verdes
+
+---
+
+## 24. RNF Step 2.3: DB Hygiene — Constraints e Indices
+
+**Fecha**: 2026-02-13
+
+### Objetivo
+
+Auditar schema.prisma, validar que constraints e indices cubren los access patterns reales del core, y agregar los faltantes.
+
+### Auditoria: lo que ya existia
+
+| Modelo | Constraint/Index | Cubre |
+|---|---|---|
+| MatchParticipant | `@@unique([matchId, userId])` | No doble participacion |
+| MatchParticipant | `@@index([matchId, status])` | Snapshot counts (confirmed/waitlist), groupBy en home |
+| MatchParticipant | `@@index([matchId, waitlistPosition])` | FIFO promotion query |
+| MatchParticipant | `@@index([userId])` | Busqueda por actor |
+| Match | `@@index([createdById])` | Home "mine" filter |
+| Match | `@@index([startsAt])` | Home order by startsAt |
+| IdempotencyRecord | `@@unique([key, actorId, route])` | No key collision por scope |
+| IdempotencyRecord | `@@index([expiresAt])` | Cleanup job |
+
+### Gaps identificados
+
+1. **Home "mine" query** — `{ participants: { some: { userId: actorId } } }` requiere lookup desde `userId` hacia `matchId`. El indice standalone `(userId)` no incluye `matchId`, forzando heap lookups. Solucion: indice compuesto `(userId, matchId)` que actua como covering index.
+
+2. **Snapshot participant ordering** — `findMany({ where: { matchId }, orderBy: { createdAt: 'asc' } })` no tiene indice para el sort. Solucion: indice compuesto `(matchId, createdAt)`.
+
+3. El indice standalone `(userId)` queda redundante al agregar `(userId, matchId)` — Prisma lo dropea automaticamente.
+
+### Migracion: `20260213230508_db_hygiene_indexes`
+
+```sql
+-- Drop redundant standalone index (superseded by composite)
+DROP INDEX "MatchParticipant_userId_idx";
+
+-- Snapshot: participant ordering by createdAt within a match
+CREATE INDEX "MatchParticipant_matchId_createdAt_idx"
+  ON "MatchParticipant"("matchId", "createdAt");
+
+-- Home "mine": covering index for userId→matchId lookups
+CREATE INDEX "MatchParticipant_userId_matchId_idx"
+  ON "MatchParticipant"("userId", "matchId");
+```
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `prisma/schema.prisma` | +2 indices, -1 indice redundante, +map names explicitos en todos los indices/constraints |
+| `prisma/migrations/20260213230508_db_hygiene_indexes/migration.sql` | Migration SQL |
+
+### Inventario final de indices/constraints
+
+| Modelo | Index/Constraint | Columnas | Access pattern |
+|---|---|---|---|
+| MatchParticipant | UNIQUE | `(matchId, userId)` | No doble participacion |
+| MatchParticipant | INDEX | `(matchId, status)` | Confirmed/waitlist counts |
+| MatchParticipant | INDEX | `(matchId, waitlistPosition)` | FIFO promotion |
+| MatchParticipant | INDEX | `(matchId, createdAt)` | **Nuevo** — snapshot participant ordering |
+| MatchParticipant | INDEX | `(userId, matchId)` | **Nuevo** — home "mine" covering index |
+| Match | INDEX | `(createdById)` | Home filter by creator |
+| Match | INDEX | `(startsAt)` | Home sort |
+| IdempotencyRecord | UNIQUE | `(key, actorId, route)` | No key collision |
+| IdempotencyRecord | INDEX | `(expiresAt)` | Cleanup TTL |
+
+### Verificacion
+
+- 47 unit tests verdes
+- 24 e2e tests verdes (incluye concurrency suite)
+- Migration aplicada en dev y test DBs
+
+---
+
+## 25. Cambios Mayores: Reconfirmacion robusta
+
+**Fecha**: 2026-02-13
+
+### Objetivo
+
+Corregir y completar la regla de dominio "cambios mayores fuerzan reconfirmacion" en `UpdateMatchUseCase`. Existia la logica base pero con 3 bugs.
+
+### Definicion: campos mayores
+
+Segun CLAUDE.md seccion 3, un "cambio mayor" ocurre cuando se modifica el **valor real** (no solo se envia) de:
+
+| Campo | Efecto |
+|---|---|
+| `startsAt` | CONFIRMED → INVITED |
+| `location` | CONFIRMED → INVITED |
+| `capacity` | CONFIRMED → INVITED |
+
+Campos menores (ej `title`): NO disparan reconfirmacion.
+
+### Bugs corregidos
+
+**1) Deteccion por presencia, no por cambio real**
+
+Antes: `isMajorChange = MAJOR_CHANGE_FIELDS.some(f => input[f] !== undefined)`. Enviar el mismo `startsAt` que ya tenia el match disparaba reconfirmacion innecesaria.
+
+Ahora: se compara el valor enviado contra el valor actual. Solo si difiere se incluye en `data` y se considera cambio.
+
+**2) PATCH en match locked no estaba bloqueado**
+
+Antes: `UpdateMatchUseCase` no chequeaba `isLocked`. Se podia modificar un match locked.
+
+Ahora: `if (match.isLocked) throw ConflictException('MATCH_LOCKED')`.
+
+**3) Capacity reduction bloqueaba innecesariamente**
+
+Antes: `CAPACITY_BELOW_CONFIRMED` se evaluaba ANTES de la reconfirmacion. Ejemplo: 5 confirmados + `capacity: 3` daba 409. Pero al ser cambio mayor, los confirmados se resetean a INVITED, haciendo valida la reduccion.
+
+Ahora: como `capacity` es campo mayor, toda reduccion de capacity dispara reconfirmacion (confirmed → invited). El check `CAPACITY_BELOW_CONFIRMED` y `promoteWaitlist` eran dead code y fueron removidos.
+
+### Regla completa
+
+Cuando se aplica un cambio mayor:
+1. Match se actualiza con nuevos valores + `revision++`
+2. Todos los `CONFIRMED` pasan a `INVITED` (con `confirmedAt = null`)
+3. `WAITLISTED` se mantienen intactos (mismo orden FIFO)
+4. `DECLINED`, `WITHDRAWN`, `INVITED` no se tocan
+5. `confirmedCount` se recalcula desde DB (sera 0 post-reconfirmacion)
+6. `actionsAllowed` de los ex-confirmados incluye `confirm` (pueden reconfirmar)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/matches/application/update-match.use-case.ts` | Fix deteccion por valor real, +isLocked check, removed dead code (CAPACITY_BELOW_CONFIRMED, promoteWaitlist) |
+| `src/matches/application/update-lock.use-case.spec.ts` | +4 unit tests, updated 1 test |
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `test/e2e/major-change-reconfirmation.e2e-spec.ts` | 7 e2e tests con DB real |
+
+### Tests agregados (11 nuevos)
+
+**Unit tests (4 nuevos en update-lock.use-case.spec.ts)**:
+
+| Test | Que valida |
+|---|---|
+| "same startsAt value does NOT trigger reconfirmation" | Enviar mismo valor no es cambio |
+| "same location value does NOT trigger reconfirmation" | Enviar mismo valor no es cambio |
+| "rejects update on locked match -> 409 MATCH_LOCKED" | Lock bloquea PATCH |
+| "capacity reduction with other major change skips CAPACITY_BELOW_CONFIRMED" | Major change permite reducir |
+
+**E2E tests (7 nuevos en major-change-reconfirmation.e2e-spec.ts)**:
+
+| Test | Que valida |
+|---|---|
+| "startsAt change resets confirmed→invited, waitlist untouched" | Caso principal: 2 confirmed + 2 waitlist, startsAt change |
+| "location change triggers reconfirmation" | Location es campo mayor |
+| "capacity reduction triggers reconfirmation" | Capacity es campo mayor |
+| "title-only change does NOT trigger reconfirmation" | Cambio menor no afecta |
+| "same startsAt value does NOT trigger reconfirmation" | Valor identico = no-op |
+| "PATCH on locked match → 409 MATCH_LOCKED" | Lock bloquea PATCH |
+| "confirmedCount <= capacity invariant after reconfirmation" | Invariante: 5 confirmed → 0 post-reconfirmacion |
+
+### Verificacion
+
+- 51 unit tests verdes
+- 31 e2e tests verdes
+- Total: 82 tests
+
+---
+
+## 26. Usernames + Lookup endpoint
+
+**Fecha**: 2026-02-14
+
+### Objetivo
+
+Agregar campo `username` al modelo User con auto-generacion desde email, validacion de formato, manejo de colisiones, y endpoint de lookup para buscar usuarios por username o email (necesario para el flujo de invitacion).
+
+### Migracion: `20260214000000_add_user_username`
+
+```sql
+-- Add nullable first, backfill, then make NOT NULL
+ALTER TABLE "User" ADD COLUMN "username" TEXT;
+
+-- Backfill from email local part (lowercase, alphanum + underscore only)
+UPDATE "User" SET "username" = LOWER(REGEXP_REPLACE(SPLIT_PART("email", '@', 1), '[^a-z0-9_]', '', 'g'))
+WHERE "username" IS NULL;
+
+-- Fallback for short/empty usernames
+UPDATE "User" SET "username" = 'user_' || LEFT(REPLACE(CAST("id" AS TEXT), '-', ''), 12)
+WHERE "username" IS NULL OR LENGTH("username") < 3;
+
+-- Deduplicate collisions with ROW_NUMBER
+WITH dupes AS (
+  SELECT "id", "username", ROW_NUMBER() OVER (PARTITION BY "username" ORDER BY "createdAt") AS rn
+  FROM "User"
+)
+UPDATE "User" u SET "username" = u."username" || dupes.rn
+FROM dupes WHERE u."id" = dupes."id" AND dupes.rn > 1;
+
+ALTER TABLE "User" ALTER COLUMN "username" SET NOT NULL;
+CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
+```
+
+### Reglas de username
+
+| Regla | Detalle |
+|---|---|
+| Formato | `^[a-z0-9][a-z0-9_]{2,19}$` — 3-20 chars, lowercase alphanum + underscore, empieza con letra o digito |
+| Auto-generacion | Del local part del email: `facu@test.com` → `facu` |
+| Normalizacion | `toLowerCase().trim()` |
+| Padding cortos | Si < 3 chars, se rellena con `0` hasta 3 (`ab` → `ab0`) |
+| Colision | Se prueba `base`, `base2`, `base3`... hasta encontrar uno libre |
+| Explicito | Register acepta `username` opcional; si se provee, se valida formato |
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/users/users.module.ts` | Modulo NestJS con controller + query provider |
+| `src/users/api/users.controller.ts` | `GET /users/lookup?query=` — JWT-protected |
+| `src/users/application/lookup-user.query.ts` | Busca por email (si contiene `@`) o username (case-insensitive). Devuelve `{ id, username, email }`. 404 si no existe |
+| `test/e2e/users-lookup.e2e-spec.ts` | 8 tests e2e |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `prisma/schema.prisma` | +`username String @unique` en User |
+| `src/auth/application/register.use-case.ts` | +auto-generacion de username, +`normalizeUsername()`, +`generateUsername()`, +`RegisterInput.username?` |
+| `src/auth/api/dto/register.dto.ts` | +`username` opcional con validacion (MinLength 3, MaxLength 20, Matches regex) |
+| `src/auth/application/get-me.use-case.ts` | +`username: true` en select |
+| `src/app.module.ts` | +`UsersModule` en imports |
+| `src/auth/application/register.use-case.spec.ts` | Reescrito: 5 tests (auto-gen, explicit, conflict, collision, short padding) |
+
+### Endpoint nuevo
+
+| Metodo | Ruta | Auth | Query | Respuesta | Errores |
+|---|---|---|---|---|---|
+| `GET` | `/api/v1/users/lookup` | JWT | `query` (username o email) | `{ id, username, email }` | 401 sin JWT, 404 no encontrado |
+
+### Logica de lookup
+
+- Si `query` contiene `@` → busca por `email` (case-insensitive)
+- Sino → busca por `username` (case-insensitive)
+- NO expone campos sensibles (`passwordHash`, etc.)
+
+### Register actualizado
+
+El response de `POST /api/v1/auth/register` ahora incluye `username` en el objeto `user`:
+
+```json
+{
+  "accessToken": "jwt...",
+  "user": {
+    "id": "uuid",
+    "email": "facu@test.com",
+    "username": "facu",
+    "role": "USER"
+  }
+}
+```
+
+### GET /me actualizado
+
+Ahora incluye `username` en la respuesta.
+
+### Tests agregados (13 nuevos)
+
+**Unit tests (5 en register.use-case.spec.ts)**:
+
+| Test | Que valida |
+|---|---|
+| "registers with auto-generated username and returns token" | Username derivado del email |
+| "registers with explicit username" | Username explicito normalizado |
+| "throws 409 when email already exists" | Conflicto de email |
+| "auto-generates username with suffix on collision" | `facu` taken → `facu2` |
+| "pads short email local to 3 chars" | `ab@x.com` → `ab0` |
+
+**E2E tests (8 en users-lookup.e2e-spec.ts)**:
+
+| Test | Que valida |
+|---|---|
+| "register auto-generates username from email" | `facu@test.com` → username `facu` |
+| "register accepts explicit username" | `custom_user` accepted |
+| "register auto-generates unique username on collision" | `player` taken → `player2` |
+| "lookup by username returns user DTO" | GET lookup con username devuelve user |
+| "lookup by email returns user DTO" | GET lookup con email devuelve user |
+| "lookup returns 404 for non-existent user" | 404 para user inexistente |
+| "lookup requires JWT" | 401 sin token |
+| "/me returns username" | GET /me incluye username |
+
+### Verificacion
+
+- 54 unit tests verdes
+- 39 e2e tests verdes
+- Total: 93 tests
+
+---
+
+## 27. Invite por username/email + UI en Match Detail
+
+**Fecha**: 2026-02-14
+
+### Objetivo
+
+Extender el endpoint de invite para aceptar un identificador humano (username o email) ademas del userId directo. Agregar UI minima en MatchDetail para que el admin pueda invitar jugadores escribiendo "@username" o "email".
+
+### Resolucion de identificador (backend)
+
+El endpoint `POST /api/v1/matches/:id/invite` ahora acepta `identifier` como alternativa a `userId`:
+
+| Input | Resolucion |
+|---|---|
+| `@facu` | username = `facu` (strip @) |
+| `facu@test.com` | email exacto (contiene @) |
+| `facu` | username exacto |
+| `userId: "uuid"` | directo (backward compat) |
+
+La resolucion ocurre antes de la transaccion. Si el usuario no existe: `404 USER_NOT_FOUND`.
+
+### Nuevos error codes
+
+| Code | HTTP | Descripcion |
+|---|---|---|
+| `USER_NOT_FOUND` | 404 | El identifier no matchea ningun usuario |
+| `SELF_INVITE` | 409 | El admin intenta invitarse a si mismo |
+| `ALREADY_PARTICIPANT` | 409 | El usuario ya es participante (CONFIRMED, WAITLISTED, DECLINED, etc.) |
+
+Nota: re-invitar a alguien con status `INVITED` es idempotente (devuelve snapshot sin error).
+
+### Archivos creados
+
+| Archivo | Rol |
+|---|---|
+| `src/matches/application/invite-participation.use-case.spec.ts` | 8 unit tests para invite |
+| `test/e2e/invite-by-identifier.e2e-spec.ts` | 8 e2e tests |
+| `apps/mobile/src/features/matches/useInviteToMatch.ts` | Hook React Query para invite con idempotency + retry |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/matches/api/dto/participation-command.dto.ts` | `InviteCommandDto`: `userId` ahora opcional, +`identifier` opcional, validacion union |
+| `src/matches/application/invite-participation.use-case.ts` | +`resolveTargetUser()` para resolver identifier→userId, +SELF_INVITE check, +ALREADY_PARTICIPANT (no-INVITED), idempotente para re-invite de INVITED |
+| `src/matches/api/matches.controller.ts` | Pasa `identifier` al use case |
+| `src/common/filters/api-exception.filter.ts` | +`SELF_INVITE`, `ALREADY_PARTICIPANT` en domain conflict codes, +`USER_NOT_FOUND` en domain 404 codes |
+| `prisma/seed.ts` | +`username` en seed users (requerido por schema) |
+| `test/e2e/major-change-reconfirmation.e2e-spec.ts` | Fix TS: type annotation para array de users |
+| `apps/mobile/src/features/matches/matchesClient.ts` | +`inviteToMatch()` client function |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | +bloque "Invite Player" con TextInput + Button + success/error messages |
+
+### DTO actualizado
+
+```typescript
+// Body: enviar UNO de los dos
+{ userId: "uuid", expectedRevision: 1 }        // backward compat
+{ identifier: "@facu", expectedRevision: 1 }    // nuevo: por username
+{ identifier: "facu@test.com", expectedRevision: 1 } // nuevo: por email
+```
+
+### Mobile: UI de invite
+
+El bloque "Invite Player" se muestra solo si `actionsAllowed` incluye `invite` (solo para match admin, match no locked). Contiene:
+
+- **TextInput**: placeholder "@username or email", autoCapitalize=none
+- **Button**: "Invite", deshabilitado si input vacio o mutation en progreso
+- **Messages**: success verde "Invite sent!" / error rojo con mensaje amigable
+
+Errores mapeados:
+| Code | Mensaje |
+|---|---|
+| USER_NOT_FOUND | "User not found" |
+| SELF_INVITE | "You cannot invite yourself" |
+| ALREADY_PARTICIPANT | "User is already a participant" |
+| MATCH_LOCKED | "Match is locked" |
+| REVISION_CONFLICT | Auto-retry, luego "Match was updated, please try again" |
+
+### Tests agregados (16 nuevos)
+
+**Unit tests (8 en invite-participation.use-case.spec.ts)**:
+
+| Test | Que valida |
+|---|---|
+| "invite by userId works (backward compat)" | userId directo sigue funcionando |
+| "invite by username resolves user and invites" | Resolucion por username |
+| "invite by @username strips @ prefix" | Strip de @ |
+| "invite by email resolves user" | Resolucion por email |
+| "throws 404 USER_NOT_FOUND for unknown identifier" | 404 para user inexistente |
+| "throws 409 SELF_INVITE when inviting self" | No auto-invitarse |
+| "throws 409 ALREADY_PARTICIPANT when user is CONFIRMED" | Conflicto si ya participa |
+| "idempotent: re-inviting already INVITED user returns snapshot" | Re-invite INVITED es no-op |
+
+**E2E tests (8 en invite-by-identifier.e2e-spec.ts)**:
+
+| Test | Que valida |
+|---|---|
+| "invite by username creates INVITED participant" | Flow completo por username |
+| "invite by @username works" | Prefijo @ funciona |
+| "invite by email works" | Flow por email |
+| "404 USER_NOT_FOUND for unknown identifier" | Error code correcto |
+| "409 SELF_INVITE when admin invites self" | Self-invite bloqueado |
+| "409 ALREADY_PARTICIPANT when user is already confirmed" | Invite + confirm + re-invite = 409 |
+| "backward compat: invite by userId still works" | userId no se rompio |
+| "snapshot reflects invited user in participants" | Revision incrementa, participant visible |
+
+### Verificacion
+
+- 62 unit tests verdes
+- 47 e2e tests verdes
+- Total: 109 tests
+- `npx tsc --noEmit` pasa en api y mobile
+
+---
+
+## 28. MatchDetail: estado real + participantes + acciones
+
+**Fecha**: 2026-02-14
+
+### Objetivo
+
+Reescribir MatchDetailScreen para mostrar estado real del partido con participantes agrupados por seccion, contadores visuales, badges de estado, formato de fecha/hora 24hs, y acciones correctas segun myStatus.
+
+### Cambios en MatchDetailScreen
+
+El componente fue reescrito completamente manteniendo la misma estructura de hooks y sin agregar librerias.
+
+### Layout resultante (top to bottom)
+
+1. **Title** — nombre del match
+2. **Badge row** — pills para: status del match (`scheduled`), `Locked` (si aplica), mi status (`Confirmed`/`Pending`/`Waitlist`/`Declined`) con color por estado
+3. **Info block** — Date (DD/MM/YYYY), Time (HH:mm 24hs), Location (si existe), Players (confirmedCount / capacity)
+4. **Counts row** — 3 contadores visuales grandes: Confirmed (verde), Invited (azul), Waitlist (naranja)
+5. **Participant sections** — listas colapsables por estado:
+   - Confirmed (verde) — jugadores confirmados
+   - Invited (azul) — pendientes de confirmacion
+   - Waitlist (naranja) — en lista de espera con posicion (#1, #2...)
+   - Declined (gris) — solo si hay alguno
+6. **Action buttons** — segun `actionsAllowed` del backend:
+   - INVITED → Confirm (verde) + Decline (gris)
+   - CONFIRMED → Withdraw (rojo)
+   - WAITLISTED → Withdraw (rojo)
+   - Locked → no muestra confirm/decline (solo withdraw si aplica)
+7. **Invite block** — solo para admin, match no locked. TextInput + boton.
+8. **Revision footer** — `rev N` discreto para debug
+
+### Helpers de formato
+
+```typescript
+formatDate(iso: string): string  // "14/02/2026" (DD/MM/YYYY)
+formatTime(iso: string): string  // "20:00" (HH:mm 24hs)
+```
+
+### Derivacion de grupos desde snapshot
+
+```typescript
+function deriveParticipantGroups(match: MatchSnapshot) {
+  // participants (del snapshot) = todos los no-WITHDRAWN
+  // Se filtran por status: CONFIRMED, INVITED, DECLINED
+  // waitlist viene separada del snapshot (ya ordenada por posicion)
+}
+```
+
+No se agrega campo nuevo al backend — se deriva client-side del array `participants` existente.
+
+### Mapeo de estados a UI
+
+| myStatus | Badge | Color | Acciones visibles |
+|---|---|---|---|
+| INVITED | Pending | Azul | Confirm + Decline |
+| CONFIRMED | Confirmed | Verde | Withdraw |
+| WAITLISTED | Waitlist | Naranja | Withdraw |
+| DECLINED | Declined | Gris | — |
+| null | — | — | Confirm (si no locked) |
+
+### Subcomponentes extraidos
+
+| Componente | Rol |
+|---|---|
+| `InfoRow` | Fila label-value del info block |
+| `CountBadge` | Contador numerico grande con label |
+| `ParticipantSection` | Seccion con dot de color, titulo, lista de userId truncados |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | Reescrito: badges, counts, participant sections, formato 24hs |
+
+### Verificacion
+
+- `npx tsc --noEmit` pasa en mobile (0 errors)
+- No se toco backend (tests siguen en 109 total)

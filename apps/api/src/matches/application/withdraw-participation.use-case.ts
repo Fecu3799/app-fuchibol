@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
+import { lockMatchRow } from './lock-match-row';
 
 export interface WithdrawInput {
   matchId: string;
@@ -37,6 +38,8 @@ export class WithdrawParticipationUseCase {
 
   private async run(input: WithdrawInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
+      await lockMatchRow(tx, input.matchId);
+
       const match = await tx.match.findUnique({
         where: { id: input.matchId },
       });

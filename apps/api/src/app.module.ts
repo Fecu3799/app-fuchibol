@@ -6,6 +6,7 @@ import { PrismaModule } from './infra/prisma/prisma.module';
 import { AppThrottleModule } from './common/throttle/throttle.module';
 import { MatchesModule } from './matches/matches.module';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AuthModule } from './auth/auth.module';
     PrismaModule,
     AppThrottleModule,
     AuthModule,
+    UsersModule,
     MatchesModule,
   ],
   controllers: [AppController],

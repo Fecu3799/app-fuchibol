@@ -203,6 +203,7 @@ export class MatchesController {
       matchId,
       actorId: actor.userId,
       targetUserId: body.userId,
+      identifier: body.identifier,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });

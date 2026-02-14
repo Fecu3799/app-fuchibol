@@ -26,6 +26,7 @@ const mockMatch = {
 
 function buildTxPrisma() {
   const tx = {
+    $queryRawUnsafe: jest.fn().mockResolvedValue([]),
     match: {
       findUnique: jest.fn().mockResolvedValue(mockMatch),
       findUniqueOrThrow: jest.fn().mockResolvedValue(mockMatch),

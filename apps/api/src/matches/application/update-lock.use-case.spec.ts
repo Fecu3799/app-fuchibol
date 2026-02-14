@@ -28,6 +28,7 @@ const baseMockMatch = {
 function buildTxPrisma(matchOverrides: Record<string, unknown> = {}) {
   const match = { ...baseMockMatch, ...matchOverrides };
   const tx = {
+    $queryRawUnsafe: jest.fn().mockResolvedValue([]),
     match: {
       findUnique: jest.fn().mockResolvedValue(match),
       findUniqueOrThrow: jest.fn().mockResolvedValue(match),
@@ -130,19 +131,23 @@ describe('UpdateMatchUseCase', () => {
     });
   });
 
-  it('capacity below confirmedCount -> 409', async () => {
+  it('capacity reduction is major change -> reconfirmation (not 409)', async () => {
     const { prisma, tx } = buildTxPrisma();
     tx.matchParticipant.count = jest.fn().mockResolvedValue(5);
     const useCase = new UpdateMatchUseCase(prisma);
 
-    await expect(
-      useCase.execute({
-        matchId: 'match-1',
-        actorId: 'admin-1',
-        expectedRevision: 1,
-        capacity: 3,
-      }),
-    ).rejects.toThrow('CAPACITY_BELOW_CONFIRMED');
+    // capacity 10→3 triggers reconfirmation (confirmed→invited), not a block
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'admin-1',
+      expectedRevision: 1,
+      capacity: 3,
+    });
+
+    expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
+      where: { matchId: 'match-1', status: 'CONFIRMED' },
+      data: { status: 'INVITED', confirmedAt: null },
+    });
   });
 
   it('title-only change does NOT reset participants', async () => {
@@ -157,6 +162,72 @@ describe('UpdateMatchUseCase', () => {
     });
 
     expect(tx.matchParticipant.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('same startsAt value does NOT trigger reconfirmation', async () => {
+    const { prisma, tx } = buildTxPrisma();
+    const useCase = new UpdateMatchUseCase(prisma);
+
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'admin-1',
+      expectedRevision: 1,
+      startsAt: now.toISOString(),
+    });
+
+    // No actual change → no update at all (early return)
+    expect(tx.matchParticipant.updateMany).not.toHaveBeenCalled();
+    expect(tx.match.update).not.toHaveBeenCalled();
+  });
+
+  it('same location value does NOT trigger reconfirmation', async () => {
+    const { prisma, tx } = buildTxPrisma();
+    const useCase = new UpdateMatchUseCase(prisma);
+
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'admin-1',
+      expectedRevision: 1,
+      location: 'Cancha Norte',
+    });
+
+    expect(tx.matchParticipant.updateMany).not.toHaveBeenCalled();
+    expect(tx.match.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects update on locked match -> 409 MATCH_LOCKED', async () => {
+    const { prisma } = buildTxPrisma({ isLocked: true });
+    const useCase = new UpdateMatchUseCase(prisma);
+
+    await expect(
+      useCase.execute({
+        matchId: 'match-1',
+        actorId: 'admin-1',
+        expectedRevision: 1,
+        title: 'New Title',
+      }),
+    ).rejects.toThrow('MATCH_LOCKED');
+  });
+
+  it('capacity reduction with other major change skips CAPACITY_BELOW_CONFIRMED', async () => {
+    const { prisma, tx } = buildTxPrisma();
+    tx.matchParticipant.count = jest.fn().mockResolvedValue(5);
+    const useCase = new UpdateMatchUseCase(prisma);
+
+    // capacity 10→3 would normally fail, but startsAt change makes it major
+    // (confirmed will be reset to invited)
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'admin-1',
+      expectedRevision: 1,
+      capacity: 3,
+      startsAt: '2026-12-01T20:00:00Z',
+    });
+
+    expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
+      where: { matchId: 'match-1', status: 'CONFIRMED' },
+      data: { status: 'INVITED', confirmedAt: null },
+    });
   });
 
   it('increments revision on real update', async () => {

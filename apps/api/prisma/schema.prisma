@@ -21,6 +21,7 @@ enum Role {
 model User {
   id             String             @id @default(uuid()) @db.Uuid
   email          String             @unique
+  username       String             @unique
   passwordHash   String
   role           Role               @default(USER)
   createdAt      DateTime           @default(now())
@@ -46,8 +47,8 @@ model Match {
   updatedAt    DateTime           @updatedAt
   participants MatchParticipant[]
 
-  @@index([createdById])
-  @@index([startsAt])
+  @@index([createdById], map: "Match_createdById_idx")
+  @@index([startsAt], map: "Match_startsAt_idx")
 }
 
 enum MatchParticipantStatus {
@@ -71,10 +72,11 @@ model MatchParticipant {
   match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id])
 
-  @@unique([matchId, userId])
-  @@index([matchId, status])
-  @@index([matchId, waitlistPosition])
-  @@index([userId])
+  @@unique([matchId, userId], map: "MatchParticipant_matchId_userId_key")
+  @@index([matchId, status], map: "MatchParticipant_matchId_status_idx")
+  @@index([matchId, waitlistPosition], map: "MatchParticipant_matchId_waitlistPosition_idx")
+  @@index([matchId, createdAt], map: "MatchParticipant_matchId_createdAt_idx")
+  @@index([userId, matchId], map: "MatchParticipant_userId_matchId_idx")
 }
 
 model IdempotencyRecord {
@@ -89,6 +91,6 @@ model IdempotencyRecord {
   expiresAt    DateTime
   createdAt    DateTime @default(now())
 
-  @@unique([key, actorId, route])
-  @@index([expiresAt])
+  @@unique([key, actorId, route], map: "IdempotencyRecord_key_actorId_route_key")
+  @@index([expiresAt], map: "IdempotencyRecord_expiresAt_idx")
 }

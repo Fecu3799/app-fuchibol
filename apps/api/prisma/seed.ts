@@ -15,6 +15,7 @@ async function main() {
     update: {},
     create: {
       email: 'dev@fuchibol.local',
+      username: 'dev',
       passwordHash,
       role: 'USER',
     },
@@ -25,6 +26,7 @@ async function main() {
     update: {},
     create: {
       email: 'admin@fuchibol.local',
+      username: 'admin',
       passwordHash,
       role: 'ADMIN',
     },

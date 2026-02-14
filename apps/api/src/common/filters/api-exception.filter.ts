@@ -33,17 +33,23 @@ const DOMAIN_CONFLICT_CODES = new Set([
   'REVISION_CONFLICT',
   'MATCH_LOCKED',
   'IDEMPOTENCY_KEY_REUSE',
+  'SELF_INVITE',
+  'ALREADY_PARTICIPANT',
 ]);
 
+/** Known domain error codes sent as NotFoundException message strings. */
+const DOMAIN_NOT_FOUND_CODES = new Set(['USER_NOT_FOUND']);
+
 function resolveCode(status: number, response: unknown): string {
-  if (status === 409 && typeof response === 'object' && response !== null) {
+  if (typeof response === 'object' && response !== null) {
     const msg = (response as Record<string, unknown>).message;
     if (typeof msg === 'string') {
-      // Exact known code
-      if (DOMAIN_CONFLICT_CODES.has(msg)) return msg;
-      // CAPACITY_BELOW_CONFIRMED: has prefix pattern
-      if (msg.startsWith('CAPACITY_BELOW_CONFIRMED'))
-        return 'CAPACITY_BELOW_CONFIRMED';
+      if (status === 409) {
+        if (DOMAIN_CONFLICT_CODES.has(msg)) return msg;
+        if (msg.startsWith('CAPACITY_BELOW_CONFIRMED'))
+          return 'CAPACITY_BELOW_CONFIRMED';
+      }
+      if (status === 404 && DOMAIN_NOT_FOUND_CODES.has(msg)) return msg;
     }
   }
   return STATUS_CODE_MAP[status] ?? 'INTERNAL';

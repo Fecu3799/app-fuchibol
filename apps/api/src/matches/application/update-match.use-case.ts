@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
+import { lockMatchRow } from './lock-match-row';
 
 export interface UpdateMatchInput {
   matchId: string;
@@ -30,6 +31,8 @@ export class UpdateMatchUseCase {
 
   async execute(input: UpdateMatchInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
+      await lockMatchRow(tx, input.matchId);
+
       const match = await tx.match.findUnique({
         where: { id: input.matchId },
       });
@@ -46,35 +49,36 @@ export class UpdateMatchUseCase {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
-      // Build data to update
-      const data: Record<string, unknown> = {};
-      if (input.title !== undefined) data.title = input.title;
-      if (input.startsAt !== undefined)
-        data.startsAt = new Date(input.startsAt);
-      if (input.location !== undefined) data.location = input.location;
-      if (input.capacity !== undefined) data.capacity = input.capacity;
+      if (match.isLocked) {
+        throw new ConflictException('MATCH_LOCKED');
+      }
 
-      // Nothing to update
+      // Build data to update (only fields that actually changed)
+      const data: Record<string, unknown> = {};
+      if (input.title !== undefined && input.title !== match.title)
+        data.title = input.title;
+      if (input.startsAt !== undefined) {
+        const newStartsAt = new Date(input.startsAt);
+        if (newStartsAt.getTime() !== match.startsAt.getTime())
+          data.startsAt = newStartsAt;
+      }
+      if (input.location !== undefined && input.location !== match.location)
+        data.location = input.location;
+      if (input.capacity !== undefined && input.capacity !== match.capacity)
+        data.capacity = input.capacity;
+
+      // Nothing actually changed
       if (Object.keys(data).length === 0) {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
 
-      // Detect major change
-      const isMajorChange = MAJOR_CHANGE_FIELDS.some(
-        (f) => input[f] !== undefined,
-      );
-
-      // Capacity validation: cannot reduce below current confirmed count
-      if (input.capacity !== undefined) {
-        const confirmedCount = await tx.matchParticipant.count({
-          where: { matchId: input.matchId, status: 'CONFIRMED' },
-        });
-        if (input.capacity < confirmedCount) {
-          throw new ConflictException(
-            'CAPACITY_BELOW_CONFIRMED: cannot reduce capacity below current confirmed count',
-          );
-        }
-      }
+      // Detect major change (value actually differs, not just sent).
+      // Per CLAUDE.md: startsAt, location, capacity are major fields.
+      // Any change to these triggers reconfirmation (CONFIRMED -> INVITED).
+      const isMajorChange =
+        data.startsAt !== undefined ||
+        data.location !== undefined ||
+        data.capacity !== undefined;
 
       // Apply update + increment revision
       data.revision = match.revision + 1;
@@ -96,47 +100,7 @@ export class UpdateMatchUseCase {
         // WAITLISTED, INVITED, DECLINED, WITHDRAWN stay as-is
       }
 
-      // If capacity increased, promote from waitlist
-      if (
-        input.capacity !== undefined &&
-        input.capacity > match.capacity &&
-        !isMajorChange
-      ) {
-        // Only auto-promote when it's NOT a major change (major change already reset confirmed to invited)
-        await this.promoteWaitlist(tx, input.matchId, input.capacity);
-      }
-
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });
-  }
-
-  private async promoteWaitlist(
-    tx: Parameters<Parameters<PrismaService['client']['$transaction']>[0]>[0],
-    matchId: string,
-    capacity: number,
-  ): Promise<void> {
-    const confirmedCount = await tx.matchParticipant.count({
-      where: { matchId, status: 'CONFIRMED' },
-    });
-
-    const slotsAvailable = capacity - confirmedCount;
-    if (slotsAvailable <= 0) return;
-
-    const toPromote = await tx.matchParticipant.findMany({
-      where: { matchId, status: 'WAITLISTED' },
-      orderBy: { waitlistPosition: 'asc' },
-      take: slotsAvailable,
-    });
-
-    for (const p of toPromote) {
-      await tx.matchParticipant.update({
-        where: { id: p.id },
-        data: {
-          status: 'CONFIRMED',
-          waitlistPosition: null,
-          confirmedAt: new Date(),
-        },
-      });
-    }
   }
 }
