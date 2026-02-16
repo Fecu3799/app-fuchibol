@@ -45,6 +45,10 @@ export class UpdateMatchUseCase {
         throw new ForbiddenException('Only match admin can update');
       }
 
+      if (match.status === 'canceled') {
+        throw new ConflictException('MATCH_CANCELLED');
+      }
+
       if (match.revision !== input.expectedRevision) {
         throw new ConflictException('REVISION_CONFLICT');
       }

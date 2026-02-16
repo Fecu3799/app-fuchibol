@@ -34,6 +34,15 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 26. [Usernames + Lookup endpoint](#26-usernames--lookup-endpoint)
 27. [Invite por username/email + UI en Match Detail](#27-invite-por-usernameemail--ui-en-match-detail)
 28. [MatchDetail: estado real + participantes + acciones](#28-matchdetail-estado-real--participantes--acciones)
+29. [Fix: MatchDetail pantalla en blanco tras mutation](#29-fix-matchdetail-pantalla-en-blanco-tras-mutation)
+30. [Fix: HomeScreen spinner infinito al volver de MatchDetail](#30-fix-homescreen-spinner-infinito-al-volver-de-matchdetail)
+31. [UX: Debounce banner "Updating…" (250ms threshold)](#31-ux-debounce-banner-updating-250ms-threshold)
+32. [Fix: Defensive displayData ref para prevenir pantalla en blanco](#32-fix-defensive-displaydata-ref-para-prevenir-pantalla-en-blanco)
+33. [Enrich participant data con username en Match Detail](#33-enrich-participant-data-con-username-en-match-detail)
+34. [Mobile: Lock/Unlock en MatchDetail](#34-mobile-lockunlock-en-matchdetail)
+35. [Fix: HomeScreen stuck loader tras mutation en MatchDetail](#35-fix-homescreen-stuck-loader-tras-mutation-en-matchdetail)
+36. [Cancel Match end-to-end (API + Mobile)](#36-cancel-match-end-to-end-api--mobile)
+37. [Mobile: Bottom Tab Navigation](#37-mobile-bottom-tab-navigation)
 
 ---
 
@@ -2774,3 +2783,493 @@ No se agrega campo nuevo al backend — se deriva client-side del array `partici
 
 - `npx tsc --noEmit` pasa en mobile (0 errors)
 - No se toco backend (tests siguen en 109 total)
+
+---
+
+## 29. Fix: MatchDetail pantalla en blanco tras mutation
+
+### Problema
+
+Al ejecutar confirm/decline/withdraw/invite en MatchDetailScreen, la pantalla quedaba en blanco hasta navegar fuera y volver. Root cause: doble bug en tipos + cache de React Query.
+
+### Root cause
+
+1. **Tipo incorrecto en `matchesClient.ts`**: `postMatchAction` e `inviteToMatch` estaban tipados como `Promise<GetMatchResponse>` (shape: `{ match: MatchSnapshot }`), pero la API retorna `MatchSnapshot` directamente (sin wrapper). Esto es correcto desde el backend: `confirm/decline/withdraw/invite` devuelven `MatchSnapshot`, mientras que `GET /matches/:id` devuelve `{ match: MatchSnapshot }`.
+
+2. **`setQueryData` corrompia el cache**: En `onSuccess` de las mutations, se hacia `setQueryData(['match', matchId], data)` donde `data` era un `MatchSnapshot` sin wrapper. Pero `useMatch` tiene `select: (data) => data.match`, esperando `GetMatchResponse`. Resultado: `select` retornaba `undefined`, el screen evaluaba `if (!match) return null` y renderizaba vacio.
+
+3. **Sin `placeholderData`**: Durante refetch no se mantenia la data anterior visible.
+
+4. **Loading guard demasiado agresivo**: `if (isLoading)` cubria tambien refetches donde habia data en cache.
+
+### Solucion
+
+**A) `matchesClient.ts`** — Corregir tipos de retorno:
+- `postMatchAction`: `Promise<GetMatchResponse>` → `Promise<MatchSnapshot>`
+- `inviteToMatch`: `Promise<GetMatchResponse>` → `Promise<MatchSnapshot>`
+
+**B) `useMatchAction.ts` y `useInviteToMatch.ts`** — Wrappear en `onSuccess`:
+- `setQueryData(['match', matchId], data)` → `setQueryData(['match', matchId], { match: data })`
+- Asi `select: (data) => data.match` funciona correctamente.
+
+**C) `useMatch.ts`** — Agregar `placeholderData: keepPreviousData`:
+- Durante refetch se sigue mostrando la data anterior.
+
+**D) `MatchDetailScreen.tsx`**:
+- Loading full-screen solo en primer load: `isLoading && !match`
+- Error screen solo si no hay data cacheada: `error && !match`
+- Banner "Updating…" cuando `isFetching && !isLoading` (refetch en background)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/features/matches/matchesClient.ts` | Tipos de retorno corregidos a `MatchSnapshot` |
+| `apps/mobile/src/features/matches/useMatch.ts` | Agregado `placeholderData: keepPreviousData` |
+| `apps/mobile/src/features/matches/useMatchAction.ts` | `setQueryData` wrappea en `{ match: data }` |
+| `apps/mobile/src/features/matches/useInviteToMatch.ts` | `setQueryData` wrappea en `{ match: data }` |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | Guards de loading/error ajustados, banner "Updating…" |
+
+### Verificacion
+
+- `npx tsc --noEmit` pasa (0 errors)
+- Al tocar Confirm: data anterior permanece visible, banner "Updating…" aparece brevemente, data se actualiza sin parpadeo
+
+---
+
+## 30. Fix: HomeScreen spinner infinito al volver de MatchDetail
+
+### Problema
+
+Al volver a HomeScreen desde MatchDetail despues de confirm/withdraw, la pantalla quedaba en spinner de carga infinito.
+
+### Root cause
+
+1. **Sin `placeholderData`** en `useMatches`: al invalidar queries desde mutations, si la query estaba inactiva (HomeScreen desmontado por stack), al remontar podia perder data cache y mostrar `isLoading = true`.
+2. **Guard de loading demasiado amplio**: `isLoading` sin verificar si hay data cacheada bloqueaba el render completo durante refetch.
+3. **Sin indicador de refetch**: cuando habia data + refetch en background, no se mostraba feedback al usuario.
+
+### Solucion
+
+**A) `useMatches.ts`** — Agregar `placeholderData: keepPreviousData` para mantener data visible durante refetch y paginacion.
+
+**B) `HomeScreen.tsx`**:
+- Loading full-screen solo en primer load: `isLoading && !data`
+- Error screen solo si no hay cache: `error && !data`
+- Banner "Updating…" cuando `isFetching && !isLoading && data`
+- DEV-only debug: si `isFetching` dura >5s, loguea queries trabadas (queryKey, status, fetchStatus, error) sin tokens.
+
+**C) Verificacion de invalidaciones**: confirmado que mutations solo invalidan `['matches']` (home list) y hacen `setQueryData` para `['match', matchId]` (detail). No hay `removeQueries` ni invalidaciones globales.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/features/matches/useMatches.ts` | Agregado `placeholderData: keepPreviousData` |
+| `apps/mobile/src/screens/HomeScreen.tsx` | Guards ajustados, banner "Updating…", debug logs DEV-only |
+
+### Verificacion
+
+- `npx tsc --noEmit` pasa (0 errors)
+- Home → MatchDetail → Confirm → Back: lista visible, banner breve "Updating…", sin spinner infinito
+
+---
+
+## 31. UX: Debounce banner "Updating…" (250ms threshold)
+
+### Problema
+
+El banner "Updating…" aparecia por 1 frame en refetches rapidos (<100ms), causando flicker visual.
+
+### Solucion
+
+Estado local `showUpdating` con `setTimeout` de 250ms:
+- `isFetching` pasa a `true` → inicia timer de 250ms
+- Si `isFetching` vuelve a `false` antes de 250ms → timer se cancela, banner nunca aparece
+- Si pasan 250ms con `isFetching` activo → `setShowUpdating(true)`, banner visible
+- Al terminar fetch → cleanup timer + `setShowUpdating(false)`
+
+Aplicado en ambas pantallas: HomeScreen y MatchDetailScreen.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/screens/HomeScreen.tsx` | Debounced `showUpdating` state (250ms) |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | Debounced `showUpdating` state (250ms) |
+
+### Verificacion
+
+- `npx tsc --noEmit` pasa (0 errors)
+- Refetch rapido: banner no aparece
+- Refetch lento (>250ms): banner aparece y desaparece al completar
+
+---
+
+## 32. Fix: Defensive displayData ref para prevenir pantalla en blanco
+
+### Problema
+
+HomeScreen volvia a quedar en loader tras confirm/withdraw en MatchDetail. Root cause probable: `createNativeStackNavigator` usa `react-freeze` que congela screens inactivos. Cuando la mutation hace `invalidateQueries(['matches'])`, el refetch puede completarse mientras HomeScreen esta frozen. Al descongelar, React Query puede entregar un frame con `data=undefined` transitorio, y el guard `isLoading && !data` mostraba el ActivityIndicator.
+
+### Solucion
+
+**Patron `lastDataRef`**: guardar la ultima data conocida en un `useRef` y usar `displayData = data ?? lastDataRef.current` para el render. Esto garantiza que si React Query pierde `data` por cualquier razon (freeze, GC, race condition), la UI sigue mostrando la ultima data valida.
+
+**Cambios en ambas pantallas (HomeScreen + MatchDetailScreen)**:
+
+1. `useRef` que guarda la ultima data/match valida.
+2. `displayData` / `displayMatch` se usa en todos los guards y JSX.
+3. Guards simplificados:
+   - Loader: `!displayData && isFetching` (solo si NUNCA hubo data)
+   - Error: `!displayData && error`
+4. Todo el JSX renderiza `displayData`/`displayMatch` en vez de `data`/`match`.
+
+**Debug logging mejorado** (DEV-only en HomeScreen):
+- `console.log` en cada transicion de estado de la query: status, fetchStatus, isPending, isLoading, isFetching, hasData, hasDisplayData, itemCount, error.
+- Timer de 5s para queries stuck.
+- Debug overlay muestra `status/fetchStatus` y si `data` es null.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/screens/HomeScreen.tsx` | `lastDataRef` + `displayData`, guards con `!displayData`, debug logging mejorado |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | `lastMatchRef` + `displayMatch`, guards con `!displayMatch`, todo JSX usa `displayMatch` |
+
+### Verificacion
+
+- `npx tsc --noEmit` pasa (0 errors)
+- Incluso si React Query pierde data transitoriamente, la UI muestra la ultima data conocida
+
+---
+
+## 33. Enrich participant data con username en Match Detail
+
+**Fecha**: 2026-02-15
+
+### Objetivo
+
+El endpoint `GET /matches/:id` retornaba participantes con solo `userId`, `status` y `waitlistPosition`. La pantalla MatchDetail mostraba UUIDs truncados (`p.userId.slice(0,8)...`). Se enriquecio la data con `username` del modelo User para mostrar nombres legibles.
+
+### Cambios backend
+
+**`build-match-snapshot.ts`**: Se agrego `username: string` a la interfaz `ParticipantView`. La query de `matchParticipant.findMany` ahora incluye `include: { user: { select: { username: true } } }` para traer solo el username (sin email por privacidad). El mapping a `participantViews` y `waitlistViews` incluye `username: p.user.username`.
+
+**`participation.use-case.spec.ts`**: Se actualizo el mock de `matchParticipant.findMany` para incluir `user: { username: '...' }` en los participantes mock.
+
+**`matches-crud.e2e-spec.ts`**: Nuevo test `GET /matches/:id → participants include username, no email` que invita un usuario y verifica que el participante tiene `username` (string no vacio) y NO tiene `email`.
+
+### Cambios mobile
+
+**`types/api.ts`**: Se agrego `username: string` a `ParticipantView`.
+
+**`MatchDetailScreen.tsx`**:
+- Reemplazo de `{p.userId.slice(0, 8)}...` por `@{p.username}`.
+- Removido `fontFamily: 'monospace'` del estilo `participantId`.
+- El input de invite ahora limpia el mensaje de error/exito al escribir (`onChangeText` llama `setInviteMsg('')`).
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/api/src/matches/application/build-match-snapshot.ts` | `username` en interface + include user en query + map username |
+| `apps/api/src/matches/application/participation.use-case.spec.ts` | Mock con `user: { username }` |
+| `apps/api/test/e2e/matches-crud.e2e-spec.ts` | Test: username presente, email ausente |
+| `apps/mobile/src/types/api.ts` | `username` en `ParticipantView` |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | `@username`, clear invite error on input |
+
+### Verificacion
+
+- 62 unit tests pasando
+- 4 e2e tests en matches-crud pasando (incluyendo el nuevo)
+- `pnpm build` y `npx tsc --noEmit` sin errores
+
+---
+
+## 34. Mobile: Lock/Unlock en MatchDetail
+
+**Fecha**: 2026-02-15
+
+### Objetivo
+
+Implementar lock/unlock de matches desde MatchDetailScreen. Solo visible para admins (basado en `actionsAllowed` del snapshot). Cuando un match esta locked, las acciones de participacion (confirm/decline/withdraw) e invitacion se ocultan y se muestra un banner "Match is locked".
+
+### Endpoints usados (existentes, sin cambios backend)
+
+- `POST /api/v1/matches/:id/lock` — body: `{ expectedRevision: number }`
+- `POST /api/v1/matches/:id/unlock` — body: `{ expectedRevision: number }`
+
+Ambos retornan `MatchSnapshot`. No requieren `Idempotency-Key`.
+
+### Permisos
+
+El snapshot ya incluye `actionsAllowed` con `'lock'` o `'unlock'` para admins (creador del match). El boton solo se muestra si el backend lo permite via estos flags. No se asumen roles del lado mobile.
+
+### Nuevo hook: `useLockMatch.ts`
+
+Ubicacion: `apps/mobile/src/features/matches/useLockMatch.ts`
+
+Exporta:
+- `useLockMatch(matchId)` — mutation para lock
+- `useUnlockMatch(matchId)` — mutation para unlock
+- `formatLockError(err)` — mapea error codes a mensajes amigables
+
+Patron identico a `useMatchAction`/`useInviteToMatch`:
+- `randomUUID()` como idempotency key
+- Auto-retry en `REVISION_CONFLICT` (fetch fresh snapshot + retry)
+- Logout automatico en 401
+- `onSuccess`: actualiza cache del match + invalida lista de matches
+
+Error mapping:
+- 403 → "No permission"
+- 404 → "Match not found"
+- 409 → "Conflict — please refresh and try again"
+- `ALREADY_LOCKED` / `ALREADY_UNLOCKED` → mensaje descriptivo
+
+### Cambios en MatchDetailScreen
+
+**Boton Lock/Unlock** (despues de badges, antes del info block):
+- Solo visible si `actionsAllowed` incluye `'lock'` o `'unlock'`
+- Texto: "Lock Match" (rojo) o "Unlock Match" (verde)
+- Loading state con ActivityIndicator
+- Error message debajo del boton
+
+**Banner "Match is locked"**:
+- Banner rosa/rojo entre participantes y acciones cuando `isLocked === true`
+- Acciones de participacion (confirm/decline/withdraw) se ocultan cuando locked
+- Bloque de invite se oculta cuando locked
+
+### Archivos creados/modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/features/matches/useLockMatch.ts` | Nuevo: hooks `useLockMatch`, `useUnlockMatch`, `formatLockError` |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | Lock/unlock button, locked banner, hide actions when locked |
+
+### Verificacion
+
+- 62 unit tests pasando
+- `npx tsc --noEmit` sin errores en mobile
+- `pnpm build` sin errores en API
+
+---
+
+## 35. Fix: HomeScreen stuck loader tras mutation en MatchDetail
+
+**Fecha**: 2026-02-15
+
+### Problema
+
+Al volver a Home desde MatchDetail despues de cualquier accion (confirm/withdraw/invite/lock/unlock), el pull-to-refresh spinner aparecia y quedaba trabado indefinidamente. Bug persistente que no se resolvia con fixes superficiales (lastDataRef, displayData guards).
+
+### Diagnostico — Root Cause
+
+La causa raiz es la interaccion entre **react-freeze** (usado por `createNativeStackNavigator`) y `FlatList.refreshing` vinculado a `isRefetching`.
+
+Secuencia del bug:
+1. Usuario ejecuta accion en MatchDetail (confirm, withdraw, lock, etc.)
+2. Mutation `onSuccess` llama `invalidateQueries({ queryKey: ['matches'] })`
+3. React Query marca la query `['matches', 1]` como stale e inicia refetch en background
+4. HomeScreen esta **congelado** por react-freeze (no renderiza mientras MatchDetail esta activo)
+5. El refetch puede completarse mientras HomeScreen esta frozen
+6. Al volver a Home, el screen se descongela. React procesa el estado pendiente
+7. `refreshing={isRefetching}` puede transicionar `true → false` en el mismo render pass del unfreeze
+8. El `RefreshControl` nativo de iOS/Android no procesa correctamente esta transicion instantanea y queda en estado "refreshing" permanente
+
+### Solucion definitiva
+
+**Separar pull-to-refresh manual de refetch por invalidacion.**
+
+El `refreshing` prop del FlatList ahora solo es `true` cuando el usuario hace pull-to-refresh explicitamente, nunca por background refetch.
+
+```tsx
+const [isManualRefresh, setIsManualRefresh] = useState(false);
+
+const handleRefresh = useCallback(() => {
+  setIsManualRefresh(true);
+  refetch();
+}, [refetch]);
+
+useEffect(() => {
+  if (!isFetching && isManualRefresh) {
+    setIsManualRefresh(false);
+  }
+}, [isFetching, isManualRefresh]);
+
+// FlatList:
+refreshing={isManualRefresh}  // NO isRefetching
+onRefresh={handleRefresh}      // NO refetch directo
+```
+
+**Mejoras adicionales en instrumentacion DEV:**
+- Stuck query detector (5s) ahora tambien loguea `failureCount` y mutations pendientes
+- Debug overlay muestra `manualRefresh` flag
+- Cleanup de timers simplificado
+
+### Lo que YA estaba bien (no se cambio)
+
+- `fetchJson` con `AbortController` y timeout 12s — ya existia
+- `lastDataRef` pattern para evitar pantalla en blanco — se mantiene
+- React Query config: `retry: 1`, `staleTime: 30_000` — adecuado
+- Fullscreen loader solo en `!displayData && isFetching` — correcto
+- Invalidaciones por prefix `['matches']` — correcto (matchea `['matches', 1]`)
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/screens/HomeScreen.tsx` | `isManualRefresh` state + `handleRefresh` callback, FlatList `refreshing` desacoplado de `isRefetching`, DEV logging mejorado |
+
+### Verificacion
+
+- 62 unit tests pasando
+- `npx tsc --noEmit` sin errores
+- Flow: MatchDetail → confirm/withdraw/lock → volver a Home → lista visible inmediatamente, sin spinner stuck
+
+---
+
+## 36. Cancel Match end-to-end (API + Mobile)
+
+**Fecha**: 2026-02-15
+
+### Objetivo
+
+Implementar la funcionalidad de cancelar matches. Solo el admin (creador) puede cancelar. Una vez cancelado, todas las acciones (confirm, decline, withdraw, invite, lock, unlock, update) quedan bloqueadas con error `MATCH_CANCELLED` (409).
+
+### Backend
+
+**Endpoint**: `POST /api/v1/matches/:id/cancel`
+- Requiere `Idempotency-Key` header y `expectedRevision` en body
+- Solo el creador del match puede cancelar (403 si no)
+- Idempotente: si ya esta cancelado, retorna snapshot sin cambiar nada
+- Cambia `match.status` a `canceled` (enum existente en Prisma)
+- Incrementa `revision`
+
+**Guard `MATCH_CANCELLED`**: Agregado en 7 use cases:
+- `confirm-participation.use-case.ts`
+- `decline-participation.use-case.ts`
+- `withdraw-participation.use-case.ts`
+- `invite-participation.use-case.ts`
+- `update-match.use-case.ts`
+- `lock-match.use-case.ts`
+- `unlock-match.use-case.ts`
+
+El guard se ejecuta antes de `REVISION_CONFLICT` y `MATCH_LOCKED` para dar feedback claro.
+
+**`build-match-snapshot.ts`**: Cuando `match.status === 'canceled'`, `actionsAllowed` queda vacio. Cuando no cancelado, admin tiene accion `cancel` disponible.
+
+**Error code**: `MATCH_CANCELLED` agregado a `DOMAIN_CONFLICT_CODES` en `api-exception.filter.ts`.
+
+**Wiring**: `CancelMatchUseCase` registrado en controller y module.
+
+### Tests
+
+**Unit tests** (`cancel-match.use-case.spec.ts`): 5 tests
+- Cancela match exitosamente
+- Idempotente si ya cancelado
+- ForbiddenException para non-admin
+- REVISION_CONFLICT en mismatch
+- MATCH_CANCELLED guard en confirm
+
+**E2e tests** (`cancel-match.e2e-spec.ts`): 5 tests
+- POST cancel → 201 con status canceled
+- Idempotencia con mismo key
+- Confirm despues de cancel → 409 MATCH_CANCELLED
+- actionsAllowed vacio para todos los usuarios
+- Lock despues de cancel → 409 MATCH_CANCELLED
+
+### Mobile
+
+**Hook `useCancelMatch.ts`**: Patron identico a `useLockMatch`. Auto-retry en REVISION_CONFLICT, logout en 401, `formatCancelError` para mensajes amigables.
+
+**MatchDetailScreen**:
+- Banner "This match has been cancelled" cuando `status === 'canceled'`
+- Boton "Cancel Match" (rojo oscuro) visible solo si `actionsAllowed` incluye `cancel`
+- Alert de confirmacion antes de ejecutar
+- Todos los bloques de acciones (lock/unlock, player actions, invite) ocultos cuando cancelado
+- Banner "Match is locked" tambien oculto cuando cancelado
+- `formatActionError` ahora mapea `MATCH_CANCELLED` a "Match is cancelled"
+
+### Archivos creados/modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/api/src/matches/application/cancel-match.use-case.ts` | Nuevo: use case de cancel |
+| `apps/api/src/matches/application/cancel-match.use-case.spec.ts` | Nuevo: 5 unit tests |
+| `apps/api/test/e2e/cancel-match.e2e-spec.ts` | Nuevo: 5 e2e tests |
+| `apps/api/src/matches/api/matches.controller.ts` | Endpoint POST :id/cancel |
+| `apps/api/src/matches/matches.module.ts` | Provider CancelMatchUseCase |
+| `apps/api/src/matches/application/build-match-snapshot.ts` | actionsAllowed vacio cuando canceled, `cancel` para admin |
+| `apps/api/src/matches/application/confirm-participation.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/matches/application/decline-participation.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/matches/application/withdraw-participation.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/matches/application/invite-participation.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/matches/application/update-match.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/matches/application/lock-match.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/matches/application/unlock-match.use-case.ts` | Guard MATCH_CANCELLED |
+| `apps/api/src/common/filters/api-exception.filter.ts` | MATCH_CANCELLED en DOMAIN_CONFLICT_CODES |
+| `apps/mobile/src/features/matches/useCancelMatch.ts` | Nuevo: hook + formatCancelError |
+| `apps/mobile/src/features/matches/useMatchAction.ts` | MATCH_CANCELLED en formatActionError |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | Cancelled banner, cancel button con Alert, hide actions |
+
+### Verificacion
+
+- 67 unit tests pasando
+- 53 e2e tests pasando (13 suites, incluyendo cancel-match)
+- `pnpm build` sin errores
+- `npx tsc --noEmit` sin errores en mobile
+- No se necesito migracion (enum `canceled` ya existia en schema)
+
+---
+
+## 37. Mobile: Bottom Tab Navigation
+
+### Que se hizo
+
+Se reestructuro la navegacion mobile de un flat NativeStack a Bottom Tabs + Root Stack:
+
+- **5 tabs**: Home, Groups, Create (centro), Profile, Settings
+- **Create tab** intercepta el press para abrir `CreateMatch` como screen del Root Stack (no renderiza componente propio)
+- **Root Stack** envuelve `MainTabs` + `CreateMatch` + `MatchDetail`
+- **Placeholder screens** para Groups, Profile (con logout) y Settings
+- **Tipo compuesto** en HomeScreen con `CompositeScreenProps` para navegacion cross-navigator (tab → root stack)
+- `AppStackParamList` mantenido como alias de `RootStackParamList` para backwards compat
+
+### Tipos de navegacion
+
+```typescript
+export type TabParamList = {
+  HomeTab: undefined;
+  GroupsTab: undefined;
+  CreateTab: undefined;
+  ProfileTab: undefined;
+  SettingsTab: undefined;
+};
+
+export type RootStackParamList = {
+  MainTabs: NavigatorScreenParams<TabParamList>;
+  CreateMatch: undefined;
+  MatchDetail: { matchId: string };
+};
+```
+
+HomeScreen usa `CompositeScreenProps<BottomTabScreenProps<TabParamList, 'HomeTab'>, NativeStackScreenProps<RootStackParamList>>` para poder navegar a `CreateMatch` y `MatchDetail` desde un tab.
+
+### Archivos creados/modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/navigation/AppNavigator.tsx` | Reescrito: Bottom Tabs + Root Stack, tipos nuevos |
+| `apps/mobile/src/screens/HomeScreen.tsx` | Props actualizadas a CompositeScreenProps |
+| `apps/mobile/src/screens/GroupsScreen.tsx` | Nuevo: placeholder "Coming soon" |
+| `apps/mobile/src/screens/ProfileScreen.tsx` | Nuevo: placeholder con boton Logout |
+| `apps/mobile/src/screens/SettingsScreen.tsx` | Nuevo: placeholder "Coming soon" |
+
+### Dependencias
+
+- `@react-navigation/bottom-tabs` instalado
+
+### Verificacion
+
+- `npx tsc --noEmit` sin errores en mobile

@@ -17,7 +17,10 @@
       "Bash(pnpm --filter api build:*)",
       "Bash(npx jest --config ./test/jest-e2e.json --detectOpenHandles --testPathPattern=\"participation-concurrency\")",
       "Bash(npx jest --config ./test/jest-e2e.json --detectOpenHandles --testPathPatterns=\"participation-concurrency\")",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(pnpm jest:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm test:e2e:*)"
     ]
   }
 }

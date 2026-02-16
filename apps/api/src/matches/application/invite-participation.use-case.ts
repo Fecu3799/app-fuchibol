@@ -94,6 +94,10 @@ export class InviteParticipationUseCase {
         throw new ForbiddenException('Only match admin can invite');
       }
 
+      if (match.status === 'canceled') {
+        throw new ConflictException('MATCH_CANCELLED');
+      }
+
       if (match.revision !== input.expectedRevision) {
         throw new ConflictException('REVISION_CONFLICT');
       }

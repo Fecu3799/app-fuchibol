@@ -48,6 +48,10 @@ export class WithdrawParticipationUseCase {
         throw new NotFoundException('Match not found');
       }
 
+      if (match.status === 'canceled') {
+        throw new ConflictException('MATCH_CANCELLED');
+      }
+
       if (match.revision !== input.expectedRevision) {
         throw new ConflictException('REVISION_CONFLICT');
       }

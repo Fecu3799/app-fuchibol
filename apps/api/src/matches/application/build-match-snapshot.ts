@@ -7,6 +7,7 @@ type TransactionClient = Omit<
 
 export interface ParticipantView {
   userId: string;
+  username: string;
   status: string;
   waitlistPosition: number | null;
 }
@@ -44,6 +45,7 @@ export async function buildMatchSnapshot(
   const participants = await prisma.matchParticipant.findMany({
     where: { matchId },
     orderBy: { createdAt: 'asc' },
+    include: { user: { select: { username: true } } },
   });
 
   const confirmed = participants.filter((p) => p.status === 'CONFIRMED');
@@ -55,41 +57,47 @@ export async function buildMatchSnapshot(
   const myStatus = myParticipant?.status ?? null;
 
   const isAdmin = match.createdById === actorId;
+  const isCanceled = match.status === 'canceled';
 
   const actionsAllowed: string[] = [];
 
-  if (!match.isLocked) {
-    if (!myStatus || myStatus === 'DECLINED' || myStatus === 'WITHDRAWN') {
-      actionsAllowed.push('confirm');
+  if (!isCanceled) {
+    if (!match.isLocked) {
+      if (!myStatus || myStatus === 'DECLINED' || myStatus === 'WITHDRAWN') {
+        actionsAllowed.push('confirm');
+      }
+      if (myStatus === 'INVITED') {
+        actionsAllowed.push('confirm', 'decline');
+      }
+      if (isAdmin) {
+        actionsAllowed.push('invite');
+      }
     }
-    if (myStatus === 'INVITED') {
-      actionsAllowed.push('confirm', 'decline');
+
+    // Withdraw is always allowed (even when locked), but not when canceled
+    if (myStatus === 'CONFIRMED' || myStatus === 'WAITLISTED') {
+      actionsAllowed.push('withdraw');
     }
+
     if (isAdmin) {
-      actionsAllowed.push('invite');
+      actionsAllowed.push('update');
+      actionsAllowed.push(match.isLocked ? 'unlock' : 'lock');
+      actionsAllowed.push('cancel');
     }
-  }
-
-  // Withdraw is always allowed (even when locked)
-  if (myStatus === 'CONFIRMED' || myStatus === 'WAITLISTED') {
-    actionsAllowed.push('withdraw');
-  }
-
-  if (isAdmin) {
-    actionsAllowed.push('update');
-    actionsAllowed.push(match.isLocked ? 'unlock' : 'lock');
   }
 
   const participantViews: ParticipantView[] = participants
     .filter((p) => p.status !== 'WITHDRAWN')
     .map((p) => ({
       userId: p.userId,
+      username: p.user.username,
       status: p.status,
       waitlistPosition: p.waitlistPosition,
     }));
 
   const waitlistViews: ParticipantView[] = waitlisted.map((p, i) => ({
     userId: p.userId,
+    username: p.user.username,
     status: p.status,
     waitlistPosition: i + 1,
   }));

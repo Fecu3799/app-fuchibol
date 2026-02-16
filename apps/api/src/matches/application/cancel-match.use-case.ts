@@ -5,20 +5,39 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 
-export interface UnlockMatchInput {
+export interface CancelMatchInput {
   matchId: string;
   actorId: string;
   expectedRevision: number;
+  idempotencyKey: string;
 }
 
 @Injectable()
-export class UnlockMatchUseCase {
-  constructor(private readonly prisma: PrismaService) {}
+export class CancelMatchUseCase {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
-  async execute(input: UnlockMatchInput): Promise<MatchSnapshot> {
+  async execute(input: CancelMatchInput): Promise<MatchSnapshot> {
+    return this.idempotency.run({
+      key: input.idempotencyKey,
+      actorId: input.actorId,
+      route: 'POST /matches/:id/cancel',
+      matchId: input.matchId,
+      requestBody: {
+        matchId: input.matchId,
+        expectedRevision: input.expectedRevision,
+      },
+      execute: () => this.run(input),
+    });
+  }
+
+  private async run(input: CancelMatchInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -31,28 +50,22 @@ export class UnlockMatchUseCase {
       }
 
       if (match.createdById !== input.actorId) {
-        throw new ForbiddenException('Only match admin can unlock');
-      }
-
-      if (match.status === 'canceled') {
-        throw new ConflictException('MATCH_CANCELLED');
+        throw new ForbiddenException('Only match admin can cancel');
       }
 
       if (match.revision !== input.expectedRevision) {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
-      // Idempotent: already unlocked -> return snapshot without changing anything
-      if (!match.isLocked) {
+      // Idempotent: already canceled -> return snapshot
+      if (match.status === 'canceled') {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
 
       await tx.match.update({
         where: { id: input.matchId },
         data: {
-          isLocked: false,
-          lockedAt: null,
-          lockedBy: null,
+          status: 'canceled',
           revision: match.revision + 1,
         },
       });

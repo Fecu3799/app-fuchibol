@@ -46,6 +46,7 @@ export interface ListMatchesResponse {
 
 export interface ParticipantView {
   userId: string;
+  username: string;
   status: string;
   waitlistPosition: number | null;
 }

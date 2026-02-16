@@ -8,6 +8,7 @@ import { ListMatchesQuery } from './application/list-matches.query';
 import { UpdateMatchUseCase } from './application/update-match.use-case';
 import { LockMatchUseCase } from './application/lock-match.use-case';
 import { UnlockMatchUseCase } from './application/unlock-match.use-case';
+import { CancelMatchUseCase } from './application/cancel-match.use-case';
 import { ConfirmParticipationUseCase } from './application/confirm-participation.use-case';
 import { DeclineParticipationUseCase } from './application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from './application/withdraw-participation.use-case';
@@ -23,6 +24,7 @@ import { InviteParticipationUseCase } from './application/invite-participation.u
     UpdateMatchUseCase,
     LockMatchUseCase,
     UnlockMatchUseCase,
+    CancelMatchUseCase,
     ConfirmParticipationUseCase,
     DeclineParticipationUseCase,
     WithdrawParticipationUseCase,

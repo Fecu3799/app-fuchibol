@@ -1,5 +1,5 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { CreateMatchResponse, GetMatchResponse, ListMatchesResponse } from '../../types/api';
+import type { CreateMatchResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot } from '../../types/api';
 
 interface ListParams {
   page?: number;
@@ -40,8 +40,8 @@ export function postMatchAction(
   action: string,
   expectedRevision: number,
   idempotencyKey: string,
-): Promise<GetMatchResponse> {
-  return fetchJson<GetMatchResponse>(buildUrl(`/api/v1/matches/${matchId}/${action}`), {
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/${action}`), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -58,8 +58,8 @@ export function inviteToMatch(
   identifier: string,
   expectedRevision: number,
   idempotencyKey: string,
-): Promise<GetMatchResponse> {
-  return fetchJson<GetMatchResponse>(buildUrl(`/api/v1/matches/${matchId}/invite`), {
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/invite`), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

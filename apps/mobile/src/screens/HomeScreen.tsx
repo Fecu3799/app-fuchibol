@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -6,8 +7,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { AppStackParamList } from '../navigation/AppNavigator';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { CompositeScreenProps } from '@react-navigation/native';
+import type { RootStackParamList, TabParamList } from '../navigation/AppNavigator';
 import type { MatchHomeItem } from '../types/api';
 import { useMatches } from '../features/matches/useMatches';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,7 +19,10 @@ import { useLogoutOn401 } from '../lib/use-api-query';
 import { ApiError } from '../lib/api';
 import { apiBaseUrl } from '../config/env';
 
-type Props = NativeStackScreenProps<AppStackParamList, 'Home'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<TabParamList, 'HomeTab'>,
+  NativeStackScreenProps<RootStackParamList>
+>;
 
 function statusColor(status: string | null): string {
   switch (status) {
@@ -57,11 +64,93 @@ export default function HomeScreen({ navigation }: Props) {
   const { logout } = useAuth();
   const query = useMatches();
   useLogoutOn401(query);
+  const queryClient = useQueryClient();
 
-  const { data, isLoading, error, refetch, isRefetching } = query;
+  const { data, isLoading, isFetching, status, fetchStatus, error, refetch } = query;
 
-  // TODO: remove debug overlay when no longer needed
-  const queryStatus = isLoading ? 'loading' : error ? 'error' : 'success';
+  // ── Defensive: keep last known data so UI never goes blank ──
+  const lastDataRef = useRef(data);
+  if (data) lastDataRef.current = data;
+  const displayData = data ?? lastDataRef.current;
+
+  // ── Pull-to-refresh: track user-initiated refresh only ──
+  // CRITICAL: `refreshing` on FlatList must only be true for user-initiated
+  // pull-to-refresh, NOT for background refetches triggered by invalidation.
+  // When invalidateQueries fires while this screen is frozen (react-freeze in
+  // native stack), the refetch can start/complete while frozen. On unfreeze,
+  // setting refreshing=true then immediately false in the same render pass
+  // causes the native RefreshControl to get stuck in "refreshing" state.
+  const [isManualRefresh, setIsManualRefresh] = useState(false);
+
+  const handleRefresh = useCallback(() => {
+    setIsManualRefresh(true);
+    refetch();
+  }, [refetch]);
+
+  // Clear manual refresh flag when fetching completes
+  useEffect(() => {
+    if (!isFetching && isManualRefresh) {
+      setIsManualRefresh(false);
+    }
+  }, [isFetching, isManualRefresh]);
+
+  // ── Debounced "Updating…" banner (avoid 1-frame flicker) ──
+  const [showUpdating, setShowUpdating] = useState(false);
+  const updatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isFetching && !isLoading && displayData) {
+      updatingTimerRef.current = setTimeout(() => setShowUpdating(true), 250);
+    } else {
+      if (updatingTimerRef.current) {
+        clearTimeout(updatingTimerRef.current);
+        updatingTimerRef.current = null;
+      }
+      setShowUpdating(false);
+    }
+    return () => {
+      if (updatingTimerRef.current) {
+        clearTimeout(updatingTimerRef.current);
+        updatingTimerRef.current = null;
+      }
+    };
+  }, [isFetching, isLoading, displayData]);
+
+  // ── DEV: detect stuck fetching queries ──
+  useEffect(() => {
+    if (!__DEV__ || !isFetching) return;
+
+    const timer = setTimeout(() => {
+      const cache = queryClient.getQueryCache().getAll();
+      const stuck = cache.filter((q) => q.state.fetchStatus === 'fetching');
+      if (stuck.length > 0) {
+        console.warn(
+          '[HomeScreen] Queries still fetching after 5s:',
+          stuck.map((q) => ({
+            queryKey: q.queryKey,
+            status: q.state.status,
+            fetchStatus: q.state.fetchStatus,
+            failureCount: q.state.fetchFailureCount,
+            error: q.state.error?.message ?? null,
+          })),
+        );
+      }
+      // Also log pending mutations
+      const mutations = queryClient.getMutationCache().getAll();
+      const pending = mutations.filter((m) => m.state.status === 'pending');
+      if (pending.length > 0) {
+        console.warn(
+          '[HomeScreen] Pending mutations:',
+          pending.map((m) => ({
+            mutationKey: m.options.mutationKey,
+            status: m.state.status,
+          })),
+        );
+      }
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [isFetching, queryClient]);
 
   return (
     <View style={styles.container}>
@@ -83,15 +172,24 @@ export default function HomeScreen({ navigation }: Props) {
       {__DEV__ && (
         <View style={styles.debugOverlay}>
           <Text style={styles.debugText}>API: {apiBaseUrl}</Text>
-          <Text style={styles.debugText}>Query: {queryStatus}</Text>
-          {error && <Text style={styles.debugText}>Error: {error.message}</Text>}
-          <Text style={styles.debugText}>Items: {data?.items?.length ?? '-'}</Text>
+          <Text style={styles.debugText}>
+            Q: {status}/{fetchStatus} | data:{data ? 'yes' : 'no'} | items:{displayData?.items?.length ?? '-'} | manualRefresh:{isManualRefresh ? 'Y' : 'N'}
+          </Text>
+          {error && <Text style={styles.debugText}>Err: {error.message}</Text>}
         </View>
       )}
 
-      {isLoading ? (
+      {/* Refetch indicator (data visible underneath, debounced 250ms) */}
+      {showUpdating && (
+        <View style={styles.refreshBanner}>
+          <ActivityIndicator size="small" color="#1976d2" />
+          <Text style={styles.refreshText}>Updating…</Text>
+        </View>
+      )}
+
+      {!displayData && isFetching ? (
         <ActivityIndicator style={styles.loader} size="large" />
-      ) : error ? (
+      ) : !displayData && error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Failed to load matches</Text>
           {error instanceof ApiError && error.requestId && (
@@ -103,7 +201,7 @@ export default function HomeScreen({ navigation }: Props) {
         </View>
       ) : (
         <FlatList
-          data={data?.items ?? []}
+          data={displayData?.items ?? []}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <MatchRow
@@ -111,8 +209,8 @@ export default function HomeScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('MatchDetail', { matchId: item.id })}
             />
           )}
-          refreshing={isRefetching}
-          onRefresh={refetch}
+          refreshing={isManualRefresh}
+          onRefresh={handleRefresh}
           contentContainerStyle={styles.list}
           ListEmptyComponent={
             <Text style={styles.empty}>No matches yet</Text>
@@ -125,6 +223,18 @@ export default function HomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
+  refreshBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    marginHorizontal: 12,
+    marginTop: 8,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+  },
+  refreshText: { fontSize: 12, color: '#1976d2' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

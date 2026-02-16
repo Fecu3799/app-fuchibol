@@ -8,6 +8,7 @@ export function formatActionError(err: unknown): string {
   if (!(err instanceof ApiError)) return 'Connection error. Please try again.';
   const code = err.code;
   if (code === 'MATCH_LOCKED') return 'Match is locked';
+  if (code === 'MATCH_CANCELLED') return 'Match is cancelled';
   if (code === 'REVISION_CONFLICT') return 'Match was updated, please try again';
   if (code === 'CAPACITY_BELOW_CONFIRMED') return 'Cannot reduce capacity below confirmed count';
   if (err.status === 422) {
@@ -40,7 +41,7 @@ export function useMatchAction(matchId: string) {
       }
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(['match', matchId], data);
+      queryClient.setQueryData(['match', matchId], { match: data });
       queryClient.invalidateQueries({ queryKey: ['matches'] });
     },
   });

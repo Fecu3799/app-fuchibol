@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +18,15 @@ import {
   useInviteToMatch,
   formatInviteError,
 } from '../features/matches/useInviteToMatch';
+import {
+  useLockMatch,
+  useUnlockMatch,
+  formatLockError,
+} from '../features/matches/useLockMatch';
+import {
+  useCancelMatch,
+  formatCancelError,
+} from '../features/matches/useCancelMatch';
 import { useLogoutOn401 } from '../lib/use-api-query';
 import { ApiError } from '../lib/api';
 
@@ -102,20 +112,52 @@ export default function MatchDetailScreen({ route }: Props) {
   useLogoutOn401(query);
   const mutation = useMatchAction(matchId);
   const inviteMutation = useInviteToMatch(matchId);
+  const lockMutation = useLockMatch(matchId);
+  const unlockMutation = useUnlockMatch(matchId);
+  const cancelMutation = useCancelMatch(matchId);
   const [actionError, setActionError] = useState('');
+  const [lockError, setLockError] = useState('');
+  const [cancelError, setCancelError] = useState('');
   const [inviteInput, setInviteInput] = useState('');
   const [inviteMsg, setInviteMsg] = useState('');
   const [inviteMsgType, setInviteMsgType] = useState<'success' | 'error'>(
     'success',
   );
 
-  const { data: match, isLoading, error, refetch } = query;
+  const { data: match, isLoading, isFetching, error, refetch } = query;
+
+  // ── Defensive: keep last known match so UI never goes blank ──
+  const lastMatchRef = useRef(match);
+  if (match) lastMatchRef.current = match;
+  const displayMatch = match ?? lastMatchRef.current;
+
+  // ── Debounced "Updating…" banner (avoid 1-frame flicker) ──
+  const [showUpdating, setShowUpdating] = useState(false);
+  const updatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isFetching && !isLoading && displayMatch) {
+      updatingTimerRef.current = setTimeout(() => setShowUpdating(true), 250);
+    } else {
+      if (updatingTimerRef.current) {
+        clearTimeout(updatingTimerRef.current);
+        updatingTimerRef.current = null;
+      }
+      setShowUpdating(false);
+    }
+    return () => {
+      if (updatingTimerRef.current) {
+        clearTimeout(updatingTimerRef.current);
+        updatingTimerRef.current = null;
+      }
+    };
+  }, [isFetching, isLoading, displayMatch]);
 
   const handleAction = (action: string) => {
-    if (!match) return;
+    if (!displayMatch) return;
     setActionError('');
     mutation.mutate(
-      { action, revision: match.revision },
+      { action, revision: displayMatch.revision },
       {
         onError: (err) => setActionError(formatActionError(err)),
         onSuccess: () => setActionError(''),
@@ -124,10 +166,10 @@ export default function MatchDetailScreen({ route }: Props) {
   };
 
   const handleInvite = () => {
-    if (!match || !inviteInput.trim()) return;
+    if (!displayMatch || !inviteInput.trim()) return;
     setInviteMsg('');
     inviteMutation.mutate(
-      { identifier: inviteInput.trim(), revision: match.revision },
+      { identifier: inviteInput.trim(), revision: displayMatch.revision },
       {
         onSuccess: () => {
           setInviteMsg('Invite sent!');
@@ -142,8 +184,46 @@ export default function MatchDetailScreen({ route }: Props) {
     );
   };
 
-  // ── Loading ──
-  if (isLoading) {
+  const handleLockToggle = () => {
+    if (!displayMatch) return;
+    setLockError('');
+    const m = displayMatch.isLocked ? unlockMutation : lockMutation;
+    m.mutate(
+      { revision: displayMatch.revision },
+      {
+        onError: (err) => setLockError(formatLockError(err)),
+        onSuccess: () => setLockError(''),
+      },
+    );
+  };
+
+  const handleCancel = () => {
+    if (!displayMatch) return;
+    Alert.alert(
+      'Cancel Match',
+      'Are you sure you want to cancel this match? This cannot be undone.',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, cancel',
+          style: 'destructive',
+          onPress: () => {
+            setCancelError('');
+            cancelMutation.mutate(
+              { revision: displayMatch.revision },
+              {
+                onError: (err) => setCancelError(formatCancelError(err)),
+                onSuccess: () => setCancelError(''),
+              },
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  // ── Loading (first load only, no data at all) ──
+  if (!displayMatch && isFetching) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" />
@@ -151,8 +231,8 @@ export default function MatchDetailScreen({ route }: Props) {
     );
   }
 
-  // ── Error ──
-  if (error) {
+  // ── Error (only when no cached data to show) ──
+  if (error && !displayMatch) {
     const is404 = error instanceof ApiError && error.status === 404;
     return (
       <View style={styles.center}>
@@ -173,53 +253,100 @@ export default function MatchDetailScreen({ route }: Props) {
     );
   }
 
-  if (!match) return null;
+  if (!displayMatch) return null;
 
   const visibleActions = PLAYER_ACTIONS.filter((a) =>
-    match.actionsAllowed.includes(a),
+    displayMatch.actionsAllowed.includes(a),
   );
-  const canInvite = match.actionsAllowed.includes('invite');
-  const groups = deriveParticipantGroups(match);
+  const canInvite = displayMatch.actionsAllowed.includes('invite');
+  const canLock = displayMatch.actionsAllowed.includes('lock');
+  const canUnlock = displayMatch.actionsAllowed.includes('unlock');
+  const canToggleLock = canLock || canUnlock;
+  const canCancel = displayMatch.actionsAllowed.includes('cancel');
+  const lockTogglePending = lockMutation.isPending || unlockMutation.isPending;
+  const isCanceled = displayMatch.status === 'canceled';
+  const groups = deriveParticipantGroups(displayMatch);
 
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
     >
+      {/* Refetch indicator (debounced 250ms) */}
+      {showUpdating && (
+        <View style={styles.refreshBanner}>
+          <ActivityIndicator size="small" color="#1976d2" />
+          <Text style={styles.refreshText}>Updating…</Text>
+        </View>
+      )}
+
       {/* Header */}
-      <Text style={styles.title}>{match.title}</Text>
+      <Text style={styles.title}>{displayMatch.title}</Text>
 
       <View style={styles.badgeRow}>
         <View style={styles.badge}>
-          <Text style={styles.badgeText}>{match.status}</Text>
+          <Text style={styles.badgeText}>{displayMatch.status}</Text>
         </View>
-        {match.isLocked && (
+        {displayMatch.isLocked && (
           <View style={[styles.badge, styles.badgeLocked]}>
             <Text style={styles.badgeText}>Locked</Text>
           </View>
         )}
-        {match.myStatus && (
+        {displayMatch.myStatus && (
           <View
             style={[
               styles.badge,
-              { backgroundColor: STATUS_COLOR[match.myStatus] ?? '#757575' },
+              { backgroundColor: STATUS_COLOR[displayMatch.myStatus] ?? '#757575' },
             ]}
           >
             <Text style={styles.badgeText}>
-              {STATUS_LABEL[match.myStatus] ?? match.myStatus}
+              {STATUS_LABEL[displayMatch.myStatus] ?? displayMatch.myStatus}
             </Text>
           </View>
         )}
       </View>
 
+      {/* Cancelled banner */}
+      {isCanceled && (
+        <View style={styles.cancelledBanner}>
+          <Text style={styles.cancelledBannerText}>This match has been cancelled</Text>
+        </View>
+      )}
+
+      {/* Lock/Unlock button (admin only, hidden when canceled) */}
+      {!isCanceled && canToggleLock && (
+        <View style={styles.lockBlock}>
+          {lockError ? (
+            <Text style={styles.actionError}>{lockError}</Text>
+          ) : null}
+          <Pressable
+            style={[
+              styles.lockBtn,
+              displayMatch.isLocked ? styles.lockBtnUnlock : styles.lockBtnLock,
+              lockTogglePending && styles.btnDisabled,
+            ]}
+            onPress={handleLockToggle}
+            disabled={lockTogglePending}
+          >
+            {lockTogglePending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.lockBtnText}>
+                {displayMatch.isLocked ? 'Unlock Match' : 'Lock Match'}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+
       {/* Match info */}
       <View style={styles.infoBlock}>
-        <InfoRow label="Date" value={formatDate(match.startsAt)} />
-        <InfoRow label="Time" value={formatTime(match.startsAt)} />
-        {match.location && <InfoRow label="Location" value={match.location} />}
+        <InfoRow label="Date" value={formatDate(displayMatch.startsAt)} />
+        <InfoRow label="Time" value={formatTime(displayMatch.startsAt)} />
+        {displayMatch.location && <InfoRow label="Location" value={displayMatch.location} />}
         <InfoRow
           label="Players"
-          value={`${match.confirmedCount} / ${match.capacity}`}
+          value={`${displayMatch.confirmedCount} / ${displayMatch.capacity}`}
         />
       </View>
 
@@ -273,8 +400,15 @@ export default function MatchDetailScreen({ route }: Props) {
         />
       )}
 
-      {/* Actions */}
-      {visibleActions.length > 0 && (
+      {/* Locked banner (hidden when canceled) */}
+      {!isCanceled && displayMatch.isLocked && (
+        <View style={styles.lockedBanner}>
+          <Text style={styles.lockedBannerText}>Match is locked</Text>
+        </View>
+      )}
+
+      {/* Actions (hidden when locked or canceled) */}
+      {!isCanceled && !displayMatch.isLocked && visibleActions.length > 0 && (
         <View style={styles.actions}>
           {actionError ? (
             <Text style={styles.actionError}>{actionError}</Text>
@@ -306,8 +440,8 @@ export default function MatchDetailScreen({ route }: Props) {
         </View>
       )}
 
-      {/* Invite block (admin only, not locked) */}
-      {canInvite && (
+      {/* Invite block (admin only, hidden when locked or canceled) */}
+      {!isCanceled && !displayMatch.isLocked && canInvite && (
         <View style={styles.inviteBlock}>
           <Text style={styles.sectionTitle}>Invite Player</Text>
           <View style={styles.inviteRow}>
@@ -315,7 +449,10 @@ export default function MatchDetailScreen({ route }: Props) {
               style={styles.inviteInput}
               placeholder="@username or email"
               value={inviteInput}
-              onChangeText={setInviteInput}
+              onChangeText={(text) => {
+                setInviteInput(text);
+                if (inviteMsg) setInviteMsg('');
+              }}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!inviteMutation.isPending}
@@ -351,8 +488,28 @@ export default function MatchDetailScreen({ route }: Props) {
         </View>
       )}
 
+      {/* Cancel match button (admin only, not already canceled) */}
+      {canCancel && (
+        <View style={styles.cancelBlock}>
+          {cancelError ? (
+            <Text style={styles.actionError}>{cancelError}</Text>
+          ) : null}
+          <Pressable
+            style={[styles.cancelBtn, cancelMutation.isPending && styles.btnDisabled]}
+            onPress={handleCancel}
+            disabled={cancelMutation.isPending}
+          >
+            {cancelMutation.isPending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.cancelBtnText}>Cancel Match</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+
       {/* Revision footer (debug) */}
-      <Text style={styles.revisionText}>rev {match.revision}</Text>
+      <Text style={styles.revisionText}>rev {displayMatch.revision}</Text>
     </ScrollView>
   );
 }
@@ -410,7 +567,7 @@ function ParticipantSection({
             {showPosition && p.waitlistPosition != null
               ? `#${p.waitlistPosition}  `
               : ''}
-            {p.userId.slice(0, 8)}...
+            @{p.username}
           </Text>
         </View>
       ))}
@@ -423,6 +580,17 @@ function ParticipantSection({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 20, paddingTop: 16, paddingBottom: 40 },
+  refreshBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    marginBottom: 8,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 8,
+  },
+  refreshText: { fontSize: 12, color: '#1976d2' },
   center: {
     flex: 1,
     justifyContent: 'center',
@@ -441,6 +609,49 @@ const styles = StyleSheet.create({
   },
   badgeLocked: { backgroundColor: '#d32f2f' },
   badgeText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+
+  // Lock/Unlock
+  lockBlock: { marginBottom: 12 },
+  lockBtn: {
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center' as const,
+  },
+  lockBtnLock: { backgroundColor: '#d32f2f' },
+  lockBtnUnlock: { backgroundColor: '#2e7d32' },
+  lockBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+
+  // Locked banner
+  lockedBanner: {
+    backgroundColor: '#fce4ec',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    alignItems: 'center' as const,
+  },
+  lockedBannerText: { color: '#c62828', fontSize: 13, fontWeight: '600' as const },
+
+  // Cancelled banner
+  cancelledBanner: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#bdbdbd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+    alignItems: 'center' as const,
+  },
+  cancelledBannerText: { color: '#616161', fontSize: 14, fontWeight: '700' as const },
+
+  // Cancel button
+  cancelBlock: { marginTop: 20 },
+  cancelBtn: {
+    backgroundColor: '#b71c1c',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center' as const,
+  },
+  cancelBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' as const },
 
   // Info block
   infoBlock: {
@@ -476,7 +687,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 18,
   },
-  participantId: { fontSize: 13, color: '#555', fontFamily: 'monospace' },
+  participantId: { fontSize: 13, color: '#555' },
 
   // Actions
   actions: { marginTop: 8, marginBottom: 4 },

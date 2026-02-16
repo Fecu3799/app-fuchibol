@@ -18,6 +18,7 @@ import { ListMatchesQuery } from '../application/list-matches.query';
 import { UpdateMatchUseCase } from '../application/update-match.use-case';
 import { LockMatchUseCase } from '../application/lock-match.use-case';
 import { UnlockMatchUseCase } from '../application/unlock-match.use-case';
+import { CancelMatchUseCase } from '../application/cancel-match.use-case';
 import { ConfirmParticipationUseCase } from '../application/confirm-participation.use-case';
 import { DeclineParticipationUseCase } from '../application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from '../application/withdraw-participation.use-case';
@@ -44,6 +45,7 @@ export class MatchesController {
     private readonly updateMatchUseCase: UpdateMatchUseCase,
     private readonly lockMatchUseCase: LockMatchUseCase,
     private readonly unlockMatchUseCase: UnlockMatchUseCase,
+    private readonly cancelMatchUseCase: CancelMatchUseCase,
     private readonly confirmUseCase: ConfirmParticipationUseCase,
     private readonly declineUseCase: DeclineParticipationUseCase,
     private readonly withdrawUseCase: WithdrawParticipationUseCase,
@@ -132,6 +134,24 @@ export class MatchesController {
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/cancel')
+  async cancel(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: ParticipationCommandDto,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.requireIdempotencyKey(idempotencyKey);
+    return this.cancelMatchUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      expectedRevision: body.expectedRevision,
+      idempotencyKey,
     });
   }
 

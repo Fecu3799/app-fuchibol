@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { getMatches } from './matchesClient';
 
@@ -9,5 +9,6 @@ export function useMatches(page = 1) {
     queryKey: ['matches', page],
     queryFn: () => getMatches(token!, { page }),
     enabled: !!token,
+    placeholderData: keepPreviousData,
   });
 }

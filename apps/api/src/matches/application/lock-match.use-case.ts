@@ -34,6 +34,10 @@ export class LockMatchUseCase {
         throw new ForbiddenException('Only match admin can lock');
       }
 
+      if (match.status === 'canceled') {
+        throw new ConflictException('MATCH_CANCELLED');
+      }
+
       if (match.revision !== input.expectedRevision) {
         throw new ConflictException('REVISION_CONFLICT');
       }
