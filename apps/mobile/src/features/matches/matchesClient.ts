@@ -6,6 +6,7 @@ interface ListParams {
   pageSize?: number;
   from?: string;
   to?: string;
+  view?: 'upcoming' | 'history';
 }
 
 export function getMatches(token: string, params?: ListParams): Promise<ListMatchesResponse> {

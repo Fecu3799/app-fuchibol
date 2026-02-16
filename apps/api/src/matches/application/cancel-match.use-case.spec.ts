@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CancelMatchUseCase } from './cancel-match.use-case';
 import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
@@ -27,7 +27,9 @@ function buildTxPrisma() {
     match: {
       findUnique: jest.fn().mockResolvedValue(mockMatch),
       findUniqueOrThrow: jest.fn().mockResolvedValue(mockMatch),
-      update: jest.fn().mockResolvedValue({ ...mockMatch, status: 'canceled', revision: 2 }),
+      update: jest
+        .fn()
+        .mockResolvedValue({ ...mockMatch, status: 'canceled', revision: 2 }),
     },
     matchParticipant: {
       count: jest.fn().mockResolvedValue(0),
@@ -36,7 +38,9 @@ function buildTxPrisma() {
       findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockResolvedValue({ id: 'p-1' }),
       update: jest.fn().mockResolvedValue({ id: 'p-1' }),
-      aggregate: jest.fn().mockResolvedValue({ _max: { waitlistPosition: null } }),
+      aggregate: jest
+        .fn()
+        .mockResolvedValue({ _max: { waitlistPosition: null } }),
     },
   };
 
@@ -85,8 +89,12 @@ describe('CancelMatchUseCase', () => {
 
   it('is idempotent when already canceled', async () => {
     const { prisma, tx } = buildTxPrisma();
-    tx.match.findUnique = jest.fn().mockResolvedValue({ ...mockMatch, status: 'canceled' });
-    tx.match.findUniqueOrThrow = jest.fn().mockResolvedValue({ ...mockMatch, status: 'canceled' });
+    tx.match.findUnique = jest
+      .fn()
+      .mockResolvedValue({ ...mockMatch, status: 'canceled' });
+    tx.match.findUniqueOrThrow = jest
+      .fn()
+      .mockResolvedValue({ ...mockMatch, status: 'canceled' });
     const idempotency = buildIdempotency(prisma);
     const useCase = new CancelMatchUseCase(prisma, idempotency);
 
@@ -135,7 +143,9 @@ describe('CancelMatchUseCase', () => {
 describe('MATCH_CANCELLED guard', () => {
   it('confirm on canceled match throws MATCH_CANCELLED', async () => {
     const { prisma, tx } = buildTxPrisma();
-    tx.match.findUnique = jest.fn().mockResolvedValue({ ...mockMatch, status: 'canceled' });
+    tx.match.findUnique = jest
+      .fn()
+      .mockResolvedValue({ ...mockMatch, status: 'canceled' });
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
 

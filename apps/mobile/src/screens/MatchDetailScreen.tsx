@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +12,7 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AppStackParamList } from '../navigation/AppNavigator';
-import type { MatchSnapshot, ParticipantView } from '../types/api';
+import type { MatchSnapshot, ParticipantView, GroupSummary, GroupMember } from '../types/api';
 import { useMatch } from '../features/matches/useMatch';
 import { useMatchAction, formatActionError } from '../features/matches/useMatchAction';
 import {
@@ -29,6 +30,9 @@ import {
 } from '../features/matches/useCancelMatch';
 import { useLogoutOn401 } from '../lib/use-api-query';
 import { ApiError } from '../lib/api';
+import { useGroups } from '../features/groups/useGroups';
+import { useGroup } from '../features/groups/useGroup';
+import { useBatchInviteFromGroup } from '../features/matches/useBatchInviteFromGroup';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'MatchDetail'>;
 
@@ -123,6 +127,14 @@ export default function MatchDetailScreen({ route }: Props) {
   const [inviteMsgType, setInviteMsgType] = useState<'success' | 'error'>(
     'success',
   );
+
+  // Group invite state
+  const [showGroupInvite, setShowGroupInvite] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
+  const groupsQuery = useGroups();
+  const groupDetailQuery = useGroup(selectedGroupId);
+  const batchInviteMutation = useBatchInviteFromGroup(matchId);
 
   const { data: match, isLoading, isFetching, error, refetch } = query;
 
@@ -488,6 +500,142 @@ export default function MatchDetailScreen({ route }: Props) {
         </View>
       )}
 
+      {/* Invite from Group (admin only, hidden when locked or canceled) */}
+      {!isCanceled && !displayMatch.isLocked && canInvite && (
+        <View style={styles.groupInviteBlock}>
+          {!showGroupInvite ? (
+            <Pressable
+              style={styles.groupInviteBtn}
+              onPress={() => setShowGroupInvite(true)}
+            >
+              <Text style={styles.groupInviteBtnText}>Invite from Group</Text>
+            </Pressable>
+          ) : !selectedGroupId ? (
+            <View>
+              <View style={styles.groupInviteHeader}>
+                <Text style={styles.sectionTitle}>Select Group</Text>
+                <Pressable onPress={() => setShowGroupInvite(false)}>
+                  <Text style={styles.groupCancelText}>Cancel</Text>
+                </Pressable>
+              </View>
+              {groupsQuery.isLoading ? (
+                <ActivityIndicator size="small" style={{ marginTop: 12 }} />
+              ) : (groupsQuery.data?.owned ?? []).length === 0 ? (
+                <Text style={styles.groupEmptyText}>No owned groups</Text>
+              ) : (
+                (groupsQuery.data?.owned ?? []).map((g) => (
+                  <Pressable
+                    key={g.id}
+                    style={styles.groupOption}
+                    onPress={() => {
+                      setSelectedGroupId(g.id);
+                      setSelectedMembers(new Set());
+                    }}
+                  >
+                    <Text style={styles.groupOptionName}>{g.name}</Text>
+                    <Text style={styles.groupOptionCount}>
+                      {g.memberCount} members
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </View>
+          ) : (
+            <View>
+              <View style={styles.groupInviteHeader}>
+                <Text style={styles.sectionTitle}>Select Members</Text>
+                <Pressable
+                  onPress={() => {
+                    setSelectedGroupId('');
+                    setSelectedMembers(new Set());
+                  }}
+                >
+                  <Text style={styles.groupCancelText}>Back</Text>
+                </Pressable>
+              </View>
+              {groupDetailQuery.isLoading ? (
+                <ActivityIndicator size="small" style={{ marginTop: 12 }} />
+              ) : (
+                <>
+                  {(groupDetailQuery.data?.members ?? []).map((m) => {
+                    const isSelected = selectedMembers.has(m.username);
+                    return (
+                      <Pressable
+                        key={m.userId}
+                        style={styles.memberCheckRow}
+                        onPress={() => {
+                          setSelectedMembers((prev) => {
+                            const next = new Set(prev);
+                            if (isSelected) next.delete(m.username);
+                            else next.add(m.username);
+                            return next;
+                          });
+                        }}
+                      >
+                        <View
+                          style={[
+                            styles.checkbox,
+                            isSelected && styles.checkboxChecked,
+                          ]}
+                        >
+                          {isSelected && (
+                            <Text style={styles.checkmark}>✓</Text>
+                          )}
+                        </View>
+                        <Text style={styles.memberCheckName}>
+                          @{m.username}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                  <Pressable
+                    style={[
+                      styles.batchInviteBtn,
+                      (selectedMembers.size === 0 ||
+                        batchInviteMutation.isPending) &&
+                        styles.btnDisabled,
+                    ]}
+                    onPress={() => {
+                      if (!displayMatch || selectedMembers.size === 0) return;
+                      batchInviteMutation.mutate(
+                        {
+                          usernames: Array.from(selectedMembers),
+                          revision: displayMatch.revision,
+                        },
+                        {
+                          onSuccess: (result) => {
+                            const msg =
+                              result.failed === 0
+                                ? `Invited ${result.successful} player${result.successful !== 1 ? 's' : ''}`
+                                : `Invited ${result.successful}/${result.total}. Failed: ${result.errors.map((e) => `@${e.username}`).join(', ')}`;
+                            Alert.alert('Invite Results', msg);
+                            setShowGroupInvite(false);
+                            setSelectedGroupId('');
+                            setSelectedMembers(new Set());
+                          },
+                        },
+                      );
+                    }}
+                    disabled={
+                      selectedMembers.size === 0 ||
+                      batchInviteMutation.isPending
+                    }
+                  >
+                    {batchInviteMutation.isPending ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.batchInviteBtnText}>
+                        Invite ({selectedMembers.size})
+                      </Text>
+                    )}
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Cancel match button (admin only, not already canceled) */}
       {canCancel && (
         <View style={styles.cancelBlock}>
@@ -765,4 +913,61 @@ const styles = StyleSheet.create({
     color: '#999',
     marginBottom: 8,
   },
+
+  // Group invite
+  groupInviteBlock: {
+    marginTop: 12,
+    backgroundColor: '#f5f0ff',
+    borderRadius: 10,
+    padding: 14,
+  },
+  groupInviteBtn: {
+    backgroundColor: '#7b1fa2',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center' as const,
+  },
+  groupInviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+  groupInviteHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    marginBottom: 10,
+  },
+  groupCancelText: { color: '#7b1fa2', fontSize: 14, fontWeight: '600' as const },
+  groupEmptyText: { color: '#999', fontSize: 14, textAlign: 'center' as const, marginTop: 8 },
+  groupOption: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  groupOptionName: { fontSize: 15, fontWeight: '600' as const },
+  groupOptionCount: { fontSize: 12, color: '#888', marginTop: 2 },
+  memberCheckRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 8,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#7b1fa2',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  checkboxChecked: { backgroundColor: '#7b1fa2' },
+  checkmark: { color: '#fff', fontSize: 14, fontWeight: '700' as const },
+  memberCheckName: { fontSize: 14 },
+  batchInviteBtn: {
+    backgroundColor: '#7b1fa2',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center' as const,
+    marginTop: 10,
+  },
+  batchInviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
 });

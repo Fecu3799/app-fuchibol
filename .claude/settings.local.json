@@ -20,7 +20,8 @@
       "Bash(npx jest:*)",
       "Bash(pnpm jest:*)",
       "Bash(pnpm build:*)",
-      "Bash(pnpm test:e2e:*)"
+      "Bash(pnpm test:e2e:*)",
+      "Bash(pnpm --filter api prisma migrate dev:*)"
     ]
   }
 }

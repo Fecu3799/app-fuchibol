@@ -26,8 +26,10 @@ model User {
   role           Role               @default(USER)
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
-  matches        Match[]
-  participations MatchParticipant[]
+  matches          Match[]
+  participations   MatchParticipant[]
+  ownedGroups      Group[]       @relation("GroupOwner")
+  groupMemberships GroupMember[]
 }
 
 model Match {
@@ -77,6 +79,29 @@ model MatchParticipant {
   @@index([matchId, waitlistPosition], map: "MatchParticipant_matchId_waitlistPosition_idx")
   @@index([matchId, createdAt], map: "MatchParticipant_matchId_createdAt_idx")
   @@index([userId, matchId], map: "MatchParticipant_userId_matchId_idx")
+}
+
+model Group {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  ownerId   String        @db.Uuid
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  owner     User          @relation("GroupOwner", fields: [ownerId], references: [id])
+  members   GroupMember[]
+
+  @@index([ownerId])
+}
+
+model GroupMember {
+  groupId   String   @db.Uuid
+  userId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@id([groupId, userId])
+  @@index([userId])
 }
 
 model IdempotencyRecord {

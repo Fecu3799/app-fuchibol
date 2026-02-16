@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import { resolveUser } from '../../common/helpers/resolve-user.helper';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 
@@ -27,7 +28,7 @@ export class InviteParticipationUseCase {
 
   async execute(input: InviteInput): Promise<MatchSnapshot> {
     // Resolve identifier -> userId before entering idempotency/transaction
-    const targetUserId = await this.resolveTargetUser(input);
+    const targetUserId = await resolveUser(this.prisma.client, input);
 
     // Self-invite check
     if (targetUserId === input.actorId) {
@@ -46,33 +47,6 @@ export class InviteParticipationUseCase {
       },
       execute: () => this.run(input, targetUserId),
     });
-  }
-
-  /** Resolve identifier (username/email) or direct userId to a user ID. */
-  private async resolveTargetUser(input: InviteInput): Promise<string> {
-    if (input.targetUserId) {
-      return input.targetUserId;
-    }
-
-    const raw = input.identifier!.trim();
-    let where: { username: string } | { email: string };
-
-    if (raw.startsWith('@')) {
-      // @username -> strip leading @
-      where = { username: raw.slice(1).toLowerCase() };
-    } else if (raw.includes('@')) {
-      // email
-      where = { email: raw.toLowerCase() };
-    } else {
-      // plain username
-      where = { username: raw.toLowerCase() };
-    }
-
-    const user = await this.prisma.client.user.findFirst({ where });
-    if (!user) {
-      throw new NotFoundException('USER_NOT_FOUND');
-    }
-    return user.id;
   }
 
   private async run(

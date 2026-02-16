@@ -1,4 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
+import { computeMatchStatusView } from '../domain/compute-match-status-view';
+import type { MatchStatusView } from '../domain/compute-match-status-view';
 
 type TransactionClient = Omit<
   PrismaClient,
@@ -19,6 +21,7 @@ export interface MatchSnapshot {
   location: string | null;
   capacity: number;
   status: string;
+  matchStatus: MatchStatusView;
   revision: number;
   isLocked: boolean;
   lockedAt: Date | null;
@@ -109,6 +112,7 @@ export async function buildMatchSnapshot(
     location: match.location,
     capacity: match.capacity,
     status: match.status,
+    matchStatus: computeMatchStatusView(match),
     revision: match.revision,
     isLocked: match.isLocked,
     lockedAt: match.lockedAt,

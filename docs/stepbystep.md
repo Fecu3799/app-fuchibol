@@ -43,6 +43,9 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 35. [Fix: HomeScreen stuck loader tras mutation en MatchDetail](#35-fix-homescreen-stuck-loader-tras-mutation-en-matchdetail)
 36. [Cancel Match end-to-end (API + Mobile)](#36-cancel-match-end-to-end-api--mobile)
 37. [Mobile: Bottom Tab Navigation](#37-mobile-bottom-tab-navigation)
+38. [User History: upcoming vs history view](#38-user-history-upcoming-vs-history-view)
+39. [Derived matchStatus (UPCOMING/PLAYED/CANCELLED)](#39-derived-matchstatus-upcomingplayedcancelled)
+40. [Groups Feature (end-to-end)](#40-groups-feature-end-to-end)
 
 ---
 
@@ -3273,3 +3276,249 @@ HomeScreen usa `CompositeScreenProps<BottomTabScreenProps<TabParamList, 'HomeTab
 ### Verificacion
 
 - `npx tsc --noEmit` sin errores en mobile
+
+---
+
+## 38. User History: upcoming vs history view
+
+### Que se hizo
+
+Se agrego un parametro `view` al endpoint `GET /api/v1/matches` para distinguir entre partidos proximos (`upcoming`, default) y historial (`history`). Ademas se creo la pantalla de historial en mobile accesible desde el Profile tab.
+
+### Logica de filtrado
+
+- **`view=upcoming`** (default): excluye matches cancelados (`status != canceled`) y pasados (`startsAt >= now`). Ordena por `startsAt ASC`.
+- **`view=history`**: incluye matches cancelados OR pasados (`status = canceled` OR `startsAt < now`). Ordena por `startsAt DESC`.
+
+### Backend
+
+| Archivo | Cambio |
+|---|---|
+| `apps/api/src/matches/api/dto/list-matches-query.dto.ts` | Nuevo campo `view?: 'upcoming' \| 'history'` con `@IsIn` |
+| `apps/api/src/matches/application/list-matches.query.ts` | `view` en `ListMatchesInput`, filtro por view en where clause, order dinamico |
+| `apps/api/src/matches/api/matches.controller.ts` | Pasa `query.view ?? 'upcoming'` al use-case |
+| `apps/api/src/matches/application/list-matches.query.spec.ts` | 4 tests nuevos: default upcoming, upcoming order, history where, history order |
+
+### Mobile
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/features/matches/matchesClient.ts` | `view` en `ListParams` |
+| `apps/mobile/src/features/matches/useMatchHistory.ts` | Nuevo: hook con `view: 'history'`, query key `['matches', 'history', page]` |
+| `apps/mobile/src/screens/MatchHistoryScreen.tsx` | Nuevo: FlatList con badge de estado (CANCELLED/PLAYED/PAST), pull-to-refresh, empty state |
+| `apps/mobile/src/navigation/AppNavigator.tsx` | `MatchHistory` en `RootStackParamList` + screen registrado |
+| `apps/mobile/src/screens/ProfileScreen.tsx` | Boton "Match History" que navega a `MatchHistory` |
+
+### Uso
+
+```
+GET /api/v1/matches              → upcoming (default)
+GET /api/v1/matches?view=upcoming → explicit upcoming
+GET /api/v1/matches?view=history  → canceled + past matches
+```
+
+### Verificacion
+
+- `pnpm --filter api test -- --testPathPattern=list-matches.query.spec` pasa
+- Mobile: Profile tab → "Match History" → lista de partidos pasados/cancelados → tap navega a MatchDetail
+
+---
+
+## 39. Derived matchStatus (UPCOMING/PLAYED/CANCELLED)
+
+### Que se hizo
+
+Se agrego un campo derivado `matchStatus` a las respuestas del API que indica el estado visual del partido sin persistir en DB. La logica vive en una funcion pura `computeMatchStatusView`. El filtro de upcoming se actualizo para excluir tambien partidos "played" (startsAt + 1h <= now). La HomeScreen de mobile ahora muestra `matchStatus` como badge principal y `myStatus` como texto secundario.
+
+### Regla de derivacion
+
+```
+computeMatchStatusView(match, now):
+  si match.status === 'canceled'          => 'CANCELLED'
+  si now >= match.startsAt + 1 hora       => 'PLAYED'
+  en otro caso                            => 'UPCOMING'
+```
+
+- `locked` NO cambia el matchStatus (se expone como flag `isLocked` aparte).
+- No se persiste en DB, no se necesita cron/jobs.
+
+### Filtro upcoming actualizado
+
+- **upcoming**: `status != canceled` AND `startsAt > now - 1h` (excluye played).
+- **history**: `status = canceled` OR `startsAt <= now - 1h` (incluye played y canceled).
+
+### Backend
+
+| Archivo | Cambio |
+|---|---|
+| `apps/api/src/matches/domain/compute-match-status-view.ts` | Nuevo: funcion pura + tipo `MatchStatusView` |
+| `apps/api/src/matches/domain/compute-match-status-view.spec.ts` | Nuevo: 8 tests (cancelled, upcoming, played, boundary 59m59s, locked) |
+| `apps/api/src/matches/application/list-matches.query.ts` | `matchStatus` en `MatchHomeItem`, filtro con `playedCutoff` (now - 1h) |
+| `apps/api/src/matches/application/build-match-snapshot.ts` | `matchStatus` en `MatchSnapshot` |
+| `apps/api/src/matches/application/list-matches.query.spec.ts` | Tests actualizados + test nuevo para `matchStatus` en items |
+
+### Mobile
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/types/api.ts` | `matchStatus` en `MatchHomeItem` y `MatchSnapshot` |
+| `apps/mobile/src/screens/HomeScreen.tsx` | Badge principal usa `matchStatus`, `myStatus` como texto secundario |
+| `apps/mobile/src/screens/MatchHistoryScreen.tsx` | Badge usa `matchStatus` en vez de `status` |
+
+### Verificacion
+
+- 80 tests pasan (14 suites), incluyendo 8 tests nuevos de `computeMatchStatusView`
+- Home muestra badge UPCOMING (azul) como estado principal del match
+- History muestra badge PLAYED (gris) o CANCELLED (rojo)
+
+---
+
+## 40. Groups Feature (end-to-end)
+
+### Que se hizo
+
+Feature completa de Groups: CRUD backend + pantallas mobile + "Invite from Group" en MatchDetail.
+
+### Schema
+
+Nuevos modelos `Group` y `GroupMember` en Prisma:
+
+```prisma
+model Group {
+  id, name, ownerId, createdAt, updatedAt
+  owner -> User (GroupOwner relation)
+  members -> GroupMember[]
+  @@index([ownerId])
+}
+
+model GroupMember {
+  groupId, userId, createdAt
+  @@id([groupId, userId])  -- composite PK
+  @@index([userId])
+  onDelete: Cascade en group
+}
+```
+
+User model extendido con `ownedGroups` y `groupMemberships`.
+
+Migration: `20260216191501_add_groups`.
+
+### Shared Helper: resolveUser
+
+Extraido `resolveTargetUser` de `invite-participation.use-case.ts` a `common/helpers/resolve-user.helper.ts`. Logica: `@username` -> strip @, `email@` -> email lookup, else plain username. Throws `NotFoundException('USER_NOT_FOUND')`.
+
+`invite-participation.use-case.ts` refactorizado para usar el helper compartido.
+
+### Backend (Groups Module)
+
+**DTOs:**
+- `CreateGroupDto`: name (string, 1-100 chars)
+- `AddMemberDto`: identifier (string, min 1)
+
+**Use-cases:**
+- `CreateGroupUseCase`: Transaction: crea Group + auto-agrega owner como GroupMember
+- `ListGroupsQuery`: Dos queries — `owned` (ownerId=actor) y `memberOf` (member pero no owner), cada una con `_count.members`
+- `GetGroupQuery`: findUnique + include members con username. Valida que actor sea member (403)
+- `AddMemberUseCase`: Resuelve identifier via `resolveUser`. Valida group (404), owner (403), not duplicate (409 ALREADY_MEMBER)
+- `RemoveMemberUseCase`: Owner puede remover a cualquiera, user puede removerse a si mismo. Owner no puede irse (409 OWNER_CANNOT_LEAVE). Non-owner no puede remover a otros (403)
+
+**Controller (`/groups`):**
+
+| Method | Route | Action |
+|--------|-------|--------|
+| POST | `/groups` | create |
+| GET | `/groups` | list (owned + memberOf) |
+| GET | `/groups/:id` | detail + members |
+| POST | `/groups/:id/members` | add member |
+| DELETE | `/groups/:id/members/:userId` | remove/leave |
+
+Todos con `@UseGuards(JwtAuthGuard)`, mutaciones con `@Throttle({ mutations: {} })`.
+
+**Module** registrado en `app.module.ts`.
+
+### Tests (10 tests, 3 suites)
+
+- `create-group.use-case.spec.ts`: Crea grupo y auto-agrega owner
+- `add-member.use-case.spec.ts`: 404 group, 403 not owner, 409 already member, success
+- `remove-member.use-case.spec.ts`: Owner removes other, user leaves self, owner cannot leave (409), non-owner cannot remove (403), 404 group
+
+### Mobile Data Layer
+
+**Types (`api.ts`):** `GroupSummary`, `ListGroupsResponse`, `GroupMember`, `GroupDetail`, `CreateGroupResponse`.
+
+**Client (`groupsClient.ts`):** `getGroups`, `getGroup`, `createGroup`, `addGroupMember`, `removeGroupMember`.
+
+**Hooks:**
+- `useGroups` — queryKey `['groups']`
+- `useGroup` — queryKey `['group', groupId]`
+- `useCreateGroup` — mutation, invalidates groups
+- `useAddGroupMember` — mutation, setQueryData detail, invalidates list
+- `useRemoveGroupMember` — mutation, invalidates both
+
+### Mobile Screens
+
+**GroupsScreen (rewrite):** Dos secciones "My Groups" + "Member Of". Cards con name + memberCount + "Owner" badge. Boton "+ Create" en header. Empty state.
+
+**CreateGroupScreen (nuevo):** Form con name TextInput + "Create Group" button. On success navega a GroupDetail.
+
+**GroupDetailScreen (nuevo):** Header con nombre y count. Add member section (owner only) con TextInput + inline error. Members FlatList con @username + Remove/Leave button. Alert confirmation en remove/leave.
+
+**AppNavigator:** Agregados `CreateGroup` y `GroupDetail` a `RootStackParamList` y registrados en RootStack.
+
+### MatchDetail: Invite from Group
+
+**`useBatchInviteFromGroup`:** Loop secuencial de invites. Retry on REVISION_CONFLICT (fetch fresh match, retry once). Retorna `{ total, successful, failed, errors }`.
+
+**MatchDetailScreen:** Boton "Invite from Group" debajo del invite block (solo cuando canInvite && !isCanceled && !isLocked). Flow inline:
+1. Click -> muestra lista de owned groups
+2. Select group -> muestra members con checkboxes
+3. Click "Invite (N)" -> batch invite -> Alert con resultados
+
+### Archivos creados
+
+| Archivo | Descripcion |
+|---|---|
+| `apps/api/src/common/helpers/resolve-user.helper.ts` | Shared user resolver |
+| `apps/api/src/groups/groups.module.ts` | Groups NestJS module |
+| `apps/api/src/groups/api/groups.controller.ts` | Controller REST |
+| `apps/api/src/groups/api/dto/create-group.dto.ts` | DTO create |
+| `apps/api/src/groups/api/dto/add-member.dto.ts` | DTO add member |
+| `apps/api/src/groups/application/create-group.use-case.ts` | Use-case create |
+| `apps/api/src/groups/application/list-groups.query.ts` | Query list |
+| `apps/api/src/groups/application/get-group.query.ts` | Query detail |
+| `apps/api/src/groups/application/add-member.use-case.ts` | Use-case add member |
+| `apps/api/src/groups/application/remove-member.use-case.ts` | Use-case remove member |
+| `apps/api/src/groups/application/create-group.use-case.spec.ts` | Test create |
+| `apps/api/src/groups/application/add-member.use-case.spec.ts` | Test add member |
+| `apps/api/src/groups/application/remove-member.use-case.spec.ts` | Test remove member |
+| `apps/mobile/src/features/groups/groupsClient.ts` | API client |
+| `apps/mobile/src/features/groups/useGroups.ts` | Hook list |
+| `apps/mobile/src/features/groups/useGroup.ts` | Hook detail |
+| `apps/mobile/src/features/groups/useCreateGroup.ts` | Hook create |
+| `apps/mobile/src/features/groups/useAddGroupMember.ts` | Hook add member |
+| `apps/mobile/src/features/groups/useRemoveGroupMember.ts` | Hook remove member |
+| `apps/mobile/src/screens/CreateGroupScreen.tsx` | Screen create |
+| `apps/mobile/src/screens/GroupDetailScreen.tsx` | Screen detail |
+| `apps/mobile/src/features/matches/useBatchInviteFromGroup.ts` | Batch invite hook |
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/api/prisma/schema.prisma` | Modelos Group, GroupMember + relaciones en User |
+| `apps/api/src/app.module.ts` | Import GroupsModule |
+| `apps/api/src/matches/application/invite-participation.use-case.ts` | Refactor a usar shared resolveUser |
+| `apps/mobile/src/types/api.ts` | Types de Groups |
+| `apps/mobile/src/screens/GroupsScreen.tsx` | Rewrite completo |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | Invite from Group flow |
+| `apps/mobile/src/navigation/AppNavigator.tsx` | Rutas CreateGroup y GroupDetail |
+
+### Verificacion
+
+- 90 tests pasan (17 suites), incluyendo 10 tests nuevos de groups
+- POST /api/v1/groups crea grupo, owner es auto-miembro
+- GET /api/v1/groups retorna { owned, memberOf }
+- POST /api/v1/groups/:id/members agrega miembro, 409 en duplicado
+- DELETE /api/v1/groups/:id/members/:userId owner remueve, user sale, owner no puede salir
+- Mobile: Groups tab -> create -> detail -> add member -> remove -> leave
+- Mobile: MatchDetail -> Invite from Group -> select -> invite -> feedback

@@ -11,7 +11,10 @@ import MatchDetailScreen from '../screens/MatchDetailScreen';
 import CreateMatchScreen from '../screens/CreateMatchScreen';
 import GroupsScreen from '../screens/GroupsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import MatchHistoryScreen from '../screens/MatchHistoryScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import CreateGroupScreen from '../screens/CreateGroupScreen';
+import GroupDetailScreen from '../screens/GroupDetailScreen';
 
 // ── Param lists ──
 
@@ -31,6 +34,9 @@ export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<TabParamList>;
   CreateMatch: undefined;
   MatchDetail: { matchId: string };
+  MatchHistory: undefined;
+  CreateGroup: undefined;
+  GroupDetail: { groupId: string };
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -125,6 +131,21 @@ function AppNavigator() {
         name="MatchDetail"
         component={MatchDetailScreen}
         options={{ title: 'Match Detail' }}
+      />
+      <RootStack.Screen
+        name="MatchHistory"
+        component={MatchHistoryScreen}
+        options={{ title: 'Match History' }}
+      />
+      <RootStack.Screen
+        name="CreateGroup"
+        component={CreateGroupScreen}
+        options={{ title: 'Create Group' }}
+      />
+      <RootStack.Screen
+        name="GroupDetail"
+        component={GroupDetailScreen}
+        options={{ title: 'Group Detail' }}
       />
     </RootStack.Navigator>
   );

@@ -24,7 +24,16 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
-function statusColor(status: string | null): string {
+function matchStatusColor(matchStatus: string): string {
+  switch (matchStatus) {
+    case 'UPCOMING': return '#1976d2';
+    case 'PLAYED': return '#757575';
+    case 'CANCELLED': return '#d32f2f';
+    default: return '#999';
+  }
+}
+
+function myStatusColor(status: string): string {
   switch (status) {
     case 'CONFIRMED': return '#2e7d32';
     case 'WAITLISTED': return '#f57c00';
@@ -43,19 +52,24 @@ function MatchRow({ item, onPress }: { item: MatchHomeItem; onPress: () => void 
           {item.title}
           {item.isLocked ? ' [Locked]' : ''}
         </Text>
-        <Text style={styles.rowCount}>
-          {item.confirmedCount}/{item.capacity}
-        </Text>
+        <View style={[styles.matchBadge, { backgroundColor: matchStatusColor(item.matchStatus) }]}>
+          <Text style={styles.matchBadgeText}>{item.matchStatus}</Text>
+        </View>
       </View>
       <Text style={styles.rowSub}>
         {date.toLocaleDateString()} {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         {item.location ? ` \u2022 ${item.location}` : ''}
       </Text>
-      {item.myStatus && (
-        <Text style={[styles.rowStatus, { color: statusColor(item.myStatus) }]}>
-          {item.myStatus}
+      <View style={styles.rowFooter}>
+        <Text style={styles.rowCount}>
+          {item.confirmedCount}/{item.capacity}
         </Text>
-      )}
+        {item.myStatus && (
+          <Text style={[styles.rowMyStatus, { color: myStatusColor(item.myStatus) }]}>
+            {item.myStatus}
+          </Text>
+        )}
+      </View>
     </Pressable>
   );
 }
@@ -258,9 +272,12 @@ const styles = StyleSheet.create({
   },
   rowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowTitle: { fontSize: 16, fontWeight: '600', flex: 1, marginRight: 8 },
-  rowCount: { fontSize: 14, color: '#555' },
+  matchBadge: { borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 },
+  matchBadgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   rowSub: { fontSize: 13, color: '#777', marginTop: 4 },
-  rowStatus: { fontSize: 12, fontWeight: '600', marginTop: 6 },
+  rowFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  rowCount: { fontSize: 13, color: '#555' },
+  rowMyStatus: { fontSize: 12, fontWeight: '600' },
   empty: { textAlign: 'center', color: '#999', marginTop: 40, fontSize: 15 },
   errorContainer: { alignItems: 'center', marginTop: 40 },
   errorText: { fontSize: 15, color: '#d32f2f', marginBottom: 12 },

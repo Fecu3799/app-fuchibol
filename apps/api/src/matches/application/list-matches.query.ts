@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { MatchStatus } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { computeMatchStatusView } from '../domain/compute-match-status-view';
+import type { MatchStatusView } from '../domain/compute-match-status-view';
 
 export interface ListMatchesInput {
   actorId: string;
@@ -7,6 +10,7 @@ export interface ListMatchesInput {
   pageSize: number;
   from?: string;
   to?: string;
+  view?: 'upcoming' | 'history';
 }
 
 export interface MatchHomeItem {
@@ -16,6 +20,7 @@ export interface MatchHomeItem {
   location: string | null;
   capacity: number;
   status: string;
+  matchStatus: MatchStatusView;
   revision: number;
   isLocked: boolean;
   lockedAt: Date | null;
@@ -44,8 +49,10 @@ export class ListMatchesQuery {
   constructor(private readonly prisma: PrismaService) {}
 
   async execute(input: ListMatchesInput): Promise<ListMatchesResult> {
-    const { actorId, page, pageSize, from, to } = input;
+    const { actorId, page, pageSize, from, to, view = 'upcoming' } = input;
     const skip = (page - 1) * pageSize;
+    const now = new Date();
+    const playedCutoff = new Date(now.getTime() - 60 * 60 * 1000);
 
     // Build where clause: scope=mine (matches where actor participates OR is creator)
     const dateFilter: Record<string, unknown> = {};
@@ -55,9 +62,28 @@ export class ListMatchesQuery {
     const startsAtFilter =
       Object.keys(dateFilter).length > 0 ? dateFilter : undefined;
 
+    // View filtering
+    // upcoming: not canceled AND not played (startsAt > now - 1h)
+    // history: canceled OR played (startsAt <= now - 1h)
+    const viewFilter =
+      view === 'history'
+        ? [
+            {
+              OR: [
+                { status: MatchStatus.canceled },
+                { startsAt: { lte: playedCutoff } },
+              ],
+            },
+          ]
+        : [
+            { status: { not: MatchStatus.canceled } },
+            { startsAt: { gt: playedCutoff } },
+          ];
+
     const where = {
       AND: [
         ...(startsAtFilter ? [{ startsAt: startsAtFilter }] : []),
+        ...viewFilter,
         {
           OR: [
             { createdById: actorId },
@@ -80,7 +106,7 @@ export class ListMatchesQuery {
     // 2) Fetch paginated match rows
     const matches = await this.prisma.client.match.findMany({
       where,
-      orderBy: { startsAt: 'asc' },
+      orderBy: { startsAt: view === 'history' ? 'desc' : 'asc' },
       skip,
       take: pageSize,
       select: {
@@ -131,6 +157,7 @@ export class ListMatchesQuery {
       location: m.location,
       capacity: m.capacity,
       status: m.status,
+      matchStatus: computeMatchStatusView(m, now),
       revision: m.revision,
       isLocked: m.isLocked,
       lockedAt: m.lockedAt,

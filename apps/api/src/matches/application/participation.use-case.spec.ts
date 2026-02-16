@@ -173,8 +173,17 @@ describe('WithdrawParticipationUseCase', () => {
     tx.matchParticipant.findFirst = jest.fn().mockResolvedValue(waitlisted);
     // After withdraw, return updated participants for snapshot
     tx.matchParticipant.findMany = jest.fn().mockResolvedValue([
-      { ...existingConfirmed, status: 'WITHDRAWN', user: { username: 'user1' } },
-      { ...waitlisted, status: 'CONFIRMED', waitlistPosition: null, user: { username: 'user2' } },
+      {
+        ...existingConfirmed,
+        status: 'WITHDRAWN',
+        user: { username: 'user1' },
+      },
+      {
+        ...waitlisted,
+        status: 'CONFIRMED',
+        waitlistPosition: null,
+        user: { username: 'user2' },
+      },
     ]);
 
     const idempotency = buildIdempotency(prisma);

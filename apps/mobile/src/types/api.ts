@@ -21,6 +21,7 @@ export interface MatchHomeItem {
   location: string | null;
   capacity: number;
   status: string;
+  matchStatus: 'UPCOMING' | 'PLAYED' | 'CANCELLED';
   revision: number;
   isLocked: boolean;
   lockedAt: string | null;
@@ -58,6 +59,7 @@ export interface MatchSnapshot {
   location: string | null;
   capacity: number;
   status: string;
+  matchStatus: 'UPCOMING' | 'PLAYED' | 'CANCELLED';
   revision: number;
   isLocked: boolean;
   lockedAt: string | null;
@@ -81,6 +83,45 @@ export interface CreateMatchResponse {
   revision: number;
   status: string;
 }
+
+// ── Groups ──
+
+export interface GroupSummary {
+  id: string;
+  name: string;
+  ownerId: string;
+  memberCount: number;
+  createdAt: string;
+}
+
+export interface ListGroupsResponse {
+  owned: GroupSummary[];
+  memberOf: GroupSummary[];
+}
+
+export interface GroupMember {
+  userId: string;
+  username: string;
+  createdAt: string;
+}
+
+export interface GroupDetail {
+  id: string;
+  name: string;
+  ownerId: string;
+  memberCount: number;
+  members: GroupMember[];
+  createdAt: string;
+}
+
+export interface CreateGroupResponse {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+}
+
+// ── Errors ──
 
 export interface ApiErrorBody {
   type?: string;

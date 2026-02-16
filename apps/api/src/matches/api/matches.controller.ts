@@ -77,6 +77,7 @@ export class MatchesController {
       pageSize: query.pageSize ?? 20,
       from: query.from,
       to: query.to,
+      view: query.view ?? 'upcoming',
     });
   }
 

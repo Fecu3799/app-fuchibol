@@ -199,6 +199,122 @@ describe('ListMatchesQuery', () => {
     expect(dateClause.startsAt.lte).toEqual(new Date('2026-06-30T23:59:59Z'));
   });
 
+  it('default view (upcoming): where clause excludes canceled and played matches', async () => {
+    const prisma = buildPrisma();
+    const query = new ListMatchesQuery(prisma);
+
+    await query.execute({
+      actorId: 'user-1',
+      page: 1,
+      pageSize: 20,
+    });
+
+    const countCall = (prisma.client.match.count as jest.Mock).mock.calls[0][0];
+    const whereClause = countCall.where;
+
+    // Should have status not canceled
+    const statusClause = whereClause.AND.find(
+      (c: Record<string, unknown>) => c.status,
+    );
+    expect(statusClause).toEqual({ status: { not: 'canceled' } });
+
+    // Should have startsAt > playedCutoff (now - 1h) to exclude played matches
+    const startsAtClause = whereClause.AND.find(
+      (c: Record<string, unknown>) => c.startsAt,
+    );
+    expect(startsAtClause.startsAt.gt).toBeInstanceOf(Date);
+  });
+
+  it('view=upcoming: orders by startsAt asc', async () => {
+    const prisma = buildPrisma();
+    const query = new ListMatchesQuery(prisma);
+
+    prisma.client.match.count = jest.fn().mockResolvedValue(1);
+    prisma.client.match.findMany = jest
+      .fn()
+      .mockResolvedValue([makeMatch({ createdById: 'user-1' })]);
+
+    await query.execute({
+      actorId: 'user-1',
+      page: 1,
+      pageSize: 20,
+      view: 'upcoming',
+    });
+
+    const findManyCall = (prisma.client.match.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyCall.orderBy).toEqual({ startsAt: 'asc' });
+  });
+
+  it('view=history: where clause includes canceled OR played matches', async () => {
+    const prisma = buildPrisma();
+    const query = new ListMatchesQuery(prisma);
+
+    await query.execute({
+      actorId: 'user-1',
+      page: 1,
+      pageSize: 20,
+      view: 'history',
+    });
+
+    const countCall = (prisma.client.match.count as jest.Mock).mock.calls[0][0];
+    const whereClause = countCall.where;
+
+    // Should have OR clause for canceled or played (startsAt <= now - 1h)
+    const historyClause = whereClause.AND.find(
+      (c: Record<string, unknown>) => c.OR,
+    );
+    expect(historyClause.OR).toEqual(
+      expect.arrayContaining([
+        { status: 'canceled' },
+        expect.objectContaining({
+          startsAt: expect.objectContaining({ lte: expect.any(Date) }),
+        }),
+      ]),
+    );
+  });
+
+  it('view=history: orders by startsAt desc', async () => {
+    const prisma = buildPrisma();
+    const query = new ListMatchesQuery(prisma);
+
+    prisma.client.match.count = jest.fn().mockResolvedValue(1);
+    prisma.client.match.findMany = jest
+      .fn()
+      .mockResolvedValue([makeMatch({ createdById: 'user-1' })]);
+
+    await query.execute({
+      actorId: 'user-1',
+      page: 1,
+      pageSize: 20,
+      view: 'history',
+    });
+
+    const findManyCall = (prisma.client.match.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyCall.orderBy).toEqual({ startsAt: 'desc' });
+  });
+
+  it('items include derived matchStatus field', async () => {
+    const prisma = buildPrisma();
+    const match1 = makeMatch({ id: 'match-1', createdById: 'user-1' });
+
+    prisma.client.match.count = jest.fn().mockResolvedValue(1);
+    prisma.client.match.findMany = jest.fn().mockResolvedValue([match1]);
+
+    const query = new ListMatchesQuery(prisma);
+    const result = await query.execute({
+      actorId: 'user-1',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.items[0].matchStatus).toBeDefined();
+    expect(['UPCOMING', 'PLAYED', 'CANCELLED']).toContain(
+      result.items[0].matchStatus,
+    );
+  });
+
   it('myStatus is null when actor has no participation', async () => {
     const prisma = buildPrisma();
     const match1 = makeMatch({ id: 'match-1', createdById: 'user-1' });
