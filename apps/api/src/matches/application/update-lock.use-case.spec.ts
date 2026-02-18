@@ -109,7 +109,11 @@ describe('UpdateMatchUseCase', () => {
     });
 
     expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
-      where: { matchId: 'match-1', status: 'CONFIRMED' },
+      where: {
+        matchId: 'match-1',
+        status: 'CONFIRMED',
+        userId: { not: 'admin-1' },
+      },
       data: { status: 'INVITED', confirmedAt: null },
     });
   });
@@ -126,7 +130,11 @@ describe('UpdateMatchUseCase', () => {
     });
 
     expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
-      where: { matchId: 'match-1', status: 'CONFIRMED' },
+      where: {
+        matchId: 'match-1',
+        status: 'CONFIRMED',
+        userId: { not: 'admin-1' },
+      },
       data: { status: 'INVITED', confirmedAt: null },
     });
   });
@@ -145,7 +153,11 @@ describe('UpdateMatchUseCase', () => {
     });
 
     expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
-      where: { matchId: 'match-1', status: 'CONFIRMED' },
+      where: {
+        matchId: 'match-1',
+        status: 'CONFIRMED',
+        userId: { not: 'admin-1' },
+      },
       data: { status: 'INVITED', confirmedAt: null },
     });
   });
@@ -225,7 +237,11 @@ describe('UpdateMatchUseCase', () => {
     });
 
     expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
-      where: { matchId: 'match-1', status: 'CONFIRMED' },
+      where: {
+        matchId: 'match-1',
+        status: 'CONFIRMED',
+        userId: { not: 'admin-1' },
+      },
       data: { status: 'INVITED', confirmedAt: null },
     });
   });

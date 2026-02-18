@@ -70,3 +70,50 @@ export function inviteToMatch(
     body: JSON.stringify({ identifier, expectedRevision }),
   });
 }
+
+export function patchMatch(
+  token: string,
+  matchId: string,
+  body: Record<string, unknown> & { expectedRevision: number },
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}`), {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export function promoteAdmin(
+  token: string,
+  matchId: string,
+  userId: string,
+  expectedRevision: number,
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/admins`), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ userId, expectedRevision }),
+  });
+}
+
+export function demoteAdmin(
+  token: string,
+  matchId: string,
+  userId: string,
+  expectedRevision: number,
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/admins/${userId}`), {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ expectedRevision }),
+  });
+}

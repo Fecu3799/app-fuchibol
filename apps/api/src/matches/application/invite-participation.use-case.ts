@@ -9,6 +9,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { resolveUser } from '../../common/helpers/resolve-user.helper';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { isCreatorOrMatchAdmin } from './match-permissions';
 
 export interface InviteInput {
   matchId: string;
@@ -64,7 +65,9 @@ export class InviteParticipationUseCase {
         throw new NotFoundException('Match not found');
       }
 
-      if (match.createdById !== input.actorId) {
+      if (
+        !(await isCreatorOrMatchAdmin(match, tx, input.matchId, input.actorId))
+      ) {
         throw new ForbiddenException('Only match admin can invite');
       }
 

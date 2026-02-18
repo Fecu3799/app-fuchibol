@@ -68,6 +68,8 @@ model MatchParticipant {
   status           MatchParticipantStatus
   waitlistPosition Int?
   confirmedAt      DateTime?
+  isMatchAdmin     Boolean                @default(false)
+  adminGrantedAt   DateTime?
   createdAt        DateTime               @default(now())
   updatedAt        DateTime               @updatedAt
 

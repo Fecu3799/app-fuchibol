@@ -12,8 +12,10 @@ import {
   getStoredToken,
   removeStoredToken,
   setStoredToken,
+  STORAGE_BACKEND,
 } from '../lib/token-store';
 import { ApiError } from '../lib/api';
+import { Platform } from 'react-native';
 import type { MeResponse } from '../types/api';
 
 interface AuthState {
@@ -42,7 +44,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = await getStoredToken();
+      let stored: string | null = null;
+      try {
+        stored = await getStoredToken();
+      } catch {
+        // Storage unavailable (e.g. SecureStore on web) — treat as no token
+      }
+
+      if (__DEV__) {
+        console.log('[Auth] boot', {
+          platform: Platform.OS,
+          tokenFound: !!stored,
+          storageBackend: STORAGE_BACKEND,
+        });
+      }
+
       if (!stored) {
         if (!cancelled) setState({ isLoading: false, isAuthenticated: false, token: null, user: null });
         return;

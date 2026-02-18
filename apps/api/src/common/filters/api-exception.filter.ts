@@ -38,6 +38,13 @@ const DOMAIN_CONFLICT_CODES = new Set([
   'ALREADY_PARTICIPANT',
 ]);
 
+/** Known domain error codes sent as UnprocessableEntityException message strings. */
+const DOMAIN_UNPROCESSABLE_CODES = new Set([
+  'CREATOR_WITHDRAW_REQUIRES_ADMIN',
+  'CANNOT_DEMOTE_CREATOR',
+  'NOT_PARTICIPANT',
+]);
+
 /** Known domain error codes sent as NotFoundException message strings. */
 const DOMAIN_NOT_FOUND_CODES = new Set(['USER_NOT_FOUND']);
 
@@ -50,6 +57,7 @@ function resolveCode(status: number, response: unknown): string {
         if (msg.startsWith('CAPACITY_BELOW_CONFIRMED'))
           return 'CAPACITY_BELOW_CONFIRMED';
       }
+      if (status === 422 && DOMAIN_UNPROCESSABLE_CODES.has(msg)) return msg;
       if (status === 404 && DOMAIN_NOT_FOUND_CODES.has(msg)) return msg;
     }
   }

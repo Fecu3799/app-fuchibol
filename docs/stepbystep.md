@@ -46,6 +46,8 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 38. [User History: upcoming vs history view](#38-user-history-upcoming-vs-history-view)
 39. [Derived matchStatus (UPCOMING/PLAYED/CANCELLED)](#39-derived-matchstatus-upcomingplayedcancelled)
 40. [Groups Feature (end-to-end)](#40-groups-feature-end-to-end)
+41. [Fix: Expo Web infinite loading (SecureStore web fallback)](#41-fix-expo-web-infinite-loading-securestore-web-fallback)
+42. [Match Admin & Edit Reconfirm + Creator Transfer](#42-match-admin--edit-reconfirm--creator-transfer)
 
 ---
 
@@ -3522,3 +3524,117 @@ Todos con `@UseGuards(JwtAuthGuard)`, mutaciones con `@Throttle({ mutations: {} 
 - DELETE /api/v1/groups/:id/members/:userId owner remueve, user sale, owner no puede salir
 - Mobile: Groups tab -> create -> detail -> add member -> remove -> leave
 - Mobile: MatchDetail -> Invite from Group -> select -> invite -> feedback
+
+---
+
+## 41. Fix: Expo Web infinite loading (SecureStore web fallback)
+
+### Problema
+
+Al abrir la app en web (`expo start --web` / press `w`), la pantalla quedaba en un spinner infinito. `expo-secure-store` no soporta web y lanzaba un error silencioso que impedía que AuthContext resolviera `isLoading`.
+
+### Que se hizo
+
+1. **`token-store.ts`**: se hizo platform-aware.
+   - Web (`Platform.OS === 'web'`): usa `window.localStorage`.
+   - iOS/Android: sigue usando `expo-secure-store` (`getItemAsync`/`setItemAsync`/`deleteItemAsync`).
+   - Safeguard: si `window.localStorage` no existe, retorna null sin error.
+   - Exporta `STORAGE_BACKEND` para logging.
+
+2. **`AuthContext.tsx`**: se agregó try/catch al `getStoredToken()` para que un fallo de storage se trate como "no token" (evita hang).
+   - Se agregó log `__DEV__` al boot mostrando platform, tokenFound, storageBackend.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/lib/token-store.ts` | Platform-aware storage: localStorage (web) vs SecureStore (native) |
+| `apps/mobile/src/contexts/AuthContext.tsx` | Error guard en token read + DEV boot log |
+
+### Verificacion
+
+- Web: `pnpm -C apps/mobile start -- --clear` → press `w` → pagina carga, login funciona con localStorage
+- iOS: sigue usando SecureStore sin cambios de comportamiento
+- TypeScript: `tsc --noEmit` pasa sin errores
+
+---
+
+## 42. Match Admin & Edit Reconfirm + Creator Transfer
+
+### Que se hizo
+
+Implementacion completa de matchAdmin como rol delegable en participantes, con permisos granulares, reconfirmacion que respeta al creator, y transferencia de creator al retirarse.
+
+### Cambios principales
+
+#### 1. Modelo (Prisma)
+- Nuevos campos en `MatchParticipant`: `isMatchAdmin Boolean @default(false)`, `adminGrantedAt DateTime?`
+- Migracion: `20260218194905_add_match_admin_fields`
+
+#### 2. Permisos
+- Nuevo helper `match-permissions.ts` con `isCreatorOrMatchAdmin()` reutilizable
+- **matchAdmin puede**: invite, lock, unlock
+- **Solo creator puede**: patch/edit, cancel, promote/demote admins
+- `actionsAllowed` en snapshot actualizado: matchAdmin ve `invite`, `lock`/`unlock`; creator ve ademas `update`, `cancel`, `manage_admins`
+
+#### 3. Reconfirmacion por cambios mayores
+- `update-match.use-case.ts`: al detectar majorChange (startsAt/location/capacity), CONFIRMED→INVITED **excepto el creator** que permanece CONFIRMED
+- Filtro: `userId: { not: match.createdById }`
+
+#### 4. Transferencia de creator al withdraw
+- `withdraw-participation.use-case.ts`: si el actor es el creator:
+  - Busca candidato entre participantes admin activos (`isMatchAdmin=true`, `status NOT IN (WITHDRAWN, DECLINED)`), ordenados por `adminGrantedAt ASC` (el primer admin otorgado)
+  - Si no hay candidato: 422 `CREATOR_WITHDRAW_REQUIRES_ADMIN`
+  - Si hay candidato: transfiere `match.createdById`, asegura que el nuevo creator quede CONFIRMED, luego aplica withdraw normal al viejo creator
+  - Todo transaccional
+
+#### 5. Endpoints de admin
+- `POST /api/v1/matches/:id/admins` — promote (body: `{ userId, expectedRevision }`)
+  - Precondicion: target debe ser participante activo, sino 422 `NOT_PARTICIPANT`
+  - Idempotente si ya es admin
+- `DELETE /api/v1/matches/:id/admins/:userId` — demote (body: `{ expectedRevision }`)
+  - No permite demotear al creator: 422 `CANNOT_DEMOTE_CREATOR`
+  - Idempotente si no era admin
+
+#### 6. Snapshot
+- `ParticipantView` ahora incluye `isMatchAdmin: boolean`
+- `actionsAllowed` distingue creator vs matchAdmin
+
+#### 7. Error codes
+- `CREATOR_WITHDRAW_REQUIRES_ADMIN` (422)
+- `CANNOT_DEMOTE_CREATOR` (422)
+- `NOT_PARTICIPANT` (422)
+- Registrados en `api-exception.filter.ts` con `DOMAIN_UNPROCESSABLE_CODES`
+
+### Archivos creados/modificados
+
+| Archivo | Accion |
+|---|---|
+| `apps/api/prisma/schema.prisma` | +isMatchAdmin, +adminGrantedAt en MatchParticipant |
+| `apps/api/prisma/migrations/20260218194905_add_match_admin_fields/` | Migracion |
+| `apps/api/src/matches/application/match-permissions.ts` | **NUEVO** — helper de permisos |
+| `apps/api/src/matches/application/promote-admin.use-case.ts` | **NUEVO** |
+| `apps/api/src/matches/application/demote-admin.use-case.ts` | **NUEVO** |
+| `apps/api/src/matches/application/invite-participation.use-case.ts` | Permite matchAdmin |
+| `apps/api/src/matches/application/lock-match.use-case.ts` | Permite matchAdmin |
+| `apps/api/src/matches/application/unlock-match.use-case.ts` | Permite matchAdmin |
+| `apps/api/src/matches/application/update-match.use-case.ts` | Reconfirm excluye creator |
+| `apps/api/src/matches/application/withdraw-participation.use-case.ts` | Creator transfer |
+| `apps/api/src/matches/application/build-match-snapshot.ts` | isMatchAdmin en views, actionsAllowed granular |
+| `apps/api/src/matches/api/matches.controller.ts` | +promote, +demote endpoints |
+| `apps/api/src/matches/api/dto/admin-command.dto.ts` | **NUEVO** |
+| `apps/api/src/matches/matches.module.ts` | Registra nuevos use cases |
+| `apps/api/src/common/filters/api-exception.filter.ts` | +DOMAIN_UNPROCESSABLE_CODES |
+| `apps/api/src/matches/application/update-lock.use-case.spec.ts` | Ajuste assertions reconfirm |
+| `apps/api/test/e2e/match-admin.e2e-spec.ts` | **NUEVO** — 10 tests admin permisos |
+| `apps/api/test/e2e/creator-transfer.e2e-spec.ts` | **NUEVO** — 6 tests transfer + reconfirm |
+| `apps/mobile/src/types/api.ts` | +isMatchAdmin en ParticipantView |
+| `apps/mobile/src/features/matches/matchesClient.ts` | +patchMatch, +promoteAdmin, +demoteAdmin |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | DEV controls, admin badge |
+
+### Tests
+
+- 90 unit tests pasan (17 suites)
+- 69 E2E tests pasan (15 suites), incluyendo 16 tests nuevos:
+  - match-admin: promote, idempotent promote, admin invite, admin lock/unlock, admin no patch, admin no cancel, admin no promote, demote, cannot demote creator, promote non-participant, actionsAllowed
+  - creator-transfer: no admins 422, transfer con 1 admin, transfer con multiples admins (earliest wins), reconfirm skips creator, new creator gets full perms

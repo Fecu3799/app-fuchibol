@@ -21,7 +21,9 @@
       "Bash(pnpm jest:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm test:e2e:*)",
-      "Bash(pnpm --filter api prisma migrate dev:*)"
+      "Bash(pnpm --filter api prisma migrate dev:*)",
+      "Bash(pnpm -C apps/api prisma migrate dev:*)",
+      "Bash(pnpm -C apps/api prisma generate:*)"
     ]
   }
 }

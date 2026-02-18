@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { isCreatorOrMatchAdmin } from './match-permissions';
 
 export interface LockMatchInput {
   matchId: string;
@@ -30,7 +31,9 @@ export class LockMatchUseCase {
         throw new NotFoundException('Match not found');
       }
 
-      if (match.createdById !== input.actorId) {
+      if (
+        !(await isCreatorOrMatchAdmin(match, tx, input.matchId, input.actorId))
+      ) {
         throw new ForbiddenException('Only match admin can lock');
       }
 

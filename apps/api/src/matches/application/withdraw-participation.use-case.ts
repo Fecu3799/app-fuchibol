@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
@@ -69,6 +70,38 @@ export class WithdrawParticipationUseCase {
         existing.status === 'WITHDRAWN'
       ) {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      }
+
+      // Creator transfer: if the actor is the creator, transfer to first matchAdmin
+      if (match.createdById === input.actorId) {
+        const candidate = await tx.matchParticipant.findFirst({
+          where: {
+            matchId: input.matchId,
+            isMatchAdmin: true,
+            userId: { not: input.actorId },
+            status: { notIn: ['WITHDRAWN', 'DECLINED'] },
+          },
+          orderBy: { adminGrantedAt: 'asc' },
+        });
+
+        if (!candidate) {
+          throw new UnprocessableEntityException(
+            'CREATOR_WITHDRAW_REQUIRES_ADMIN',
+          );
+        }
+
+        await tx.match.update({
+          where: { id: input.matchId },
+          data: { createdById: candidate.userId },
+        });
+
+        // Ensure new creator is CONFIRMED
+        if (candidate.status !== 'CONFIRMED') {
+          await tx.matchParticipant.update({
+            where: { id: candidate.id },
+            data: { status: 'CONFIRMED', confirmedAt: new Date() },
+          });
+        }
       }
 
       const wasConfirmed = existing.status === 'CONFIRMED';

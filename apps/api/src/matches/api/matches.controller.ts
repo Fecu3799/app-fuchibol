@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -23,6 +24,8 @@ import { ConfirmParticipationUseCase } from '../application/confirm-participatio
 import { DeclineParticipationUseCase } from '../application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from '../application/withdraw-participation.use-case';
 import { InviteParticipationUseCase } from '../application/invite-participation.use-case';
+import { PromoteAdminUseCase } from '../application/promote-admin.use-case';
+import { DemoteAdminUseCase } from '../application/demote-admin.use-case';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { CreateMatchResponseDto } from './dto/create-match-response.dto';
 import { GetMatchResponseDto } from './dto/match-snapshot.dto';
@@ -32,6 +35,7 @@ import {
   ParticipationCommandDto,
   InviteCommandDto,
 } from './dto/participation-command.dto';
+import { PromoteAdminDto, DemoteAdminDto } from './dto/admin-command.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
@@ -50,6 +54,8 @@ export class MatchesController {
     private readonly declineUseCase: DeclineParticipationUseCase,
     private readonly withdrawUseCase: WithdrawParticipationUseCase,
     private readonly inviteUseCase: InviteParticipationUseCase,
+    private readonly promoteAdminUseCase: PromoteAdminUseCase,
+    private readonly demoteAdminUseCase: DemoteAdminUseCase,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -227,6 +233,39 @@ export class MatchesController {
       identifier: body.identifier,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/admins')
+  async promoteAdmin(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: PromoteAdminDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.promoteAdminUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      targetUserId: body.userId,
+      expectedRevision: body.expectedRevision,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Delete(':id/admins/:userId')
+  async demoteAdmin(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body() body: DemoteAdminDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.demoteAdminUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      targetUserId: userId,
+      expectedRevision: body.expectedRevision,
     });
   }
 

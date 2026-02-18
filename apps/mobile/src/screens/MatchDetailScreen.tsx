@@ -33,6 +33,9 @@ import { ApiError } from '../lib/api';
 import { useGroups } from '../features/groups/useGroups';
 import { useGroup } from '../features/groups/useGroup';
 import { useBatchInviteFromGroup } from '../features/matches/useBatchInviteFromGroup';
+import { patchMatch, promoteAdmin, demoteAdmin } from '../features/matches/matchesClient';
+import { useAuth } from '../contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
 
 type Props = NativeStackScreenProps<AppStackParamList, 'MatchDetail'>;
 
@@ -136,6 +139,8 @@ export default function MatchDetailScreen({ route }: Props) {
   const groupDetailQuery = useGroup(selectedGroupId);
   const batchInviteMutation = useBatchInviteFromGroup(matchId);
 
+  const { token } = useAuth();
+  const qc = useQueryClient();
   const { data: match, isLoading, isFetching, error, refetch } = query;
 
   // ── Defensive: keep last known match so UI never goes blank ──
@@ -656,6 +661,106 @@ export default function MatchDetailScreen({ route }: Props) {
         </View>
       )}
 
+      {/* DEV-only admin controls */}
+      {__DEV__ && (
+        <View style={styles.devBlock}>
+          <Text style={styles.devTitle}>DEV Controls</Text>
+          <Text style={styles.devInfo}>
+            creatorId: {displayMatch.createdById.slice(0, 8)}…{'\n'}
+            revision: {displayMatch.revision}{'\n'}
+            myStatus: {displayMatch.myStatus ?? 'none'}{'\n'}
+            matchStatus: {displayMatch.matchStatus}{'\n'}
+            actions: {displayMatch.actionsAllowed.join(', ')}
+          </Text>
+          {displayMatch.actionsAllowed.includes('update') && (
+            <Pressable
+              style={styles.devBtn}
+              onPress={async () => {
+                if (!token) return;
+                try {
+                  const newDate = new Date(
+                    new Date(displayMatch.startsAt).getTime() + 86400000,
+                  ).toISOString();
+                  await patchMatch(token, matchId, {
+                    expectedRevision: displayMatch.revision,
+                    startsAt: newDate,
+                  });
+                  qc.invalidateQueries({ queryKey: ['match', matchId] });
+                  qc.invalidateQueries({ queryKey: ['matches'] });
+                  Alert.alert('DEV', 'Major edit done (startsAt +1 day)');
+                } catch (e) {
+                  Alert.alert('DEV Error', String(e));
+                }
+              }}
+            >
+              <Text style={styles.devBtnText}>Edit Major (startsAt +1d)</Text>
+            </Pressable>
+          )}
+          {displayMatch.actionsAllowed.includes('manage_admins') && (
+            <>
+              <Pressable
+                style={styles.devBtn}
+                onPress={async () => {
+                  if (!token) return;
+                  const target = displayMatch.participants.find(
+                    (p) =>
+                      p.userId !== displayMatch.createdById &&
+                      !p.isMatchAdmin &&
+                      (p.status === 'CONFIRMED' || p.status === 'INVITED'),
+                  );
+                  if (!target) {
+                    Alert.alert('DEV', 'No eligible participant to promote');
+                    return;
+                  }
+                  try {
+                    await promoteAdmin(
+                      token,
+                      matchId,
+                      target.userId,
+                      displayMatch.revision,
+                    );
+                    qc.invalidateQueries({ queryKey: ['match', matchId] });
+                    Alert.alert('DEV', `Promoted @${target.username}`);
+                  } catch (e) {
+                    Alert.alert('DEV Error', String(e));
+                  }
+                }}
+              >
+                <Text style={styles.devBtnText}>Promote First Non-Admin</Text>
+              </Pressable>
+              <Pressable
+                style={styles.devBtn}
+                onPress={async () => {
+                  if (!token) return;
+                  const target = displayMatch.participants.find(
+                    (p) =>
+                      p.userId !== displayMatch.createdById && p.isMatchAdmin,
+                  );
+                  if (!target) {
+                    Alert.alert('DEV', 'No admin to demote');
+                    return;
+                  }
+                  try {
+                    await demoteAdmin(
+                      token,
+                      matchId,
+                      target.userId,
+                      displayMatch.revision,
+                    );
+                    qc.invalidateQueries({ queryKey: ['match', matchId] });
+                    Alert.alert('DEV', `Demoted @${target.username}`);
+                  } catch (e) {
+                    Alert.alert('DEV Error', String(e));
+                  }
+                }}
+              >
+                <Text style={styles.devBtnText}>Demote First Admin</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      )}
+
       {/* Revision footer (debug) */}
       <Text style={styles.revisionText}>rev {displayMatch.revision}</Text>
     </ScrollView>
@@ -716,6 +821,7 @@ function ParticipantSection({
               ? `#${p.waitlistPosition}  `
               : ''}
             @{p.username}
+            {p.isMatchAdmin ? ' (admin)' : ''}
           </Text>
         </View>
       ))}
@@ -970,4 +1076,24 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   batchInviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+
+  // DEV controls
+  devBlock: {
+    marginTop: 24,
+    backgroundColor: '#fff3e0',
+    borderRadius: 10,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#ff9800',
+  },
+  devTitle: { fontSize: 14, fontWeight: '700' as const, color: '#e65100', marginBottom: 8 },
+  devInfo: { fontSize: 11, fontFamily: 'monospace', color: '#555', marginBottom: 10 },
+  devBtn: {
+    backgroundColor: '#ff9800',
+    borderRadius: 6,
+    padding: 10,
+    alignItems: 'center' as const,
+    marginTop: 6,
+  },
+  devBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' as const },
 });

@@ -13,6 +13,8 @@ import { ConfirmParticipationUseCase } from './application/confirm-participation
 import { DeclineParticipationUseCase } from './application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from './application/withdraw-participation.use-case';
 import { InviteParticipationUseCase } from './application/invite-participation.use-case';
+import { PromoteAdminUseCase } from './application/promote-admin.use-case';
+import { DemoteAdminUseCase } from './application/demote-admin.use-case';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule],
@@ -29,6 +31,8 @@ import { InviteParticipationUseCase } from './application/invite-participation.u
     DeclineParticipationUseCase,
     WithdrawParticipationUseCase,
     InviteParticipationUseCase,
+    PromoteAdminUseCase,
+    DemoteAdminUseCase,
   ],
 })
 export class MatchesModule {}

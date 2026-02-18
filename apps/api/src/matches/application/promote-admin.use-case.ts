@@ -3,23 +3,24 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
-import { isCreatorOrMatchAdmin } from './match-permissions';
 
-export interface UnlockMatchInput {
+export interface PromoteAdminInput {
   matchId: string;
   actorId: string;
+  targetUserId: string;
   expectedRevision: number;
 }
 
 @Injectable()
-export class UnlockMatchUseCase {
+export class PromoteAdminUseCase {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(input: UnlockMatchInput): Promise<MatchSnapshot> {
+  async execute(input: PromoteAdminInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -31,10 +32,8 @@ export class UnlockMatchUseCase {
         throw new NotFoundException('Match not found');
       }
 
-      if (
-        !(await isCreatorOrMatchAdmin(match, tx, input.matchId, input.actorId))
-      ) {
-        throw new ForbiddenException('Only match admin can unlock');
+      if (match.createdById !== input.actorId) {
+        throw new ForbiddenException('Only creator can manage admins');
       }
 
       if (match.status === 'canceled') {
@@ -45,19 +44,39 @@ export class UnlockMatchUseCase {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
-      // Idempotent: already unlocked -> return snapshot without changing anything
-      if (!match.isLocked) {
+      const participant = await tx.matchParticipant.findUnique({
+        where: {
+          matchId_userId: {
+            matchId: input.matchId,
+            userId: input.targetUserId,
+          },
+        },
+      });
+
+      if (
+        !participant ||
+        participant.status === 'WITHDRAWN' ||
+        participant.status === 'DECLINED'
+      ) {
+        throw new UnprocessableEntityException('NOT_PARTICIPANT');
+      }
+
+      // Idempotent: already admin → return snapshot
+      if (participant.isMatchAdmin) {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
 
+      await tx.matchParticipant.update({
+        where: { id: participant.id },
+        data: {
+          isMatchAdmin: true,
+          adminGrantedAt: new Date(),
+        },
+      });
+
       await tx.match.update({
         where: { id: input.matchId },
-        data: {
-          isLocked: false,
-          lockedAt: null,
-          lockedBy: null,
-          revision: match.revision + 1,
-        },
+        data: { revision: match.revision + 1 },
       });
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);

@@ -50,6 +50,7 @@ export interface ParticipantView {
   username: string;
   status: string;
   waitlistPosition: number | null;
+  isMatchAdmin: boolean;
 }
 
 export interface MatchSnapshot {

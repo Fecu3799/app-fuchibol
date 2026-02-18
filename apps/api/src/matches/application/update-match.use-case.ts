@@ -92,9 +92,13 @@ export class UpdateMatchUseCase {
       });
 
       if (isMajorChange) {
-        // CONFIRMED -> INVITED (reconfirmation)
+        // CONFIRMED -> INVITED (reconfirmation), except creator stays CONFIRMED
         await tx.matchParticipant.updateMany({
-          where: { matchId: input.matchId, status: 'CONFIRMED' },
+          where: {
+            matchId: input.matchId,
+            status: 'CONFIRMED',
+            userId: { not: match.createdById },
+          },
           data: {
             status: 'INVITED',
             confirmedAt: null,

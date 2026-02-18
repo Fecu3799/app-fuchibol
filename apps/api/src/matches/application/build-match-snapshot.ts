@@ -12,6 +12,7 @@ export interface ParticipantView {
   username: string;
   status: string;
   waitlistPosition: number | null;
+  isMatchAdmin: boolean;
 }
 
 export interface MatchSnapshot {
@@ -59,7 +60,8 @@ export async function buildMatchSnapshot(
   const myParticipant = participants.find((p) => p.userId === actorId);
   const myStatus = myParticipant?.status ?? null;
 
-  const isAdmin = match.createdById === actorId;
+  const isCreator = match.createdById === actorId;
+  const isAdmin = isCreator || myParticipant?.isMatchAdmin === true;
   const isCanceled = match.status === 'canceled';
 
   const actionsAllowed: string[] = [];
@@ -83,9 +85,12 @@ export async function buildMatchSnapshot(
     }
 
     if (isAdmin) {
-      actionsAllowed.push('update');
       actionsAllowed.push(match.isLocked ? 'unlock' : 'lock');
-      actionsAllowed.push('cancel');
+    }
+
+    // Creator-only actions
+    if (isCreator) {
+      actionsAllowed.push('update', 'cancel', 'manage_admins');
     }
   }
 
@@ -96,6 +101,7 @@ export async function buildMatchSnapshot(
       username: p.user.username,
       status: p.status,
       waitlistPosition: p.waitlistPosition,
+      isMatchAdmin: p.isMatchAdmin,
     }));
 
   const waitlistViews: ParticipantView[] = waitlisted.map((p, i) => ({
@@ -103,6 +109,7 @@ export async function buildMatchSnapshot(
     username: p.user.username,
     status: p.status,
     waitlistPosition: i + 1,
+    isMatchAdmin: p.isMatchAdmin,
   }));
 
   return {
