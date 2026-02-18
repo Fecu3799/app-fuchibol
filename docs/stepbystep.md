@@ -48,6 +48,8 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 40. [Groups Feature (end-to-end)](#40-groups-feature-end-to-end)
 41. [Fix: Expo Web infinite loading (SecureStore web fallback)](#41-fix-expo-web-infinite-loading-securestore-web-fallback)
 42. [Match Admin & Edit Reconfirm + Creator Transfer](#42-match-admin--edit-reconfirm--creator-transfer)
+43. [Leave Match + Edit Match Screen + Admin UI](#43-leave-match--edit-match-screen--admin-ui)
+44. [Capacity Overflow to Waitlist + Format Selector in EditMatch](#44-capacity-overflow-to-waitlist--format-selector-in-editmatch)
 
 ---
 
@@ -3638,3 +3640,111 @@ Implementacion completa de matchAdmin como rol delegable en participantes, con p
 - 69 E2E tests pasan (15 suites), incluyendo 16 tests nuevos:
   - match-admin: promote, idempotent promote, admin invite, admin lock/unlock, admin no patch, admin no cancel, admin no promote, demote, cannot demote creator, promote non-participant, actionsAllowed
   - creator-transfer: no admins 422, transfer con 1 admin, transfer con multiples admins (earliest wins), reconfirm skips creator, new creator gets full perms
+
+---
+
+## 43. Leave Match + Edit Match Screen + Admin UI
+
+### Que se hizo
+
+Tres features implementadas end-to-end:
+
+#### 1. Leave Match (API — hard delete)
+
+A diferencia de `withdraw` (que cambia status a WITHDRAWN), **leave** elimina completamente la fila de `MatchParticipant` de la DB.
+
+- **Non-creator leave**: Hard delete de la fila. Si era CONFIRMED, promueve primer WAITLISTED a CONFIRMED.
+- **Creator leave**: Requiere que exista al menos un matchAdmin. Transfiere `createdById` al primer admin (por `adminGrantedAt ASC`), se asegura que el nuevo creator tenga status CONFIRMED, luego elimina la fila del creator original.
+- **Creator sin admin**: 422 `CREATOR_TRANSFER_REQUIRED`.
+- **Idempotente**: Si el usuario no es participante, retorna snapshot sin error.
+- Re-invite despues de leave funciona naturalmente (crea nueva fila).
+
+Endpoint: `POST /api/v1/matches/:id/leave` (requiere `Idempotency-Key`).
+
+#### 2. Edit Match Screen (Mobile)
+
+Nueva pantalla `EditMatchScreen` con form prellenado desde el match actual:
+- Campos: title, location, capacity, date, time (con DateTimePickers).
+- Solo envia los campos que cambiaron (diff contra match original).
+- Usa `PATCH /api/v1/matches/:id` con `expectedRevision`.
+- Maneja errores: `REVISION_CONFLICT`, `MATCH_LOCKED`, validaciones.
+- Navega back on success.
+
+Boton "Edit Match" visible en MatchDetailScreen solo cuando `actionsAllowed` incluye `update` (creator only).
+
+#### 3. Admin UI en lista de participantes (Mobile)
+
+- **Badges de rol**: cada participante muestra badge "Creator" (naranja) o "Admin" (morado) al lado de su username.
+- **Promote/Demote**: Si el viewer tiene `manage_admins` en actionsAllowed, cada participante no-creator muestra boton "Make admin" o "Remove admin".
+- **Leave button**: Boton "Leave Match" (borde rojo, outlined) visible para todos los participantes. Confirmacion via Alert. Navega a pantalla anterior on success. Muestra error especifico si creator intenta irse sin admin.
+
+### Archivos creados/modificados
+
+| Archivo | Accion |
+|---|---|
+| `apps/api/src/matches/application/leave-match.use-case.ts` | **NUEVO** — hard delete leave logic |
+| `apps/api/src/matches/api/matches.controller.ts` | +POST :id/leave endpoint |
+| `apps/api/src/matches/matches.module.ts` | +LeaveMatchUseCase en providers |
+| `apps/api/src/matches/application/build-match-snapshot.ts` | +`leave` en actionsAllowed |
+| `apps/api/src/common/filters/api-exception.filter.ts` | +CREATOR_TRANSFER_REQUIRED en DOMAIN_UNPROCESSABLE_CODES |
+| `apps/api/test/e2e/leave-match.e2e-spec.ts` | **NUEVO** — 6 tests |
+| `apps/mobile/src/screens/EditMatchScreen.tsx` | **NUEVO** — form prellenado + PATCH |
+| `apps/mobile/src/navigation/AppNavigator.tsx` | +EditMatch route + screen |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | +Edit btn, +Leave btn, +Creator/Admin badges, +Promote/Demote btns |
+
+### Tests
+
+- 6 E2E tests nuevos en `leave-match.e2e-spec.ts`:
+  1. non-creator leave → hard deletes participation row
+  2. leave is idempotent (no row → returns snapshot)
+  3. re-invite after leave works (row is recreated)
+  4. creator leave without admin → 422 CREATOR_TRANSFER_REQUIRED
+  5. creator leave with admin → transfers and hard deletes creator
+  6. leave confirmed promotes waitlist
+- Total: 75 E2E tests, 90 unit tests — todos pasan
+
+---
+
+## 44. Capacity Overflow to Waitlist + Format Selector in EditMatch
+
+### Que se hizo
+
+Cambio en la logica de reconfirmacion y actualizacion de la UI de EditMatch.
+
+#### 1. API: Capacity ya NO es "major change"
+
+Antes, cambiar capacity (junto con startsAt y location) forzaba reconfirmacion (CONFIRMED→INVITED para todos excepto creator). Ahora:
+
+- **`MAJOR_CHANGE_FIELDS`** solo contiene `startsAt` y `location`. Cambiar capacity **no** fuerza reconfirmacion.
+- **Overflow to waitlist**: Si la nueva capacity es menor que la cantidad de CONFIRMED:
+  - Se traen los CONFIRMED ordenados por `confirmedAt ASC`.
+  - Los primeros N (N = nueva capacity) se mantienen CONFIRMED.
+  - Los restantes pasan a WAITLISTED (con `waitlistPosition` incremental).
+  - `confirmedAt` se limpia para los que pasan a waitlist.
+- **INVITED quedan INVITED** — no se tocan.
+- Si hay major change (startsAt/location) + capacity reducida, la reconfirmacion del major change toma prioridad (todos van a INVITED, no se ejecuta overflow).
+
+#### 2. Mobile: EditMatchScreen con selector de formato
+
+Reemplazado el input manual de capacity por selector de formato identico a CreateMatchScreen:
+- Formatos: F5 (10), F7 (14), F8 (16), F11 (22).
+- Capacity es read-only, derivada del formato seleccionado.
+- Reverse-map automatico: al cargar el match, la capacity existente se mapea al formato mas cercano.
+- Submit envia `capacity` (el valor numerico derivado del formato) al backend.
+
+### Archivos modificados
+
+| Archivo | Accion |
+|---|---|
+| `apps/api/src/matches/application/update-match.use-case.ts` | Removed capacity from MAJOR_CHANGE_FIELDS, added overflow-to-waitlist logic |
+| `apps/api/src/matches/application/update-lock.use-case.spec.ts` | Updated/added 4 tests: capacity no reconfirm, overflow to waitlist, no overflow, major+capacity |
+| `apps/mobile/src/screens/EditMatchScreen.tsx` | Rewritten: format selector (F5/F7/F8/F11), capacity read-only |
+
+### Tests
+
+- 92 unit tests pasan (17 suites):
+  - `capacity reduction does NOT trigger reconfirmation` — verifica que updateMany no se llama
+  - `capacity reduction moves excess confirmed to waitlist (FIFO by confirmedAt)` — overflow correctamente movido
+  - `capacity reduction with no overflow does nothing` — 2 confirmed, capacity 5 → sin cambios
+  - `capacity reduction + major change → reconfirmation (no overflow)` — major change toma prioridad
+- 75 E2E tests pasan (16 suites)

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { AppStackParamList } from '../navigation/AppNavigator';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { MatchSnapshot, ParticipantView, GroupSummary, GroupMember } from '../types/api';
 import { useMatch } from '../features/matches/useMatch';
 import { useMatchAction, formatActionError } from '../features/matches/useMatchAction';
@@ -33,11 +33,12 @@ import { ApiError } from '../lib/api';
 import { useGroups } from '../features/groups/useGroups';
 import { useGroup } from '../features/groups/useGroup';
 import { useBatchInviteFromGroup } from '../features/matches/useBatchInviteFromGroup';
-import { patchMatch, promoteAdmin, demoteAdmin } from '../features/matches/matchesClient';
+import { postMatchAction, patchMatch, promoteAdmin, demoteAdmin } from '../features/matches/matchesClient';
+import { randomUUID } from 'expo-crypto';
 import { useAuth } from '../contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
 
-type Props = NativeStackScreenProps<AppStackParamList, 'MatchDetail'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'MatchDetail'>;
 
 // ── Helpers ──
 
@@ -113,7 +114,7 @@ function deriveParticipantGroups(match: MatchSnapshot) {
 
 // ── Component ──
 
-export default function MatchDetailScreen({ route }: Props) {
+export default function MatchDetailScreen({ route, navigation }: Props) {
   const { matchId } = route.params;
   const query = useMatch(matchId);
   useLogoutOn401(query);
@@ -139,7 +140,7 @@ export default function MatchDetailScreen({ route }: Props) {
   const groupDetailQuery = useGroup(selectedGroupId);
   const batchInviteMutation = useBatchInviteFromGroup(matchId);
 
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
   const qc = useQueryClient();
   const { data: match, isLoading, isFetching, error, refetch } = query;
 
@@ -239,6 +240,80 @@ export default function MatchDetailScreen({ route }: Props) {
     );
   };
 
+  const [leaveError, setLeaveError] = useState('');
+  const [leaveLoading, setLeaveLoading] = useState(false);
+  const [adminActionLoading, setAdminActionLoading] = useState(false);
+
+  const handleLeave = () => {
+    if (!displayMatch || !token) return;
+    Alert.alert(
+      'Leave Match',
+      'Are you sure you want to leave this match?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Yes, leave',
+          style: 'destructive',
+          onPress: async () => {
+            setLeaveError('');
+            setLeaveLoading(true);
+            try {
+              await postMatchAction(
+                token,
+                matchId,
+                'leave',
+                displayMatch.revision,
+                randomUUID(),
+              );
+              qc.invalidateQueries({ queryKey: ['matches'] });
+              navigation.goBack();
+            } catch (err) {
+              if (err instanceof ApiError && err.status === 401) {
+                logout();
+                return;
+              }
+              if (err instanceof ApiError && err.code === 'CREATOR_TRANSFER_REQUIRED') {
+                setLeaveError('You must promote an admin before leaving as creator.');
+              } else {
+                setLeaveError(formatActionError(err));
+              }
+            } finally {
+              setLeaveLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handlePromote = async (targetUserId: string, username: string) => {
+    if (!displayMatch || !token) return;
+    setAdminActionLoading(true);
+    try {
+      await promoteAdmin(token, matchId, targetUserId, displayMatch.revision);
+      qc.invalidateQueries({ queryKey: ['match', matchId] });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { logout(); return; }
+      Alert.alert('Error', formatActionError(err));
+    } finally {
+      setAdminActionLoading(false);
+    }
+  };
+
+  const handleDemote = async (targetUserId: string, username: string) => {
+    if (!displayMatch || !token) return;
+    setAdminActionLoading(true);
+    try {
+      await demoteAdmin(token, matchId, targetUserId, displayMatch.revision);
+      qc.invalidateQueries({ queryKey: ['match', matchId] });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { logout(); return; }
+      Alert.alert('Error', formatActionError(err));
+    } finally {
+      setAdminActionLoading(false);
+    }
+  };
+
   // ── Loading (first load only, no data at all) ──
   if (!displayMatch && isFetching) {
     return (
@@ -280,6 +355,9 @@ export default function MatchDetailScreen({ route }: Props) {
   const canUnlock = displayMatch.actionsAllowed.includes('unlock');
   const canToggleLock = canLock || canUnlock;
   const canCancel = displayMatch.actionsAllowed.includes('cancel');
+  const canEdit = displayMatch.actionsAllowed.includes('update');
+  const canLeave = displayMatch.actionsAllowed.includes('leave');
+  const canManageAdmins = displayMatch.actionsAllowed.includes('manage_admins');
   const lockTogglePending = lockMutation.isPending || unlockMutation.isPending;
   const isCanceled = displayMatch.status === 'canceled';
   const groups = deriveParticipantGroups(displayMatch);
@@ -322,6 +400,16 @@ export default function MatchDetailScreen({ route }: Props) {
           </View>
         )}
       </View>
+
+      {/* Edit Match button (creator only, hidden when canceled) */}
+      {!isCanceled && canEdit && (
+        <Pressable
+          style={styles.editBtn}
+          onPress={() => navigation.navigate('EditMatch', { matchId })}
+        >
+          <Text style={styles.editBtnText}>Edit Match</Text>
+        </Pressable>
+      )}
 
       {/* Cancelled banner */}
       {isCanceled && (
@@ -392,6 +480,11 @@ export default function MatchDetailScreen({ route }: Props) {
           title="Confirmed"
           color="#2e7d32"
           items={groups.confirmed}
+          creatorId={displayMatch.createdById}
+          canManageAdmins={canManageAdmins}
+          adminActionLoading={adminActionLoading}
+          onPromote={handlePromote}
+          onDemote={handleDemote}
         />
       )}
       {groups.invited.length > 0 && (
@@ -399,6 +492,11 @@ export default function MatchDetailScreen({ route }: Props) {
           title="Invited"
           color="#1976d2"
           items={groups.invited}
+          creatorId={displayMatch.createdById}
+          canManageAdmins={canManageAdmins}
+          adminActionLoading={adminActionLoading}
+          onPromote={handlePromote}
+          onDemote={handleDemote}
         />
       )}
       {groups.waitlist.length > 0 && (
@@ -407,6 +505,11 @@ export default function MatchDetailScreen({ route }: Props) {
           color="#f57c00"
           items={groups.waitlist}
           showPosition
+          creatorId={displayMatch.createdById}
+          canManageAdmins={canManageAdmins}
+          adminActionLoading={adminActionLoading}
+          onPromote={handlePromote}
+          onDemote={handleDemote}
         />
       )}
       {groups.declined.length > 0 && (
@@ -414,6 +517,7 @@ export default function MatchDetailScreen({ route }: Props) {
           title="Declined"
           color="#9e9e9e"
           items={groups.declined}
+          creatorId={displayMatch.createdById}
         />
       )}
 
@@ -641,6 +745,26 @@ export default function MatchDetailScreen({ route }: Props) {
         </View>
       )}
 
+      {/* Leave match button */}
+      {!isCanceled && canLeave && (
+        <View style={styles.leaveBlock}>
+          {leaveError ? (
+            <Text style={styles.actionError}>{leaveError}</Text>
+          ) : null}
+          <Pressable
+            style={[styles.leaveBtn, leaveLoading && styles.btnDisabled]}
+            onPress={handleLeave}
+            disabled={leaveLoading}
+          >
+            {leaveLoading ? (
+              <ActivityIndicator color="#d32f2f" size="small" />
+            ) : (
+              <Text style={styles.leaveBtnText}>Leave Match</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+
       {/* Cancel match button (admin only, not already canceled) */}
       {canCancel && (
         <View style={styles.cancelBlock}>
@@ -800,11 +924,21 @@ function ParticipantSection({
   color,
   items,
   showPosition,
+  creatorId,
+  canManageAdmins,
+  adminActionLoading,
+  onPromote,
+  onDemote,
 }: {
   title: string;
   color: string;
   items: ParticipantView[];
   showPosition?: boolean;
+  creatorId?: string;
+  canManageAdmins?: boolean;
+  adminActionLoading?: boolean;
+  onPromote?: (userId: string, username: string) => void;
+  onDemote?: (userId: string, username: string) => void;
 }) {
   return (
     <View style={styles.section}>
@@ -814,17 +948,52 @@ function ParticipantSection({
           {title} ({items.length})
         </Text>
       </View>
-      {items.map((p) => (
-        <View key={p.userId} style={styles.participantRow}>
-          <Text style={styles.participantId} numberOfLines={1}>
-            {showPosition && p.waitlistPosition != null
-              ? `#${p.waitlistPosition}  `
-              : ''}
-            @{p.username}
-            {p.isMatchAdmin ? ' (admin)' : ''}
-          </Text>
-        </View>
-      ))}
+      {items.map((p) => {
+        const isCreator = p.userId === creatorId;
+        return (
+          <View key={p.userId} style={styles.participantRow}>
+            <View style={styles.participantInfo}>
+              <Text style={styles.participantId} numberOfLines={1}>
+                {showPosition && p.waitlistPosition != null
+                  ? `#${p.waitlistPosition}  `
+                  : ''}
+                @{p.username}
+              </Text>
+              {isCreator && (
+                <View style={[styles.roleBadge, styles.roleBadgeCreator]}>
+                  <Text style={styles.roleBadgeText}>Creator</Text>
+                </View>
+              )}
+              {!isCreator && p.isMatchAdmin && (
+                <View style={[styles.roleBadge, styles.roleBadgeAdmin]}>
+                  <Text style={styles.roleBadgeText}>Admin</Text>
+                </View>
+              )}
+            </View>
+            {canManageAdmins && !isCreator && (
+              <Pressable
+                style={[
+                  styles.adminToggleBtn,
+                  p.isMatchAdmin
+                    ? styles.adminToggleDemote
+                    : styles.adminTogglePromote,
+                  adminActionLoading && styles.btnDisabled,
+                ]}
+                onPress={() =>
+                  p.isMatchAdmin
+                    ? onDemote?.(p.userId, p.username)
+                    : onPromote?.(p.userId, p.username)
+                }
+                disabled={adminActionLoading}
+              >
+                <Text style={styles.adminToggleText}>
+                  {p.isMatchAdmin ? 'Remove admin' : 'Make admin'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -932,6 +1101,27 @@ const styles = StyleSheet.create({
   countNum: { fontSize: 22, fontWeight: '700' },
   countLabel: { fontSize: 11, color: '#888', marginTop: 2 },
 
+  // Edit button
+  editBtn: {
+    backgroundColor: '#1976d2',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center' as const,
+    marginBottom: 12,
+  },
+  editBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+
+  // Leave button
+  leaveBlock: { marginTop: 16 },
+  leaveBtn: {
+    borderWidth: 1,
+    borderColor: '#d32f2f',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center' as const,
+  },
+  leaveBtnText: { color: '#d32f2f', fontSize: 15, fontWeight: '600' as const },
+
   // Participant sections
   section: { marginBottom: 14 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
@@ -940,8 +1130,33 @@ const styles = StyleSheet.create({
   participantRow: {
     paddingVertical: 5,
     paddingHorizontal: 18,
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+  },
+  participantInfo: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    flex: 1,
+    gap: 6,
   },
   participantId: { fontSize: 13, color: '#555' },
+  roleBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  roleBadgeCreator: { backgroundColor: '#ff9800' },
+  roleBadgeAdmin: { backgroundColor: '#7b1fa2' },
+  roleBadgeText: { fontSize: 10, fontWeight: '700' as const, color: '#fff' },
+  adminToggleBtn: {
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  adminTogglePromote: { backgroundColor: '#e8f5e9' },
+  adminToggleDemote: { backgroundColor: '#fce4ec' },
+  adminToggleText: { fontSize: 11, fontWeight: '600' as const, color: '#333' },
 
   // Actions
   actions: { marginTop: 8, marginBottom: 4 },

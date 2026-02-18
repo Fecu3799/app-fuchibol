@@ -84,6 +84,11 @@ export async function buildMatchSnapshot(
       actionsAllowed.push('withdraw');
     }
 
+    // Leave is always allowed for any participant (hard delete)
+    if (myStatus) {
+      actionsAllowed.push('leave');
+    }
+
     if (isAdmin) {
       actionsAllowed.push(match.isLocked ? 'unlock' : 'lock');
     }

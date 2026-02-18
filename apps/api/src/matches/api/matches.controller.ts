@@ -24,6 +24,7 @@ import { ConfirmParticipationUseCase } from '../application/confirm-participatio
 import { DeclineParticipationUseCase } from '../application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from '../application/withdraw-participation.use-case';
 import { InviteParticipationUseCase } from '../application/invite-participation.use-case';
+import { LeaveMatchUseCase } from '../application/leave-match.use-case';
 import { PromoteAdminUseCase } from '../application/promote-admin.use-case';
 import { DemoteAdminUseCase } from '../application/demote-admin.use-case';
 import { CreateMatchDto } from './dto/create-match.dto';
@@ -54,6 +55,7 @@ export class MatchesController {
     private readonly declineUseCase: DeclineParticipationUseCase,
     private readonly withdrawUseCase: WithdrawParticipationUseCase,
     private readonly inviteUseCase: InviteParticipationUseCase,
+    private readonly leaveMatchUseCase: LeaveMatchUseCase,
     private readonly promoteAdminUseCase: PromoteAdminUseCase,
     private readonly demoteAdminUseCase: DemoteAdminUseCase,
   ) {}
@@ -231,6 +233,24 @@ export class MatchesController {
       actorId: actor.userId,
       targetUserId: body.userId,
       identifier: body.identifier,
+      expectedRevision: body.expectedRevision,
+      idempotencyKey,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/leave')
+  async leave(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: ParticipationCommandDto,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.requireIdempotencyKey(idempotencyKey);
+    return this.leaveMatchUseCase.execute({
+      matchId,
+      actorId: actor.userId,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });

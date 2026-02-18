@@ -41,6 +41,7 @@ const DOMAIN_CONFLICT_CODES = new Set([
 /** Known domain error codes sent as UnprocessableEntityException message strings. */
 const DOMAIN_UNPROCESSABLE_CODES = new Set([
   'CREATOR_WITHDRAW_REQUIRES_ADMIN',
+  'CREATOR_TRANSFER_REQUIRED',
   'CANNOT_DEMOTE_CREATOR',
   'NOT_PARTICIPANT',
 ]);
