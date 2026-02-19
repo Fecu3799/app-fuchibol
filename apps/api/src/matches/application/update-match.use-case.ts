@@ -18,11 +18,6 @@ export interface UpdateMatchInput {
   capacity?: number;
 }
 
-/** Fields whose change triggers reconfirmation (CONFIRMED -> INVITED). */
-const MAJOR_CHANGE_FIELDS: (keyof UpdateMatchInput)[] = [
-  'startsAt',
-  'location',
-];
 
 @Injectable()
 export class UpdateMatchUseCase {
@@ -75,14 +70,15 @@ export class UpdateMatchUseCase {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
 
-      // Detect major change (startsAt, location).
-      // Capacity changes are NOT major — they use overflow-to-waitlist instead.
-      const isMajorChange =
-        data.startsAt !== undefined || data.location !== undefined;
-
       const capacityDecreased =
         data.capacity !== undefined &&
         (data.capacity as number) < match.capacity;
+
+      // Detect major change (startsAt, location, or capacity reduction).
+      const isMajorChange =
+        data.startsAt !== undefined ||
+        data.location !== undefined ||
+        capacityDecreased;
 
       // Apply update + increment revision
       data.revision = match.revision + 1;
@@ -104,42 +100,6 @@ export class UpdateMatchUseCase {
             confirmedAt: null,
           },
         });
-      }
-
-      // Capacity overflow: move excess confirmed to waitlist (FIFO by confirmedAt)
-      if (capacityDecreased && !isMajorChange) {
-        const newCapacity = data.capacity as number;
-        const confirmed = await tx.matchParticipant.findMany({
-          where: { matchId: input.matchId, status: 'CONFIRMED' },
-          orderBy: { confirmedAt: 'asc' },
-          select: { userId: true },
-        });
-
-        if (confirmed.length > newCapacity) {
-          // Determine current max waitlist position
-          const agg = await tx.matchParticipant.aggregate({
-            where: { matchId: input.matchId },
-            _max: { waitlistPosition: true },
-          });
-          let nextPos = (agg._max.waitlistPosition ?? 0) + 1;
-
-          const overflow = confirmed.slice(newCapacity);
-          for (const p of overflow) {
-            await tx.matchParticipant.update({
-              where: {
-                matchId_userId: {
-                  matchId: input.matchId,
-                  userId: p.userId,
-                },
-              },
-              data: {
-                status: 'WAITLISTED',
-                confirmedAt: null,
-                waitlistPosition: nextPos++,
-              },
-            });
-          }
-        }
       }
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);

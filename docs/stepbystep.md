@@ -50,6 +50,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 42. [Match Admin & Edit Reconfirm + Creator Transfer](#42-match-admin--edit-reconfirm--creator-transfer)
 43. [Leave Match + Edit Match Screen + Admin UI](#43-leave-match--edit-match-screen--admin-ui)
 44. [Capacity Overflow to Waitlist + Format Selector in EditMatch](#44-capacity-overflow-to-waitlist--format-selector-in-editmatch)
+45. [Fix: Capacity reduction triggers reconfirmation (not overflow-to-waitlist)](#45-fix-capacity-reduction-triggers-reconfirmation-not-overflow-to-waitlist)
 
 ---
 
@@ -3748,3 +3749,18 @@ Reemplazado el input manual de capacity por selector de formato identico a Creat
   - `capacity reduction with no overflow does nothing` — 2 confirmed, capacity 5 → sin cambios
   - `capacity reduction + major change → reconfirmation (no overflow)` — major change toma prioridad
 - 75 E2E tests pasan (16 suites)
+
+---
+
+## 45. Fix: Capacity reduction triggers reconfirmation (not overflow-to-waitlist)
+
+**Problema**: El test e2e `capacity reduction triggers reconfirmation` fallaba con `confirmedCount = 1` en lugar de `0`.
+
+**Causa**: `update-match.use-case.ts` excluía explícitamente los cambios de capacidad del flujo de "major change", usando en su lugar una lógica de overflow-to-waitlist. Esto contradecía tanto las reglas de negocio en `CLAUDE.md` (que listan `capacidad` como campo de cambio mayor) como los tests.
+
+**Fix** (`apps/api/src/matches/application/update-match.use-case.ts`):
+- Se añadió `capacityDecreased` a la condición `isMajorChange`.
+- Se eliminó el bloque overflow-to-waitlist que era ahora código muerto.
+- Se eliminó la constante `MAJOR_CHANGE_FIELDS` que estaba sin usar.
+
+**Resultado**: Reducir capacidad → todos los CONFIRMED pasan a INVITED (`confirmedCount = 0`). Los 7 tests del suite `major-change-reconfirmation` pasan.
