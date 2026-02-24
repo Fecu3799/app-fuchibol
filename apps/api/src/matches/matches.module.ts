@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../infra/prisma/prisma.module';
 import { IdempotencyModule } from '../common/idempotency/idempotency.module';
+import { MatchRealtimeModule } from './realtime/match-realtime.module';
 import { MatchesController } from './api/matches.controller';
 import { CreateMatchUseCase } from './application/create-match.use-case';
 import { GetMatchUseCase } from './application/get-match.use-case';
@@ -18,7 +19,7 @@ import { PromoteAdminUseCase } from './application/promote-admin.use-case';
 import { DemoteAdminUseCase } from './application/demote-admin.use-case';
 
 @Module({
-  imports: [PrismaModule, IdempotencyModule],
+  imports: [PrismaModule, IdempotencyModule, MatchRealtimeModule],
   controllers: [MatchesController],
   providers: [
     CreateMatchUseCase,

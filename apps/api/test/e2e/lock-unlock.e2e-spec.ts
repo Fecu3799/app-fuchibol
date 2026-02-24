@@ -23,17 +23,41 @@ describe('Lock / Unlock (e2e)', () => {
     await app.close();
   });
 
-  it('lock → isLocked true, confirm on locked → 409 MATCH_LOCKED', async () => {
+  it('lock → non-invited user confirm on locked → 409 MATCH_LOCKED', async () => {
     const owner = await createAuthenticatedUser(server, 'lock-owner');
-    const user = await createAuthenticatedUser(server, 'lock-user');
+    const outsider = await createAuthenticatedUser(server, 'lock-outsider');
     const { id, revision } = await createMatch(server, owner.token);
 
-    // Invite user
+    // Lock match (no invitation sent to outsider)
+    const lockRes = await request(server)
+      .post(`/api/v1/matches/${id}/lock`)
+      .set(authHeader(owner.token))
+      .send({ expectedRevision: revision });
+
+    expect(lockRes.status).toBe(201);
+    expect(lockRes.body.isLocked).toBe(true);
+
+    // Outsider (no participation row) tries to confirm on locked match
+    const confirmRes = await request(server)
+      .post(`/api/v1/matches/${id}/confirm`)
+      .set(authHeader(outsider.token))
+      .set('Idempotency-Key', randomKey())
+      .send({ expectedRevision: lockRes.body.revision });
+
+    expectError(confirmRes, { status: 409, code: 'MATCH_LOCKED' });
+  });
+
+  it('lock → INVITED user can still confirm on locked match', async () => {
+    const owner = await createAuthenticatedUser(server, 'lock-owner2');
+    const invited = await createAuthenticatedUser(server, 'lock-invited');
+    const { id, revision } = await createMatch(server, owner.token);
+
+    // Invite user before locking
     await request(server)
       .post(`/api/v1/matches/${id}/invite`)
       .set(authHeader(owner.token))
       .set('Idempotency-Key', randomKey())
-      .send({ expectedRevision: revision, userId: user.userId });
+      .send({ expectedRevision: revision, userId: invited.userId });
 
     // Lock match
     const lockRes = await request(server)
@@ -44,14 +68,15 @@ describe('Lock / Unlock (e2e)', () => {
     expect(lockRes.status).toBe(201);
     expect(lockRes.body.isLocked).toBe(true);
 
-    // Confirm on locked match
+    // INVITED user confirms even though match is locked
     const confirmRes = await request(server)
       .post(`/api/v1/matches/${id}/confirm`)
-      .set(authHeader(user.token))
+      .set(authHeader(invited.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: lockRes.body.revision });
 
-    expectError(confirmRes, { status: 409, code: 'MATCH_LOCKED' });
+    expect(confirmRes.status).toBe(201);
+    expect(confirmRes.body.myStatus).toBe('CONFIRMED');
   });
 
   it('unlock → isLocked false', async () => {

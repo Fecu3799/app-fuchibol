@@ -40,6 +40,8 @@ import { PromoteAdminDto, DemoteAdminDto } from './dto/admin-command.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
+import { MatchRealtimePublisher } from '../realtime/match-realtime.publisher';
+import type { MatchSnapshot } from '../application/build-match-snapshot';
 
 @Controller('matches')
 export class MatchesController {
@@ -58,6 +60,7 @@ export class MatchesController {
     private readonly leaveMatchUseCase: LeaveMatchUseCase,
     private readonly promoteAdminUseCase: PromoteAdminUseCase,
     private readonly demoteAdminUseCase: DemoteAdminUseCase,
+    private readonly realtimePublisher: MatchRealtimePublisher,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -108,12 +111,14 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     const { expectedRevision, ...fields } = body;
-    return this.updateMatchUseCase.execute({
+    const snapshot: MatchSnapshot = await this.updateMatchUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision,
       ...fields,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -124,11 +129,13 @@ export class MatchesController {
     @Body() body: ParticipationCommandDto,
     @Actor() actor: ActorPayload,
   ) {
-    return this.lockMatchUseCase.execute({
+    const snapshot: MatchSnapshot = await this.lockMatchUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -139,11 +146,13 @@ export class MatchesController {
     @Body() body: ParticipationCommandDto,
     @Actor() actor: ActorPayload,
   ) {
-    return this.unlockMatchUseCase.execute({
+    const snapshot: MatchSnapshot = await this.unlockMatchUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -156,12 +165,14 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    return this.cancelMatchUseCase.execute({
+    const snapshot: MatchSnapshot = await this.cancelMatchUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -174,12 +185,14 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    return this.confirmUseCase.execute({
+    const snapshot: MatchSnapshot = await this.confirmUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -192,12 +205,14 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    return this.declineUseCase.execute({
+    const snapshot: MatchSnapshot = await this.declineUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -210,12 +225,14 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    return this.toggleSpectatorUseCase.execute({
+    const snapshot: MatchSnapshot = await this.toggleSpectatorUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -228,7 +245,7 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    return this.inviteUseCase.execute({
+    const snapshot: MatchSnapshot = await this.inviteUseCase.execute({
       matchId,
       actorId: actor.userId,
       targetUserId: body.userId,
@@ -236,6 +253,8 @@ export class MatchesController {
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -248,12 +267,14 @@ export class MatchesController {
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    return this.leaveMatchUseCase.execute({
+    const snapshot: MatchSnapshot = await this.leaveMatchUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,
       idempotencyKey,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -264,12 +285,14 @@ export class MatchesController {
     @Body() body: PromoteAdminDto,
     @Actor() actor: ActorPayload,
   ) {
-    return this.promoteAdminUseCase.execute({
+    const snapshot: MatchSnapshot = await this.promoteAdminUseCase.execute({
       matchId,
       actorId: actor.userId,
       targetUserId: body.userId,
       expectedRevision: body.expectedRevision,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -281,12 +304,14 @@ export class MatchesController {
     @Body() body: DemoteAdminDto,
     @Actor() actor: ActorPayload,
   ) {
-    return this.demoteAdminUseCase.execute({
+    const snapshot: MatchSnapshot = await this.demoteAdminUseCase.execute({
       matchId,
       actorId: actor.userId,
       targetUserId: userId,
       expectedRevision: body.expectedRevision,
     });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   private requireIdempotencyKey(

@@ -56,6 +56,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 48. [Fix: Leave Match web confirmation + remove debug instrumentation](#48-fix-leave-match-web-confirmation--remove-debug-instrumentation)
 49. [Migración: Eliminar WITHDRAWN — unificar en SPECTATOR](#49-migración-eliminar-withdrawn--unificar-en-spectator)
 50. [Fix: Lock no bloquea confirm para usuarios INVITED](#50-fix-lock-no-bloquea-confirm-para-usuarios-invited)
+51. [Realtime: WebSocket (Socket.IO) para MatchDetail](#51-realtime-websocket-socketio-para-matchdetail)
 
 ---
 
@@ -4078,3 +4079,46 @@ Nuevo suite `describe('Confirm on locked match')` reemplaza el anterior `describ
 - `apps/api/src/matches/application/confirm-participation.use-case.ts`
 - `apps/api/src/matches/application/build-match-snapshot.ts`
 - `apps/api/src/matches/application/update-lock.use-case.spec.ts`
+
+---
+
+## 51. Realtime: WebSocket (Socket.IO) para MatchDetail
+
+### Objetivo
+Notificar a los clientes conectados a un match cuando el estado cambia, sin enviar diffs completos: el servidor emite solo `{ matchId, revision }` y el cliente refetchea el snapshot via HTTP.
+
+### Arquitectura
+
+**Principio**: WS es best-effort. DB es la fuente de verdad. Si el cliente pierde la conexión, simplemente no recibe notificaciones hasta reconectar; el snapshot HTTP sigue siendo consistente.
+
+**Flujo**:
+1. Cliente abre MatchDetail → HTTP GET snapshot (incluye `revision`)
+2. Cliente conecta WS al namespace `/matches` con JWT en `auth.token`
+3. Cliente emite `match.subscribe { matchId }` → servidor une al room `match:{matchId}`
+4. Cualquier mutación exitosa → servidor emite `match.updated { matchId, revision }` al room
+5. Cliente compara `payload.revision > localRevision` → `invalidateQueries(['match', matchId])` → React Query refetchea
+
+### Paquetes instalados
+- API: `@nestjs/websockets`, `@nestjs/platform-socket.io`, `socket.io`
+- Mobile: `socket.io-client`
+
+### Archivos creados/modificados
+
+**API — nuevos**:
+- `apps/api/src/matches/realtime/match-realtime.publisher.ts`: servicio injectable que guarda ref al `Server` y expone `notifyMatchUpdated(matchId, revision)`.
+- `apps/api/src/matches/realtime/match.gateway.ts`: gateway Socket.IO en namespace `/matches`. Verifica JWT en `handleConnection`, maneja eventos `match.subscribe` / `match.unsubscribe`.
+- `apps/api/src/matches/realtime/match-realtime.module.ts`: módulo que registra JwtModule + providers y exporta `MatchRealtimePublisher`.
+
+**API — modificados**:
+- `apps/api/src/matches/matches.module.ts`: importa `MatchRealtimeModule`.
+- `apps/api/src/matches/api/matches.controller.ts`: inyecta `MatchRealtimePublisher`; cada endpoint de mutación captura el snapshot y llama `notifyMatchUpdated(snapshot.id, snapshot.revision)`.
+
+**Mobile — nuevos**:
+- `apps/mobile/src/lib/socket.ts`: singleton socket.io-client. Reutiliza la misma instancia si el token no cambió.
+- `apps/mobile/src/features/matches/useMatchRealtime.ts`: hook que suscribe al room del match, escucha `match.updated` y llama `invalidateQueries` si la revision es mayor.
+
+**Mobile — modificado**:
+- `apps/mobile/src/screens/MatchDetailScreen.tsx`: agrega `useMatchRealtime(matchId, query.data?.revision)`.
+
+### Escalado multi-instancia
+En producción con múltiples instancias, los rooms de Socket.IO son locales a cada proceso. Para sincronizar entre instancias se debe configurar el adaptador Redis de Socket.IO (`@socket.io/redis-adapter`). Para el MVP de instancia única no es necesario.

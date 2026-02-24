@@ -21,6 +21,7 @@ import type {
   GroupMember,
 } from "../types/api";
 import { useMatch } from "../features/matches/useMatch";
+import { useMatchRealtime } from "../features/matches/useMatchRealtime";
 import {
   useMatchAction,
   formatActionError,
@@ -136,6 +137,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const { matchId } = route.params;
   const query = useMatch(matchId);
   useLogoutOn401(query);
+  useMatchRealtime(matchId, query.data?.revision);
   const mutation = useMatchAction(matchId);
   const inviteMutation = useInviteToMatch(matchId);
   const lockMutation = useLockMatch(matchId);

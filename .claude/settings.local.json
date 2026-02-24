@@ -28,7 +28,8 @@
       "Bash(npx prisma generate:*)",
       "Bash(git stash:*)",
       "Bash(pnpm -C apps/api test:*)",
-      "Bash(pnpm -C apps/api build:*)"
+      "Bash(pnpm -C apps/api build:*)",
+      "Bash(pnpm -C apps/mobile exec tsc:*)"
     ]
   }
 }
