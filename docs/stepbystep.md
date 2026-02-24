@@ -51,6 +51,9 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 43. [Leave Match + Edit Match Screen + Admin UI](#43-leave-match--edit-match-screen--admin-ui)
 44. [Capacity Overflow to Waitlist + Format Selector in EditMatch](#44-capacity-overflow-to-waitlist--format-selector-in-editmatch)
 45. [Fix: Capacity reduction triggers reconfirmation (not overflow-to-waitlist)](#45-fix-capacity-reduction-triggers-reconfirmation-not-overflow-to-waitlist)
+46. [Refactor: Spectator Toggle + Leave Match Late-Leave Penalty](#46-refactor-spectator-toggle--leave-match-late-leave-penalty)
+47. [Fix: Leave Match button visible for creator without participation row](#47-fix-leave-match-button-visible-for-creator-without-participation-row)
+48. [Fix: Leave Match web confirmation + remove debug instrumentation](#48-fix-leave-match-web-confirmation--remove-debug-instrumentation)
 
 ---
 
@@ -3764,3 +3767,176 @@ Reemplazado el input manual de capacity por selector de formato identico a Creat
 - Se eliminó la constante `MAJOR_CHANGE_FIELDS` que estaba sin usar.
 
 **Resultado**: Reducir capacidad → todos los CONFIRMED pasan a INVITED (`confirmedCount = 0`). Los 7 tests del suite `major-change-reconfirmation` pasan.
+
+---
+
+## 46. Refactor: Spectator Toggle + Leave Match Late-Leave Penalty
+
+### Qué se hizo
+
+Refactoring de "Withdraw" y "Leave Match" para separar semánticas y eliminar inconsistencias:
+- **Withdraw** dejó de existir como abandono; su lugar fue tomado por un **Spectator Toggle**.
+- **Leave Match** conservó la lógica de abandono (hard-delete) y se le agregó penalización por salida tardía.
+
+### Cambios en API (`apps/api`)
+
+#### 1. Prisma schema (`prisma/schema.prisma`)
+- Se agregó `SPECTATOR` al enum `MatchParticipantStatus`.
+- Se agregó `lateLeaveCount Int @default(0)` al modelo `User`.
+
+#### 2. Migración
+```
+prisma/migrations/20260219194826_add_spectator_status_and_late_leave_count/migration.sql
+```
+```sql
+ALTER TYPE "MatchParticipantStatus" ADD VALUE 'SPECTATOR';
+ALTER TABLE "User" ADD COLUMN "lateLeaveCount" INTEGER NOT NULL DEFAULT 0;
+```
+
+#### 3. Nuevo use case: `toggle-spectator.use-case.ts`
+- **Endpoint**: `POST /api/v1/matches/:id/spectator`
+- **Comportamiento**:
+  - Sin participación → crea fila con status `SPECTATOR`.
+  - `SPECTATOR` → cambia a `INVITED` (vuelve al flujo de participante).
+  - `CONFIRMED` → `SPECTATOR` + promueve primer `WAITLISTED`.
+  - `INVITED` / `WAITLISTED` / `DECLINED` / `WITHDRAWN` → `SPECTATOR`.
+  - Match cancelado → 409 `MATCH_CANCELLED`.
+  - Revisión incorrecta → 409 `REVISION_CONFLICT`.
+- Requiere `idempotency-key` header.
+- Incrementa `match.revision`.
+
+#### 4. Actualización: `leave-match.use-case.ts`
+- **Penalización late-leave**: si `startsAt - now() <= 1h` (y el partido aún no empezó), incrementa `user.lateLeaveCount` vía `{ increment: 1 }`.
+- **Búsqueda de candidato admin** al transferir creator: ahora excluye también `SPECTATOR` del `notIn`.
+
+#### 5. Actualización: `build-match-snapshot.ts`
+- `MatchSnapshot` ahora incluye `spectators: SpectatorView[]` y `spectatorCount: number`.
+- `participantViews` excluye también `SPECTATOR` (antes solo excluía `WITHDRAWN`).
+- `actionsAllowed`: se reemplazó `'withdraw'` por `'spectator'` (siempre presente en partidos no cancelados).
+
+#### 6. Controller y Module
+- Se inyectó `ToggleSpectatorUseCase` en `MatchesController` y `MatchesModule`.
+- Endpoint `/withdraw` permanece (backward-compat con use case anterior), pero `actionsAllowed` ya no emite `'withdraw'`.
+
+#### 7. Tests (`toggle-spectator.use-case.spec.ts`)
+- `no participation → creates SPECTATOR`
+- `SPECTATOR → switches to INVITED`
+- `CONFIRMED → SPECTATOR + promotes first WAITLISTED`
+- `INVITED → SPECTATOR`
+- `rejects wrong revision → 409`
+- `rejects canceled match → 409`
+- `leave within 1h → increments lateLeaveCount`
+- `leave more than 1h before → no penalty`
+- `leave after match start → no penalty`
+
+### Cambios en Mobile (`apps/mobile`)
+
+#### `src/types/api.ts`
+- Se agregó `SpectatorView { userId, username }`.
+- `MatchSnapshot` ahora incluye `spectators: SpectatorView[]` y `spectatorCount: number`.
+
+#### `src/screens/MatchDetailScreen.tsx`
+- `STATUS_LABEL` y `STATUS_COLOR` incluyen `SPECTATOR` (color marrón `#6d4c41`).
+- `PLAYER_ACTIONS` ya no incluye `'withdraw'`; solo `['confirm', 'decline']`.
+- Se agregó `ACTION_LABELS`/`ACTION_COLORS` sin entrada `withdraw`.
+- Cuando `myStatus === 'SPECTATOR'`, se ocultan los botones confirm/decline.
+- Se agregó botón **Spectator / Participate** (toggle):
+  - Label `'Participate'` si ya es SPECTATOR, `'Spectator'` si no.
+  - Llama a `postMatchAction(token, matchId, 'spectator', revision, uuid)`.
+  - Invalida `['match', matchId]` y `['matches']`.
+- Se agregó sección **Spectators (N)** en la lista de participantes.
+- Se agregó `CountBadge` de "Spectators" en la fila de conteos.
+- DEV block ahora muestra `spectators: N`.
+
+### Archivos creados/modificados
+- `apps/api/prisma/schema.prisma` (modificado)
+- `apps/api/prisma/migrations/20260219194826_*/migration.sql` (creado)
+- `apps/api/src/matches/application/toggle-spectator.use-case.ts` (creado)
+- `apps/api/src/matches/application/toggle-spectator.use-case.spec.ts` (creado)
+- `apps/api/src/matches/application/build-match-snapshot.ts` (modificado)
+- `apps/api/src/matches/application/leave-match.use-case.ts` (modificado)
+- `apps/api/src/matches/api/matches.controller.ts` (modificado)
+- `apps/api/src/matches/matches.module.ts` (modificado)
+- `apps/mobile/src/types/api.ts` (modificado)
+- `apps/mobile/src/screens/MatchDetailScreen.tsx` (modificado)
+
+---
+
+## 47. Fix: Leave Match button visible for creator without participation row
+
+### Problema
+
+El botón "Leave Match" no aparecía para el creator del partido. Causa: `create-match.use-case.ts` no crea una fila `MatchParticipant` para el creator al crear el partido. En `build-match-snapshot.ts`, `'leave'` solo se agrega a `actionsAllowed` cuando `myStatus` es truthy. Si el creator nunca confirmó su participación, `myStatus = null` → `canLeave = false` → botón no renderizado.
+
+Adicionalmente, `leave-match.use-case.ts` tenía un bug: el early-return por `!existing` ocurría **antes** del check de creator transfer. Si el creator (sin fila de participación) llamaba `/leave`, retornaba idempotente sin transferir el rol de creator al nuevo admin.
+
+### Cambios
+
+#### `apps/api/src/matches/application/build-match-snapshot.ts`
+- Condición de `'leave'` cambiada de `if (myStatus)` a `if (myStatus || isCreator)`.
+- El creator siempre ve el botón "Leave Match" aunque no tenga fila de participación.
+
+#### `apps/api/src/matches/application/leave-match.use-case.ts`
+- El bloque de creator transfer movido **antes** del early-return por `!existing`.
+- Si el creator no tiene fila de participación: hace la transferencia igual, incrementa la revision, retorna snapshot (sin eliminar nada).
+- Si tiene fila: flujo normal (transfer + delete + promote waitlist + increment revision).
+
+#### `apps/api/src/matches/application/toggle-spectator.use-case.spec.ts`
+- Nuevos tests: `LeaveMatchUseCase — creator without participation row`
+  - `creator (no row) with admin candidate → transfers creator, increments revision`
+  - `creator (no row) with no admin candidate → throws CREATOR_TRANSFER_REQUIRED`
+
+### Resultado
+- 18/18 suites, 103/103 unit tests passing.
+- El creator puede presionar "Leave Match" aunque nunca haya confirmado su participación.
+- El CREATOR_TRANSFER_REQUIRED sigue siendo el mecanismo de protección.
+
+### Archivos modificados
+- `apps/api/src/matches/application/build-match-snapshot.ts`
+- `apps/api/src/matches/application/leave-match.use-case.ts`
+- `apps/api/src/matches/application/toggle-spectator.use-case.spec.ts`
+
+---
+
+## 48. Fix: Leave Match web confirmation + remove debug instrumentation
+
+### Qué se hizo
+
+#### 1. Leave Match — confirmación en Web
+`Alert.alert` no funciona en React Native Web (no muestra nada). El flujo de Leave nunca ejecutaba la llamada API en web.
+
+**Fix**: Se extrajo la lógica de leave en `doLeave()` (función async pura) y se creó `handleLeave()` platform-aware:
+- `Platform.OS === "web"`: usa `window.confirm(...)` (síncrono, nativo del navegador).
+- iOS/Android: sigue usando `Alert.alert` con opciones No / Yes leave.
+
+#### 2. Eliminación de debug instrumentation
+
+**`apps/mobile/src/lib/api.ts`**:
+- Removidos los 3 bloques `if (__DEV__) console.log(...)` (request start, response status, error detail).
+- Removida la variable `hasAuth` que solo se usaba para los logs de debug.
+
+**`apps/mobile/src/screens/HomeScreen.tsx`**:
+- Removido import `useQueryClient` y variable `queryClient` (solo usados por debug effect).
+- Removido import `apiBaseUrl` (solo usado por debug overlay).
+- Removidos `status` y `fetchStatus` de la desestructuración de query.
+- Removido el `useEffect` de detección de queries stuck (5s timer con `getQueryCache` / `getMutationCache`).
+- Removido el bloque `{__DEV__ && <View style={styles.debugOverlay}>...}` con API URL y estado de queries.
+- Removidos estilos `debugOverlay` y `debugText`.
+
+**`apps/mobile/src/screens/MatchDetailScreen.tsx`**:
+- Removido import `patchMatch` (solo usado en DEV block).
+- Removido el texto de debug inline `{__DEV__ && <Text>canLeave=... leaveLoading=...</Text>}`.
+- Removido el bloque completo `{__DEV__ && <View style={styles.devBlock}>DEV Controls...</View>}`.
+- Removido el "Revision footer" `<Text style={styles.revisionText}>rev {revision}</Text>`.
+- Removidos estilos: `devBlock`, `devTitle`, `devInfo`, `devBtn`, `devBtnText`, `revisionText`.
+
+### Resultado
+- `npx tsc --noEmit` sin errores.
+- Ningún `__DEV__`, `console.log`, `console.warn`, ni artefacto de debug en los archivos modificados.
+- Comportamiento unchanged en mobile (Alert nativo).
+- Web: clicking "Leave Match" muestra `window.confirm`, accept ejecuta la llamada, cancel no hace nada.
+
+### Archivos modificados
+- `apps/mobile/src/lib/api.ts`
+- `apps/mobile/src/screens/HomeScreen.tsx`
+- `apps/mobile/src/screens/MatchDetailScreen.tsx`

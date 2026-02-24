@@ -15,6 +15,11 @@ export interface ParticipantView {
   isMatchAdmin: boolean;
 }
 
+export interface SpectatorView {
+  userId: string;
+  username: string;
+}
+
 export interface MatchSnapshot {
   id: string;
   title: string;
@@ -31,6 +36,8 @@ export interface MatchSnapshot {
   confirmedCount: number;
   participants: ParticipantView[];
   waitlist: ParticipantView[];
+  spectators: SpectatorView[];
+  spectatorCount: number;
   myStatus: string | null;
   actionsAllowed: string[];
   createdAt: Date;
@@ -56,6 +63,7 @@ export async function buildMatchSnapshot(
   const waitlisted = participants
     .filter((p) => p.status === 'WAITLISTED')
     .sort((a, b) => (a.waitlistPosition ?? 0) - (b.waitlistPosition ?? 0));
+  const spectatorRows = participants.filter((p) => p.status === 'SPECTATOR');
 
   const myParticipant = participants.find((p) => p.userId === actorId);
   const myStatus = myParticipant?.status ?? null;
@@ -79,13 +87,13 @@ export async function buildMatchSnapshot(
       }
     }
 
-    // Withdraw is always allowed (even when locked), but not when canceled
-    if (myStatus === 'CONFIRMED' || myStatus === 'WAITLISTED') {
-      actionsAllowed.push('withdraw');
-    }
+    // Spectator toggle: always available (replaces withdraw semantics)
+    // Not shown when SPECTATOR — instead 'confirm' is hidden and 'spectator' becomes "Participate"
+    actionsAllowed.push('spectator');
 
     // Leave is always allowed for any participant (hard delete)
-    if (myStatus) {
+    // Creator can also leave even without a participation row (triggers admin transfer)
+    if (myStatus || isCreator) {
       actionsAllowed.push('leave');
     }
 
@@ -99,8 +107,9 @@ export async function buildMatchSnapshot(
     }
   }
 
+  // Participants: exclude WITHDRAWN and SPECTATOR (spectators shown separately)
   const participantViews: ParticipantView[] = participants
-    .filter((p) => p.status !== 'WITHDRAWN')
+    .filter((p) => p.status !== 'WITHDRAWN' && p.status !== 'SPECTATOR')
     .map((p) => ({
       userId: p.userId,
       username: p.user.username,
@@ -115,6 +124,11 @@ export async function buildMatchSnapshot(
     status: p.status,
     waitlistPosition: i + 1,
     isMatchAdmin: p.isMatchAdmin,
+  }));
+
+  const spectatorViews: SpectatorView[] = spectatorRows.map((p) => ({
+    userId: p.userId,
+    username: p.user.username,
   }));
 
   return {
@@ -133,6 +147,8 @@ export async function buildMatchSnapshot(
     confirmedCount: confirmed.length,
     participants: participantViews,
     waitlist: waitlistViews,
+    spectators: spectatorViews,
+    spectatorCount: spectatorRows.length,
     myStatus,
     actionsAllowed: [...new Set(actionsAllowed)],
     createdAt: match.createdAt,

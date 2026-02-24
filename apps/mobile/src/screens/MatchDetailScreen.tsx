@@ -1,91 +1,105 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-} from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../navigation/AppNavigator';
-import type { MatchSnapshot, ParticipantView, GroupSummary, GroupMember } from '../types/api';
-import { useMatch } from '../features/matches/useMatch';
-import { useMatchAction, formatActionError } from '../features/matches/useMatchAction';
+} from "react-native";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/AppNavigator";
+import type {
+  MatchSnapshot,
+  ParticipantView,
+  SpectatorView,
+  GroupSummary,
+  GroupMember,
+} from "../types/api";
+import { useMatch } from "../features/matches/useMatch";
+import {
+  useMatchAction,
+  formatActionError,
+} from "../features/matches/useMatchAction";
 import {
   useInviteToMatch,
   formatInviteError,
-} from '../features/matches/useInviteToMatch';
+} from "../features/matches/useInviteToMatch";
 import {
   useLockMatch,
   useUnlockMatch,
   formatLockError,
-} from '../features/matches/useLockMatch';
+} from "../features/matches/useLockMatch";
 import {
   useCancelMatch,
   formatCancelError,
-} from '../features/matches/useCancelMatch';
-import { useLogoutOn401 } from '../lib/use-api-query';
-import { ApiError } from '../lib/api';
-import { useGroups } from '../features/groups/useGroups';
-import { useGroup } from '../features/groups/useGroup';
-import { useBatchInviteFromGroup } from '../features/matches/useBatchInviteFromGroup';
-import { postMatchAction, patchMatch, promoteAdmin, demoteAdmin } from '../features/matches/matchesClient';
-import { randomUUID } from 'expo-crypto';
-import { useAuth } from '../contexts/AuthContext';
-import { useQueryClient } from '@tanstack/react-query';
+} from "../features/matches/useCancelMatch";
+import { useLogoutOn401 } from "../lib/use-api-query";
+import { ApiError } from "../lib/api";
+import { useGroups } from "../features/groups/useGroups";
+import { useGroup } from "../features/groups/useGroup";
+import { useBatchInviteFromGroup } from "../features/matches/useBatchInviteFromGroup";
+import {
+  postMatchAction,
+  promoteAdmin,
+  demoteAdmin,
+} from "../features/matches/matchesClient";
+import { randomUUID } from "expo-crypto";
+import { useAuth } from "../contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
 
-type Props = NativeStackScreenProps<RootStackParamList, 'MatchDetail'>;
+type Props = NativeStackScreenProps<RootStackParamList, "MatchDetail">;
 
 // ── Helpers ──
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 }
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
   return `${h}:${m}`;
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  CONFIRMED: 'Confirmed',
-  INVITED: 'Pending',
-  WAITLISTED: 'Waitlist',
-  DECLINED: 'Declined',
-  WITHDRAWN: 'Withdrawn',
+  CONFIRMED: "Confirmed",
+  INVITED: "Pending",
+  WAITLISTED: "Waitlist",
+  DECLINED: "Declined",
+  WITHDRAWN: "Withdrawn",
+  SPECTATOR: "Spectator",
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  CONFIRMED: '#2e7d32',
-  INVITED: '#1976d2',
-  WAITLISTED: '#f57c00',
-  DECLINED: '#9e9e9e',
-  WITHDRAWN: '#bdbdbd',
+  CONFIRMED: "#2e7d32",
+  INVITED: "#1976d2",
+  WAITLISTED: "#f57c00",
+  DECLINED: "#9e9e9e",
+  WITHDRAWN: "#bdbdbd",
+  SPECTATOR: "#6d4c41",
 };
 
 const ACTION_LABELS: Record<string, string> = {
-  confirm: 'Confirm',
-  decline: 'Decline',
-  withdraw: 'Withdraw',
+  confirm: "Confirm",
+  decline: "Decline",
 };
 
 const ACTION_COLORS: Record<string, string> = {
-  confirm: '#2e7d32',
-  decline: '#757575',
-  withdraw: '#d32f2f',
+  confirm: "#2e7d32",
+  decline: "#757575",
 };
 
-const PLAYER_ACTIONS = ['confirm', 'decline', 'withdraw'] as const;
+const PLAYER_ACTIONS = ["confirm", "decline"] as const;
 
 // ── Derived counts from snapshot ──
 
@@ -96,20 +110,26 @@ function deriveParticipantGroups(match: MatchSnapshot) {
 
   for (const p of match.participants) {
     switch (p.status) {
-      case 'CONFIRMED':
+      case "CONFIRMED":
         confirmed.push(p);
         break;
-      case 'INVITED':
+      case "INVITED":
         invited.push(p);
         break;
-      case 'DECLINED':
+      case "DECLINED":
         declined.push(p);
         break;
-      // WAITLISTED is in match.waitlist separately
+      // WAITLISTED is in match.waitlist; SPECTATOR is in match.spectators
     }
   }
 
-  return { confirmed, invited, declined, waitlist: match.waitlist };
+  return {
+    confirmed,
+    invited,
+    declined,
+    waitlist: match.waitlist,
+    spectators: match.spectators ?? [],
+  };
 }
 
 // ── Component ──
@@ -123,19 +143,21 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const lockMutation = useLockMatch(matchId);
   const unlockMutation = useUnlockMatch(matchId);
   const cancelMutation = useCancelMatch(matchId);
-  const [actionError, setActionError] = useState('');
-  const [lockError, setLockError] = useState('');
-  const [cancelError, setCancelError] = useState('');
-  const [inviteInput, setInviteInput] = useState('');
-  const [inviteMsg, setInviteMsg] = useState('');
-  const [inviteMsgType, setInviteMsgType] = useState<'success' | 'error'>(
-    'success',
+  const [actionError, setActionError] = useState("");
+  const [lockError, setLockError] = useState("");
+  const [cancelError, setCancelError] = useState("");
+  const [inviteInput, setInviteInput] = useState("");
+  const [inviteMsg, setInviteMsg] = useState("");
+  const [inviteMsgType, setInviteMsgType] = useState<"success" | "error">(
+    "success",
   );
 
   // Group invite state
   const [showGroupInvite, setShowGroupInvite] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState('');
-  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(new Set());
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedMembers, setSelectedMembers] = useState<Set<string>>(
+    new Set(),
+  );
   const groupsQuery = useGroups();
   const groupDetailQuery = useGroup(selectedGroupId);
   const batchInviteMutation = useBatchInviteFromGroup(matchId);
@@ -173,30 +195,30 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
   const handleAction = (action: string) => {
     if (!displayMatch) return;
-    setActionError('');
+    setActionError("");
     mutation.mutate(
       { action, revision: displayMatch.revision },
       {
         onError: (err) => setActionError(formatActionError(err)),
-        onSuccess: () => setActionError(''),
+        onSuccess: () => setActionError(""),
       },
     );
   };
 
   const handleInvite = () => {
     if (!displayMatch || !inviteInput.trim()) return;
-    setInviteMsg('');
+    setInviteMsg("");
     inviteMutation.mutate(
       { identifier: inviteInput.trim(), revision: displayMatch.revision },
       {
         onSuccess: () => {
-          setInviteMsg('Invite sent!');
-          setInviteMsgType('success');
-          setInviteInput('');
+          setInviteMsg("Invite sent!");
+          setInviteMsgType("success");
+          setInviteInput("");
         },
         onError: (err) => {
           setInviteMsg(formatInviteError(err));
-          setInviteMsgType('error');
+          setInviteMsgType("error");
         },
       },
     );
@@ -204,13 +226,13 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
   const handleLockToggle = () => {
     if (!displayMatch) return;
-    setLockError('');
+    setLockError("");
     const m = displayMatch.isLocked ? unlockMutation : lockMutation;
     m.mutate(
       { revision: displayMatch.revision },
       {
         onError: (err) => setLockError(formatLockError(err)),
-        onSuccess: () => setLockError(''),
+        onSuccess: () => setLockError(""),
       },
     );
   };
@@ -218,20 +240,20 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const handleCancel = () => {
     if (!displayMatch) return;
     Alert.alert(
-      'Cancel Match',
-      'Are you sure you want to cancel this match? This cannot be undone.',
+      "Cancel Match",
+      "Are you sure you want to cancel this match? This cannot be undone.",
       [
-        { text: 'No', style: 'cancel' },
+        { text: "No", style: "cancel" },
         {
-          text: 'Yes, cancel',
-          style: 'destructive',
+          text: "Yes, cancel",
+          style: "destructive",
           onPress: () => {
-            setCancelError('');
+            setCancelError("");
             cancelMutation.mutate(
               { revision: displayMatch.revision },
               {
                 onError: (err) => setCancelError(formatCancelError(err)),
-                onSuccess: () => setCancelError(''),
+                onSuccess: () => setCancelError(""),
               },
             );
           },
@@ -240,50 +262,85 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     );
   };
 
-  const [leaveError, setLeaveError] = useState('');
+  const [leaveError, setLeaveError] = useState("");
   const [leaveLoading, setLeaveLoading] = useState(false);
+  const [spectatorLoading, setSpectatorLoading] = useState(false);
+  const [spectatorError, setSpectatorError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
+
+  const handleSpectatorToggle = async () => {
+    if (!displayMatch || !token) return;
+    setSpectatorError("");
+    setSpectatorLoading(true);
+    try {
+      await postMatchAction(
+        token,
+        matchId,
+        "spectator",
+        displayMatch.revision,
+        randomUUID(),
+      );
+      qc.invalidateQueries({ queryKey: ["match", matchId] });
+      qc.invalidateQueries({ queryKey: ["matches"] });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setSpectatorError(formatActionError(err));
+    } finally {
+      setSpectatorLoading(false);
+    }
+  };
+
+  const doLeave = async () => {
+    if (!displayMatch || !token) return;
+    setLeaveError("");
+    setLeaveLoading(true);
+    try {
+      await postMatchAction(
+        token,
+        matchId,
+        "leave",
+        displayMatch.revision,
+        randomUUID(),
+      );
+      qc.invalidateQueries({ queryKey: ["matches"] });
+      navigation.goBack();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      if (
+        err instanceof ApiError &&
+        err.code === "CREATOR_TRANSFER_REQUIRED"
+      ) {
+        setLeaveError("You must promote an admin before leaving as creator.");
+      } else {
+        setLeaveError(formatActionError(err));
+      }
+    } finally {
+      setLeaveLoading(false);
+    }
+  };
 
   const handleLeave = () => {
     if (!displayMatch || !token) return;
-    Alert.alert(
-      'Leave Match',
-      'Are you sure you want to leave this match?',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, leave',
-          style: 'destructive',
-          onPress: async () => {
-            setLeaveError('');
-            setLeaveLoading(true);
-            try {
-              await postMatchAction(
-                token,
-                matchId,
-                'leave',
-                displayMatch.revision,
-                randomUUID(),
-              );
-              qc.invalidateQueries({ queryKey: ['matches'] });
-              navigation.goBack();
-            } catch (err) {
-              if (err instanceof ApiError && err.status === 401) {
-                logout();
-                return;
-              }
-              if (err instanceof ApiError && err.code === 'CREATOR_TRANSFER_REQUIRED') {
-                setLeaveError('You must promote an admin before leaving as creator.');
-              } else {
-                setLeaveError(formatActionError(err));
-              }
-            } finally {
-              setLeaveLoading(false);
-            }
-          },
-        },
-      ],
-    );
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to leave this match?")) {
+        void doLeave();
+      }
+    } else {
+      Alert.alert(
+        "Leave Match",
+        "Are you sure you want to leave this match?",
+        [
+          { text: "No", style: "cancel" },
+          { text: "Yes, leave", style: "destructive", onPress: doLeave },
+        ],
+      );
+    }
   };
 
   const handlePromote = async (targetUserId: string, username: string) => {
@@ -291,10 +348,13 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     setAdminActionLoading(true);
     try {
       await promoteAdmin(token, matchId, targetUserId, displayMatch.revision);
-      qc.invalidateQueries({ queryKey: ['match', matchId] });
+      qc.invalidateQueries({ queryKey: ["match", matchId] });
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) { logout(); return; }
-      Alert.alert('Error', formatActionError(err));
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      Alert.alert("Error", formatActionError(err));
     } finally {
       setAdminActionLoading(false);
     }
@@ -305,10 +365,13 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     setAdminActionLoading(true);
     try {
       await demoteAdmin(token, matchId, targetUserId, displayMatch.revision);
-      qc.invalidateQueries({ queryKey: ['match', matchId] });
+      qc.invalidateQueries({ queryKey: ["match", matchId] });
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) { logout(); return; }
-      Alert.alert('Error', formatActionError(err));
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      Alert.alert("Error", formatActionError(err));
     } finally {
       setAdminActionLoading(false);
     }
@@ -329,12 +392,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     return (
       <View style={styles.center}>
         <Text style={styles.errorText}>
-          {is404 ? 'Match not found' : 'Failed to load match'}
+          {is404 ? "Match not found" : "Failed to load match"}
         </Text>
         {error instanceof ApiError && error.requestId && (
-          <Text style={styles.requestIdText}>
-            RequestId: {error.requestId}
-          </Text>
+          <Text style={styles.requestIdText}>RequestId: {error.requestId}</Text>
         )}
         {!is404 && (
           <Pressable style={styles.retryBtn} onPress={() => refetch()}>
@@ -347,26 +408,26 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
   if (!displayMatch) return null;
 
-  const visibleActions = PLAYER_ACTIONS.filter((a) =>
-    displayMatch.actionsAllowed.includes(a),
+  const isSpectator = displayMatch.myStatus === "SPECTATOR";
+  // When SPECTATOR: hide confirm/decline (not a real participant)
+  const visibleActions = PLAYER_ACTIONS.filter(
+    (a) => displayMatch.actionsAllowed.includes(a) && !isSpectator,
   );
-  const canInvite = displayMatch.actionsAllowed.includes('invite');
-  const canLock = displayMatch.actionsAllowed.includes('lock');
-  const canUnlock = displayMatch.actionsAllowed.includes('unlock');
+  const canSpectator = displayMatch.actionsAllowed.includes("spectator");
+  const canInvite = displayMatch.actionsAllowed.includes("invite");
+  const canLock = displayMatch.actionsAllowed.includes("lock");
+  const canUnlock = displayMatch.actionsAllowed.includes("unlock");
   const canToggleLock = canLock || canUnlock;
-  const canCancel = displayMatch.actionsAllowed.includes('cancel');
-  const canEdit = displayMatch.actionsAllowed.includes('update');
-  const canLeave = displayMatch.actionsAllowed.includes('leave');
-  const canManageAdmins = displayMatch.actionsAllowed.includes('manage_admins');
+  const canCancel = displayMatch.actionsAllowed.includes("cancel");
+  const canEdit = displayMatch.actionsAllowed.includes("update");
+  const canLeave = displayMatch.actionsAllowed.includes("leave");
+  const canManageAdmins = displayMatch.actionsAllowed.includes("manage_admins");
   const lockTogglePending = lockMutation.isPending || unlockMutation.isPending;
-  const isCanceled = displayMatch.status === 'canceled';
+  const isCanceled = displayMatch.status === "canceled";
   const groups = deriveParticipantGroups(displayMatch);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Refetch indicator (debounced 250ms) */}
       {showUpdating && (
         <View style={styles.refreshBanner}>
@@ -391,7 +452,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           <View
             style={[
               styles.badge,
-              { backgroundColor: STATUS_COLOR[displayMatch.myStatus] ?? '#757575' },
+              {
+                backgroundColor:
+                  STATUS_COLOR[displayMatch.myStatus] ?? "#757575",
+              },
             ]}
           >
             <Text style={styles.badgeText}>
@@ -405,7 +469,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       {!isCanceled && canEdit && (
         <Pressable
           style={styles.editBtn}
-          onPress={() => navigation.navigate('EditMatch', { matchId })}
+          onPress={() => navigation.navigate("EditMatch", { matchId })}
         >
           <Text style={styles.editBtnText}>Edit Match</Text>
         </Pressable>
@@ -414,7 +478,9 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       {/* Cancelled banner */}
       {isCanceled && (
         <View style={styles.cancelledBanner}>
-          <Text style={styles.cancelledBannerText}>This match has been cancelled</Text>
+          <Text style={styles.cancelledBannerText}>
+            This match has been cancelled
+          </Text>
         </View>
       )}
 
@@ -437,7 +503,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <Text style={styles.lockBtnText}>
-                {displayMatch.isLocked ? 'Unlock Match' : 'Lock Match'}
+                {displayMatch.isLocked ? "Unlock Match" : "Lock Match"}
               </Text>
             )}
           </Pressable>
@@ -448,7 +514,9 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       <View style={styles.infoBlock}>
         <InfoRow label="Date" value={formatDate(displayMatch.startsAt)} />
         <InfoRow label="Time" value={formatTime(displayMatch.startsAt)} />
-        {displayMatch.location && <InfoRow label="Location" value={displayMatch.location} />}
+        {displayMatch.location && (
+          <InfoRow label="Location" value={displayMatch.location} />
+        )}
         <InfoRow
           label="Players"
           value={`${displayMatch.confirmedCount} / ${displayMatch.capacity}`}
@@ -471,6 +539,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           label="Waitlist"
           count={groups.waitlist.length}
           color="#f57c00"
+        />
+        <CountBadge
+          label="Spectators"
+          count={displayMatch.spectatorCount ?? 0}
+          color="#6d4c41"
         />
       </View>
 
@@ -520,6 +593,9 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           creatorId={displayMatch.createdById}
         />
       )}
+      {groups.spectators.length > 0 && (
+        <SpectatorSection spectators={groups.spectators} />
+      )}
 
       {/* Locked banner (hidden when canceled) */}
       {!isCanceled && displayMatch.isLocked && (
@@ -528,7 +604,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Actions (hidden when locked or canceled) */}
+      {/* Actions: Confirm / Decline (hidden when locked, canceled, or spectator) */}
       {!isCanceled && !displayMatch.isLocked && visibleActions.length > 0 && (
         <View style={styles.actions}>
           {actionError ? (
@@ -541,7 +617,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                 style={[
                   styles.actionBtn,
                   {
-                    backgroundColor: ACTION_COLORS[action] ?? '#1976d2',
+                    backgroundColor: ACTION_COLORS[action] ?? "#1976d2",
                   },
                   mutation.isPending && styles.btnDisabled,
                 ]}
@@ -561,6 +637,31 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* Spectator toggle button (hidden when canceled) */}
+      {!isCanceled && canSpectator && (
+        <View style={styles.spectatorBlock}>
+          {spectatorError ? (
+            <Text style={styles.actionError}>{spectatorError}</Text>
+          ) : null}
+          <Pressable
+            style={[
+              styles.spectatorBtn,
+              spectatorLoading && styles.btnDisabled,
+            ]}
+            onPress={handleSpectatorToggle}
+            disabled={spectatorLoading}
+          >
+            {spectatorLoading ? (
+              <ActivityIndicator color="#6d4c41" size="small" />
+            ) : (
+              <Text style={styles.spectatorBtnText}>
+                {isSpectator ? "Participate" : "Spectator"}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+
       {/* Invite block (admin only, hidden when locked or canceled) */}
       {!isCanceled && !displayMatch.isLocked && canInvite && (
         <View style={styles.inviteBlock}>
@@ -572,7 +673,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
               value={inviteInput}
               onChangeText={(text) => {
                 setInviteInput(text);
-                if (inviteMsg) setInviteMsg('');
+                if (inviteMsg) setInviteMsg("");
               }}
               autoCapitalize="none"
               autoCorrect={false}
@@ -598,7 +699,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
             <Text
               style={[
                 styles.inviteMsg,
-                inviteMsgType === 'error'
+                inviteMsgType === "error"
                   ? styles.inviteMsgError
                   : styles.inviteMsgSuccess,
               ]}
@@ -655,7 +756,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.sectionTitle}>Select Members</Text>
                 <Pressable
                   onPress={() => {
-                    setSelectedGroupId('');
+                    setSelectedGroupId("");
                     setSelectedMembers(new Set());
                   }}
                 >
@@ -715,11 +816,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                           onSuccess: (result) => {
                             const msg =
                               result.failed === 0
-                                ? `Invited ${result.successful} player${result.successful !== 1 ? 's' : ''}`
-                                : `Invited ${result.successful}/${result.total}. Failed: ${result.errors.map((e) => `@${e.username}`).join(', ')}`;
-                            Alert.alert('Invite Results', msg);
+                                ? `Invited ${result.successful} player${result.successful !== 1 ? "s" : ""}`
+                                : `Invited ${result.successful}/${result.total}. Failed: ${result.errors.map((e) => `@${e.username}`).join(", ")}`;
+                            Alert.alert("Invite Results", msg);
                             setShowGroupInvite(false);
-                            setSelectedGroupId('');
+                            setSelectedGroupId("");
                             setSelectedMembers(new Set());
                           },
                         },
@@ -744,7 +845,6 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           )}
         </View>
       )}
-
       {/* Leave match button */}
       {!isCanceled && canLeave && (
         <View style={styles.leaveBlock}>
@@ -772,7 +872,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
             <Text style={styles.actionError}>{cancelError}</Text>
           ) : null}
           <Pressable
-            style={[styles.cancelBtn, cancelMutation.isPending && styles.btnDisabled]}
+            style={[
+              styles.cancelBtn,
+              cancelMutation.isPending && styles.btnDisabled,
+            ]}
             onPress={handleCancel}
             disabled={cancelMutation.isPending}
           >
@@ -785,108 +888,6 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* DEV-only admin controls */}
-      {__DEV__ && (
-        <View style={styles.devBlock}>
-          <Text style={styles.devTitle}>DEV Controls</Text>
-          <Text style={styles.devInfo}>
-            creatorId: {displayMatch.createdById.slice(0, 8)}…{'\n'}
-            revision: {displayMatch.revision}{'\n'}
-            myStatus: {displayMatch.myStatus ?? 'none'}{'\n'}
-            matchStatus: {displayMatch.matchStatus}{'\n'}
-            actions: {displayMatch.actionsAllowed.join(', ')}
-          </Text>
-          {displayMatch.actionsAllowed.includes('update') && (
-            <Pressable
-              style={styles.devBtn}
-              onPress={async () => {
-                if (!token) return;
-                try {
-                  const newDate = new Date(
-                    new Date(displayMatch.startsAt).getTime() + 86400000,
-                  ).toISOString();
-                  await patchMatch(token, matchId, {
-                    expectedRevision: displayMatch.revision,
-                    startsAt: newDate,
-                  });
-                  qc.invalidateQueries({ queryKey: ['match', matchId] });
-                  qc.invalidateQueries({ queryKey: ['matches'] });
-                  Alert.alert('DEV', 'Major edit done (startsAt +1 day)');
-                } catch (e) {
-                  Alert.alert('DEV Error', String(e));
-                }
-              }}
-            >
-              <Text style={styles.devBtnText}>Edit Major (startsAt +1d)</Text>
-            </Pressable>
-          )}
-          {displayMatch.actionsAllowed.includes('manage_admins') && (
-            <>
-              <Pressable
-                style={styles.devBtn}
-                onPress={async () => {
-                  if (!token) return;
-                  const target = displayMatch.participants.find(
-                    (p) =>
-                      p.userId !== displayMatch.createdById &&
-                      !p.isMatchAdmin &&
-                      (p.status === 'CONFIRMED' || p.status === 'INVITED'),
-                  );
-                  if (!target) {
-                    Alert.alert('DEV', 'No eligible participant to promote');
-                    return;
-                  }
-                  try {
-                    await promoteAdmin(
-                      token,
-                      matchId,
-                      target.userId,
-                      displayMatch.revision,
-                    );
-                    qc.invalidateQueries({ queryKey: ['match', matchId] });
-                    Alert.alert('DEV', `Promoted @${target.username}`);
-                  } catch (e) {
-                    Alert.alert('DEV Error', String(e));
-                  }
-                }}
-              >
-                <Text style={styles.devBtnText}>Promote First Non-Admin</Text>
-              </Pressable>
-              <Pressable
-                style={styles.devBtn}
-                onPress={async () => {
-                  if (!token) return;
-                  const target = displayMatch.participants.find(
-                    (p) =>
-                      p.userId !== displayMatch.createdById && p.isMatchAdmin,
-                  );
-                  if (!target) {
-                    Alert.alert('DEV', 'No admin to demote');
-                    return;
-                  }
-                  try {
-                    await demoteAdmin(
-                      token,
-                      matchId,
-                      target.userId,
-                      displayMatch.revision,
-                    );
-                    qc.invalidateQueries({ queryKey: ['match', matchId] });
-                    Alert.alert('DEV', `Demoted @${target.username}`);
-                  } catch (e) {
-                    Alert.alert('DEV Error', String(e));
-                  }
-                }}
-              >
-                <Text style={styles.devBtnText}>Demote First Admin</Text>
-              </Pressable>
-            </>
-          )}
-        </View>
-      )}
-
-      {/* Revision footer (debug) */}
-      <Text style={styles.revisionText}>rev {displayMatch.revision}</Text>
     </ScrollView>
   );
 }
@@ -956,7 +957,7 @@ function ParticipantSection({
               <Text style={styles.participantId} numberOfLines={1}>
                 {showPosition && p.waitlistPosition != null
                   ? `#${p.waitlistPosition}  `
-                  : ''}
+                  : ""}
                 @{p.username}
               </Text>
               {isCreator && (
@@ -987,7 +988,7 @@ function ParticipantSection({
                 disabled={adminActionLoading}
               >
                 <Text style={styles.adminToggleText}>
-                  {p.isMatchAdmin ? 'Remove admin' : 'Make admin'}
+                  {p.isMatchAdmin ? "Remove admin" : "Make admin"}
                 </Text>
               </Pressable>
             )}
@@ -998,276 +999,331 @@ function ParticipantSection({
   );
 }
 
+function SpectatorSection({ spectators }: { spectators: SpectatorView[] }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={[styles.sectionDot, { backgroundColor: "#6d4c41" }]} />
+        <Text style={styles.sectionTitle}>
+          Spectators ({spectators.length})
+        </Text>
+      </View>
+      {spectators.map((s) => (
+        <View key={s.userId} style={styles.participantRow}>
+          <Text style={styles.participantId}>@{s.username}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 // ── Styles ──
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: "#fff" },
   content: { padding: 20, paddingTop: 16, paddingBottom: 40 },
   refreshBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
     paddingVertical: 6,
     marginBottom: 8,
-    backgroundColor: '#e3f2fd',
+    backgroundColor: "#e3f2fd",
     borderRadius: 8,
   },
-  refreshText: { fontSize: 12, color: '#1976d2' },
+  refreshText: { fontSize: 12, color: "#1976d2" },
   center: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
-  title: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
+  title: { fontSize: 24, fontWeight: "700", marginBottom: 8 },
 
   // Badges
-  badgeRow: { flexDirection: 'row', gap: 8, marginBottom: 16, flexWrap: 'wrap' },
+  badgeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+    flexWrap: "wrap",
+  },
   badge: {
-    backgroundColor: '#e0e0e0',
+    backgroundColor: "#e0e0e0",
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  badgeLocked: { backgroundColor: '#d32f2f' },
-  badgeText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  badgeLocked: { backgroundColor: "#d32f2f" },
+  badgeText: { fontSize: 12, fontWeight: "600", color: "#fff" },
 
   // Lock/Unlock
   lockBlock: { marginBottom: 12 },
   lockBtn: {
     borderRadius: 8,
     padding: 12,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
   },
-  lockBtnLock: { backgroundColor: '#d32f2f' },
-  lockBtnUnlock: { backgroundColor: '#2e7d32' },
-  lockBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+  lockBtnLock: { backgroundColor: "#d32f2f" },
+  lockBtnUnlock: { backgroundColor: "#2e7d32" },
+  lockBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" as const },
 
   // Locked banner
   lockedBanner: {
-    backgroundColor: '#fce4ec',
+    backgroundColor: "#fce4ec",
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
   },
-  lockedBannerText: { color: '#c62828', fontSize: 13, fontWeight: '600' as const },
+  lockedBannerText: {
+    color: "#c62828",
+    fontSize: 13,
+    fontWeight: "600" as const,
+  },
 
   // Cancelled banner
   cancelledBanner: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
     borderWidth: 1,
-    borderColor: '#bdbdbd',
+    borderColor: "#bdbdbd",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
   },
-  cancelledBannerText: { color: '#616161', fontSize: 14, fontWeight: '700' as const },
+  cancelledBannerText: {
+    color: "#616161",
+    fontSize: 14,
+    fontWeight: "700" as const,
+  },
 
   // Cancel button
   cancelBlock: { marginTop: 20 },
   cancelBtn: {
-    backgroundColor: '#b71c1c',
+    backgroundColor: "#b71c1c",
     borderRadius: 8,
     padding: 14,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
   },
-  cancelBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' as const },
+  cancelBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" as const },
 
   // Info block
   infoBlock: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#f9f9f9",
     borderRadius: 10,
     padding: 14,
     marginBottom: 16,
   },
   infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingVertical: 6,
   },
-  infoLabel: { fontSize: 14, color: '#555' },
-  infoValue: { fontSize: 14, fontWeight: '600' },
+  infoLabel: { fontSize: 14, color: "#555" },
+  infoValue: { fontSize: 14, fontWeight: "600" },
 
   // Counts
   countsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    justifyContent: "space-around",
     marginBottom: 16,
   },
-  countBadge: { alignItems: 'center' },
-  countNum: { fontSize: 22, fontWeight: '700' },
-  countLabel: { fontSize: 11, color: '#888', marginTop: 2 },
+  countBadge: { alignItems: "center" },
+  countNum: { fontSize: 22, fontWeight: "700" },
+  countLabel: { fontSize: 11, color: "#888", marginTop: 2 },
 
   // Edit button
   editBtn: {
-    backgroundColor: '#1976d2',
+    backgroundColor: "#1976d2",
     borderRadius: 8,
     padding: 12,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
     marginBottom: 12,
   },
-  editBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+  editBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" as const },
+
+  // Spectator toggle button
+  spectatorBlock: { marginTop: 8, marginBottom: 4 },
+  spectatorBtn: {
+    borderWidth: 1,
+    borderColor: "#6d4c41",
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center" as const,
+  },
+  spectatorBtnText: {
+    color: "#6d4c41",
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
 
   // Leave button
   leaveBlock: { marginTop: 16 },
   leaveBtn: {
     borderWidth: 1,
-    borderColor: '#d32f2f',
+    borderColor: "#d32f2f",
     borderRadius: 8,
     padding: 14,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
   },
-  leaveBtnText: { color: '#d32f2f', fontSize: 15, fontWeight: '600' as const },
+  leaveBtnText: { color: "#d32f2f", fontSize: 15, fontWeight: "600" as const },
 
   // Participant sections
   section: { marginBottom: 14 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
   sectionDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  sectionTitle: { fontSize: 15, fontWeight: '600' },
+  sectionTitle: { fontSize: 15, fontWeight: "600" },
   participantRow: {
     paddingVertical: 5,
     paddingHorizontal: 18,
-    flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
-    alignItems: 'center' as const,
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    alignItems: "center" as const,
   },
   participantInfo: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     flex: 1,
     gap: 6,
   },
-  participantId: { fontSize: 13, color: '#555' },
+  participantId: { fontSize: 13, color: "#555" },
   roleBadge: {
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 1,
   },
-  roleBadgeCreator: { backgroundColor: '#ff9800' },
-  roleBadgeAdmin: { backgroundColor: '#7b1fa2' },
-  roleBadgeText: { fontSize: 10, fontWeight: '700' as const, color: '#fff' },
+  roleBadgeCreator: { backgroundColor: "#ff9800" },
+  roleBadgeAdmin: { backgroundColor: "#7b1fa2" },
+  roleBadgeText: { fontSize: 10, fontWeight: "700" as const, color: "#fff" },
   adminToggleBtn: {
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  adminTogglePromote: { backgroundColor: '#e8f5e9' },
-  adminToggleDemote: { backgroundColor: '#fce4ec' },
-  adminToggleText: { fontSize: 11, fontWeight: '600' as const, color: '#333' },
+  adminTogglePromote: { backgroundColor: "#e8f5e9" },
+  adminToggleDemote: { backgroundColor: "#fce4ec" },
+  adminToggleText: { fontSize: 11, fontWeight: "600" as const, color: "#333" },
 
   // Actions
   actions: { marginTop: 8, marginBottom: 4 },
   actionError: {
-    color: '#d32f2f',
+    color: "#d32f2f",
     fontSize: 13,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 10,
   },
-  actionRow: { flexDirection: 'row', gap: 10 },
+  actionRow: { flexDirection: "row", gap: 10 },
   actionBtn: {
     flex: 1,
     borderRadius: 8,
     padding: 14,
-    alignItems: 'center',
+    alignItems: "center",
   },
   btnDisabled: { opacity: 0.5 },
-  actionBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  actionBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 
   // Invite
   inviteBlock: {
     marginTop: 20,
-    backgroundColor: '#f0f4ff',
+    backgroundColor: "#f0f4ff",
     borderRadius: 10,
     padding: 14,
   },
-  inviteRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  inviteRow: { flexDirection: "row", gap: 10, marginTop: 8 },
   inviteInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: "#ccc",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 14,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   inviteBtn: {
-    backgroundColor: '#1976d2',
+    backgroundColor: "#1976d2",
     borderRadius: 8,
     paddingHorizontal: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
-  inviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  inviteMsg: { marginTop: 8, fontSize: 13, textAlign: 'center' },
-  inviteMsgSuccess: { color: '#2e7d32' },
-  inviteMsgError: { color: '#d32f2f' },
-
-  // Footer
-  revisionText: {
-    fontSize: 11,
-    color: '#bbb',
-    textAlign: 'center',
-    marginTop: 20,
-  },
+  inviteBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  inviteMsg: { marginTop: 8, fontSize: 13, textAlign: "center" },
+  inviteMsgSuccess: { color: "#2e7d32" },
+  inviteMsgError: { color: "#d32f2f" },
 
   // Error states
   errorText: {
     fontSize: 15,
-    color: '#d32f2f',
+    color: "#d32f2f",
     marginBottom: 12,
-    textAlign: 'center',
+    textAlign: "center",
   },
   retryBtn: {
-    backgroundColor: '#1976d2',
+    backgroundColor: "#1976d2",
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 24,
   },
-  retryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  retryBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   requestIdText: {
     fontSize: 11,
-    fontFamily: 'monospace',
-    color: '#999',
+    fontFamily: "monospace",
+    color: "#999",
     marginBottom: 8,
   },
 
   // Group invite
   groupInviteBlock: {
     marginTop: 12,
-    backgroundColor: '#f5f0ff',
+    backgroundColor: "#f5f0ff",
     borderRadius: 10,
     padding: 14,
   },
   groupInviteBtn: {
-    backgroundColor: '#7b1fa2',
+    backgroundColor: "#7b1fa2",
     borderRadius: 8,
     padding: 12,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
   },
-  groupInviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+  groupInviteBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
   groupInviteHeader: {
-    flexDirection: 'row' as const,
-    justifyContent: 'space-between' as const,
-    alignItems: 'center' as const,
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    alignItems: "center" as const,
     marginBottom: 10,
   },
-  groupCancelText: { color: '#7b1fa2', fontSize: 14, fontWeight: '600' as const },
-  groupEmptyText: { color: '#999', fontSize: 14, textAlign: 'center' as const, marginTop: 8 },
+  groupCancelText: {
+    color: "#7b1fa2",
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
+  groupEmptyText: {
+    color: "#999",
+    fontSize: 14,
+    textAlign: "center" as const,
+    marginTop: 8,
+  },
   groupOption: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
   },
-  groupOptionName: { fontSize: 15, fontWeight: '600' as const },
-  groupOptionCount: { fontSize: 12, color: '#888', marginTop: 2 },
+  groupOptionName: { fontSize: 15, fontWeight: "600" as const },
+  groupOptionCount: { fontSize: 12, color: "#888", marginTop: 2 },
   memberCheckRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
     paddingVertical: 8,
     gap: 10,
   },
@@ -1276,39 +1332,24 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#7b1fa2',
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
+    borderColor: "#7b1fa2",
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
-  checkboxChecked: { backgroundColor: '#7b1fa2' },
-  checkmark: { color: '#fff', fontSize: 14, fontWeight: '700' as const },
+  checkboxChecked: { backgroundColor: "#7b1fa2" },
+  checkmark: { color: "#fff", fontSize: 14, fontWeight: "700" as const },
   memberCheckName: { fontSize: 14 },
   batchInviteBtn: {
-    backgroundColor: '#7b1fa2',
+    backgroundColor: "#7b1fa2",
     borderRadius: 8,
     padding: 12,
-    alignItems: 'center' as const,
+    alignItems: "center" as const,
     marginTop: 10,
   },
-  batchInviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' as const },
+  batchInviteBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
 
-  // DEV controls
-  devBlock: {
-    marginTop: 24,
-    backgroundColor: '#fff3e0',
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#ff9800',
-  },
-  devTitle: { fontSize: 14, fontWeight: '700' as const, color: '#e65100', marginBottom: 8 },
-  devInfo: { fontSize: 11, fontFamily: 'monospace', color: '#555', marginBottom: 10 },
-  devBtn: {
-    backgroundColor: '#ff9800',
-    borderRadius: 6,
-    padding: 10,
-    alignItems: 'center' as const,
-    marginTop: 6,
-  },
-  devBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' as const },
 });

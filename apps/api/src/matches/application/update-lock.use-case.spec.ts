@@ -139,79 +139,56 @@ describe('UpdateMatchUseCase', () => {
     });
   });
 
-  it('capacity reduction does NOT trigger reconfirmation', async () => {
+  it('capacity reduction triggers reconfirmation (is a major change)', async () => {
     const { prisma, tx } = buildTxPrisma();
-    // No confirmed participants → no overflow
-    tx.matchParticipant.findMany = jest.fn().mockResolvedValue([]);
     const useCase = new UpdateMatchUseCase(prisma);
 
     await useCase.execute({
       matchId: 'match-1',
       actorId: 'admin-1',
       expectedRevision: 1,
-      capacity: 8,
+      capacity: 8, // 8 < 10 → decreased
     });
 
-    // updateMany NOT called (no reconfirmation on capacity change)
+    // Capacity decrease is a major change → CONFIRMED → INVITED
+    expect(tx.matchParticipant.updateMany).toHaveBeenCalledWith({
+      where: {
+        matchId: 'match-1',
+        status: 'CONFIRMED',
+        userId: { not: 'admin-1' },
+      },
+      data: { status: 'INVITED', confirmedAt: null },
+    });
+  });
+
+  it('capacity increase does NOT trigger reconfirmation', async () => {
+    const { prisma, tx } = buildTxPrisma();
+    const useCase = new UpdateMatchUseCase(prisma);
+
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'admin-1',
+      expectedRevision: 1,
+      capacity: 12, // 12 > 10 → increased, not a major change
+    });
+
     expect(tx.matchParticipant.updateMany).not.toHaveBeenCalled();
   });
 
-  it('capacity reduction moves excess confirmed to waitlist (FIFO by confirmedAt)', async () => {
+  it('capacity unchanged does NOT trigger reconfirmation', async () => {
     const { prisma, tx } = buildTxPrisma();
-    // findMany is called twice: first for overflow (select userId), then for buildMatchSnapshot (include user).
-    tx.matchParticipant.findMany = jest
-      .fn()
-      .mockResolvedValueOnce([
-        { userId: 'u-first' },
-        { userId: 'u-second' },
-        { userId: 'u-third' },
-        { userId: 'u-fourth' },
-      ])
-      .mockResolvedValueOnce([]); // buildMatchSnapshot participants
-    tx.matchParticipant.aggregate = jest
-      .fn()
-      .mockResolvedValue({ _max: { waitlistPosition: null } });
     const useCase = new UpdateMatchUseCase(prisma);
 
     await useCase.execute({
       matchId: 'match-1',
       actorId: 'admin-1',
       expectedRevision: 1,
-      capacity: 2,
+      capacity: 10, // same as current → no change
     });
 
-    // First two stay confirmed, last two move to waitlist
-    expect(tx.matchParticipant.update).toHaveBeenCalledWith({
-      where: { matchId_userId: { matchId: 'match-1', userId: 'u-third' } },
-      data: { status: 'WAITLISTED', confirmedAt: null, waitlistPosition: 1 },
-    });
-    expect(tx.matchParticipant.update).toHaveBeenCalledWith({
-      where: { matchId_userId: { matchId: 'match-1', userId: 'u-fourth' } },
-      data: { status: 'WAITLISTED', confirmedAt: null, waitlistPosition: 2 },
-    });
-    // No reconfirmation updateMany
+    // No actual change → early return, nothing updated
     expect(tx.matchParticipant.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('capacity reduction with no overflow does nothing', async () => {
-    const { prisma, tx } = buildTxPrisma();
-    // findMany: first for overflow (2 confirmed, fits in 5), then for buildMatchSnapshot
-    tx.matchParticipant.findMany = jest
-      .fn()
-      .mockResolvedValueOnce([{ userId: 'u-a' }, { userId: 'u-b' }])
-      .mockResolvedValueOnce([]); // buildMatchSnapshot participants
-    const useCase = new UpdateMatchUseCase(prisma);
-
-    await useCase.execute({
-      matchId: 'match-1',
-      actorId: 'admin-1',
-      expectedRevision: 1,
-      capacity: 5,
-    });
-
-    // No participant moves (2 confirmed fits in 5)
-    expect(tx.matchParticipant.update).not.toHaveBeenCalled();
-    expect(tx.matchParticipant.updateMany).not.toHaveBeenCalled();
+    expect(tx.match.update).not.toHaveBeenCalled();
   });
 
   it('title-only change does NOT reset participants', async () => {

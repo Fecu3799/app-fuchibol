@@ -48,27 +48,17 @@ export async function fetchJson<T>(
   const requestId = randomUUID();
 
   try {
-    const method = init?.method ?? 'GET';
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(init?.headers as Record<string, string>),
       'X-Request-Id': requestId,
     };
-    const hasAuth = 'Authorization' in headers;
-
-    if (__DEV__) {
-      console.log(`[api] ${method} ${url} rid=${requestId} auth=${hasAuth ? 'yes' : 'no'}`);
-    }
 
     const res = await fetch(url, {
       ...init,
       headers,
       signal: controller.signal,
     });
-
-    if (__DEV__) {
-      console.log(`[api] ${method} ${url} -> ${res.status} rid=${requestId}`);
-    }
 
     if (!res.ok) {
       let body: ApiErrorBody;
@@ -79,9 +69,6 @@ export async function fetchJson<T>(
       }
       // Ensure requestId is always present
       if (!body.requestId) body.requestId = requestId;
-      if (__DEV__) {
-        console.log(`[api] ERROR ${res.status} code=${body.code ?? '-'} rid=${requestId}`, body.detail ?? body.message);
-      }
       throw new ApiError(res.status, body);
     }
 

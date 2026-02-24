@@ -18,7 +18,6 @@ export interface UpdateMatchInput {
   capacity?: number;
 }
 
-
 @Injectable()
 export class UpdateMatchUseCase {
   constructor(private readonly prisma: PrismaService) {}

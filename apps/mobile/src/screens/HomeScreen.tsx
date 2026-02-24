@@ -7,7 +7,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useQueryClient } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
@@ -17,7 +16,6 @@ import { useMatches } from '../features/matches/useMatches';
 import { useAuth } from '../contexts/AuthContext';
 import { useLogoutOn401 } from '../lib/use-api-query';
 import { ApiError } from '../lib/api';
-import { apiBaseUrl } from '../config/env';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'HomeTab'>,
@@ -78,9 +76,8 @@ export default function HomeScreen({ navigation }: Props) {
   const { logout } = useAuth();
   const query = useMatches();
   useLogoutOn401(query);
-  const queryClient = useQueryClient();
 
-  const { data, isLoading, isFetching, status, fetchStatus, error, refetch } = query;
+  const { data, isLoading, isFetching, error, refetch } = query;
 
   // ── Defensive: keep last known data so UI never goes blank ──
   const lastDataRef = useRef(data);
@@ -130,42 +127,6 @@ export default function HomeScreen({ navigation }: Props) {
     };
   }, [isFetching, isLoading, displayData]);
 
-  // ── DEV: detect stuck fetching queries ──
-  useEffect(() => {
-    if (!__DEV__ || !isFetching) return;
-
-    const timer = setTimeout(() => {
-      const cache = queryClient.getQueryCache().getAll();
-      const stuck = cache.filter((q) => q.state.fetchStatus === 'fetching');
-      if (stuck.length > 0) {
-        console.warn(
-          '[HomeScreen] Queries still fetching after 5s:',
-          stuck.map((q) => ({
-            queryKey: q.queryKey,
-            status: q.state.status,
-            fetchStatus: q.state.fetchStatus,
-            failureCount: q.state.fetchFailureCount,
-            error: q.state.error?.message ?? null,
-          })),
-        );
-      }
-      // Also log pending mutations
-      const mutations = queryClient.getMutationCache().getAll();
-      const pending = mutations.filter((m) => m.state.status === 'pending');
-      if (pending.length > 0) {
-        console.warn(
-          '[HomeScreen] Pending mutations:',
-          pending.map((m) => ({
-            mutationKey: m.options.mutationKey,
-            status: m.state.status,
-          })),
-        );
-      }
-    }, 5000);
-
-    return () => clearTimeout(timer);
-  }, [isFetching, queryClient]);
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -181,17 +142,6 @@ export default function HomeScreen({ navigation }: Props) {
       >
         <Text style={styles.createBtnText}>+ Create Match</Text>
       </Pressable>
-
-      {/* TODO: remove this debug overlay block */}
-      {__DEV__ && (
-        <View style={styles.debugOverlay}>
-          <Text style={styles.debugText}>API: {apiBaseUrl}</Text>
-          <Text style={styles.debugText}>
-            Q: {status}/{fetchStatus} | data:{data ? 'yes' : 'no'} | items:{displayData?.items?.length ?? '-'} | manualRefresh:{isManualRefresh ? 'Y' : 'N'}
-          </Text>
-          {error && <Text style={styles.debugText}>Err: {error.message}</Text>}
-        </View>
-      )}
 
       {/* Refetch indicator (data visible underneath, debounced 250ms) */}
       {showUpdating && (
@@ -298,12 +248,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   createBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  debugOverlay: {
-    backgroundColor: '#fffde7',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f9a825',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  debugText: { fontSize: 11, fontFamily: 'monospace', color: '#555' },
 });

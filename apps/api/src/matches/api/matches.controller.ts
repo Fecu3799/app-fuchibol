@@ -23,6 +23,7 @@ import { CancelMatchUseCase } from '../application/cancel-match.use-case';
 import { ConfirmParticipationUseCase } from '../application/confirm-participation.use-case';
 import { DeclineParticipationUseCase } from '../application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from '../application/withdraw-participation.use-case';
+import { ToggleSpectatorUseCase } from '../application/toggle-spectator.use-case';
 import { InviteParticipationUseCase } from '../application/invite-participation.use-case';
 import { LeaveMatchUseCase } from '../application/leave-match.use-case';
 import { PromoteAdminUseCase } from '../application/promote-admin.use-case';
@@ -54,6 +55,7 @@ export class MatchesController {
     private readonly confirmUseCase: ConfirmParticipationUseCase,
     private readonly declineUseCase: DeclineParticipationUseCase,
     private readonly withdrawUseCase: WithdrawParticipationUseCase,
+    private readonly toggleSpectatorUseCase: ToggleSpectatorUseCase,
     private readonly inviteUseCase: InviteParticipationUseCase,
     private readonly leaveMatchUseCase: LeaveMatchUseCase,
     private readonly promoteAdminUseCase: PromoteAdminUseCase,
@@ -211,6 +213,24 @@ export class MatchesController {
   ) {
     this.requireIdempotencyKey(idempotencyKey);
     return this.withdrawUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      expectedRevision: body.expectedRevision,
+      idempotencyKey,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/spectator')
+  async toggleSpectator(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: ParticipationCommandDto,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.requireIdempotencyKey(idempotencyKey);
+    return this.toggleSpectatorUseCase.execute({
       matchId,
       actorId: actor.userId,
       expectedRevision: body.expectedRevision,

@@ -53,6 +53,11 @@ export interface ParticipantView {
   isMatchAdmin: boolean;
 }
 
+export interface SpectatorView {
+  userId: string;
+  username: string;
+}
+
 export interface MatchSnapshot {
   id: string;
   title: string;
@@ -69,6 +74,8 @@ export interface MatchSnapshot {
   confirmedCount: number;
   participants: ParticipantView[];
   waitlist: ParticipantView[];
+  spectators: SpectatorView[];
+  spectatorCount: number;
   myStatus: string | null;
   actionsAllowed: string[];
   createdAt: string;

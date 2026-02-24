@@ -12,6 +12,7 @@ import { CancelMatchUseCase } from './application/cancel-match.use-case';
 import { ConfirmParticipationUseCase } from './application/confirm-participation.use-case';
 import { DeclineParticipationUseCase } from './application/decline-participation.use-case';
 import { WithdrawParticipationUseCase } from './application/withdraw-participation.use-case';
+import { ToggleSpectatorUseCase } from './application/toggle-spectator.use-case';
 import { InviteParticipationUseCase } from './application/invite-participation.use-case';
 import { LeaveMatchUseCase } from './application/leave-match.use-case';
 import { PromoteAdminUseCase } from './application/promote-admin.use-case';
@@ -31,6 +32,7 @@ import { DemoteAdminUseCase } from './application/demote-admin.use-case';
     ConfirmParticipationUseCase,
     DeclineParticipationUseCase,
     WithdrawParticipationUseCase,
+    ToggleSpectatorUseCase,
     InviteParticipationUseCase,
     LeaveMatchUseCase,
     PromoteAdminUseCase,

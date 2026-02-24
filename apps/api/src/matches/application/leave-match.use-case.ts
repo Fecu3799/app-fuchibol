@@ -9,6 +9,8 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 
+const LATE_LEAVE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+
 export interface LeaveMatchInput {
   matchId: string;
   actorId: string;
@@ -63,21 +65,18 @@ export class LeaveMatchUseCase {
         },
       });
 
-      // Idempotent: already gone
-      if (!existing) {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
-      }
-
       const isCreator = match.createdById === input.actorId;
 
+      // Creator transfer must happen even if creator has no participation row
       if (isCreator) {
         // Transfer creator to first matchAdmin by adminGrantedAt
+        // Exclude WITHDRAWN, DECLINED, SPECTATOR from candidates
         const candidate = await tx.matchParticipant.findFirst({
           where: {
             matchId: input.matchId,
             isMatchAdmin: true,
             userId: { not: input.actorId },
-            status: { notIn: ['WITHDRAWN', 'DECLINED'] },
+            status: { notIn: ['WITHDRAWN', 'DECLINED', 'SPECTATOR'] },
           },
           orderBy: { adminGrantedAt: 'asc' },
         });
@@ -100,7 +99,28 @@ export class LeaveMatchUseCase {
         }
       }
 
+      // Idempotent: already gone (or creator had no participation row)
+      if (!existing) {
+        // Still increment revision if a creator transfer happened
+        if (isCreator) {
+          await tx.match.update({
+            where: { id: input.matchId },
+            data: { revision: match.revision + 1 },
+          });
+        }
+        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      }
+
       const wasConfirmed = existing.status === 'CONFIRMED';
+
+      // Late-leave penalty: if leaving within 1 hour of match start
+      const timeUntilMatchMs = match.startsAt.getTime() - Date.now();
+      if (timeUntilMatchMs > 0 && timeUntilMatchMs <= LATE_LEAVE_THRESHOLD_MS) {
+        await tx.user.update({
+          where: { id: input.actorId },
+          data: { lateLeaveCount: { increment: 1 } },
+        });
+      }
 
       // Hard delete the participation row
       await tx.matchParticipant.delete({
