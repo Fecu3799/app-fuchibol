@@ -85,6 +85,11 @@ export async function buildMatchSnapshot(
       if (isAdmin) {
         actionsAllowed.push('invite');
       }
+    } else {
+      // Locked: INVITED users can still respond to their invitation
+      if (myStatus === 'INVITED') {
+        actionsAllowed.push('confirm');
+      }
     }
 
     // Spectator toggle: always available

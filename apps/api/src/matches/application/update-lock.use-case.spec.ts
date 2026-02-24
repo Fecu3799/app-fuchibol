@@ -395,24 +395,132 @@ describe('UnlockMatchUseCase', () => {
   });
 });
 
-// ---------- Lock blocks confirm ----------
+// ---------- Lock + confirm ----------
 
-describe('Confirm blocked by lock', () => {
-  it('confirm on locked match -> 409 MATCH_LOCKED', async () => {
+function buildIdempotency(prisma: PrismaService) {
+  const config = {
+    get: jest.fn().mockReturnValue(undefined),
+  } as unknown as ConfigService;
+  return new IdempotencyService(prisma, config);
+}
+
+describe('Confirm on locked match', () => {
+  it('actor with no participation row -> 409 MATCH_LOCKED', async () => {
+    // findUnique returns null (no row) → blocked
     const { prisma } = buildTxPrisma({ isLocked: true });
-    const config = {
-      get: jest.fn().mockReturnValue(undefined),
-    } as unknown as ConfigService;
-    const idempotency = new IdempotencyService(prisma, config);
-    const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      buildIdempotency(prisma),
+    );
 
     await expect(
       useCase.execute({
         matchId: 'match-1',
         actorId: 'user-1',
         expectedRevision: 1,
-        idempotencyKey: 'key-lock-1',
+        idempotencyKey: 'key-lock-null',
       }),
     ).rejects.toThrow('MATCH_LOCKED');
+  });
+
+  it('actor DECLINED on locked match -> 409 MATCH_LOCKED', async () => {
+    const { prisma, tx } = buildTxPrisma({ isLocked: true });
+    tx.matchParticipant.findUnique = jest
+      .fn()
+      .mockResolvedValue({ id: 'p-1', status: 'DECLINED' });
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      buildIdempotency(prisma),
+    );
+
+    await expect(
+      useCase.execute({
+        matchId: 'match-1',
+        actorId: 'user-1',
+        expectedRevision: 1,
+        idempotencyKey: 'key-lock-dec',
+      }),
+    ).rejects.toThrow('MATCH_LOCKED');
+  });
+
+  it('actor SPECTATOR on locked match -> 409 MATCH_LOCKED', async () => {
+    const { prisma, tx } = buildTxPrisma({ isLocked: true });
+    tx.matchParticipant.findUnique = jest
+      .fn()
+      .mockResolvedValue({ id: 'p-1', status: 'SPECTATOR' });
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      buildIdempotency(prisma),
+    );
+
+    await expect(
+      useCase.execute({
+        matchId: 'match-1',
+        actorId: 'user-1',
+        expectedRevision: 1,
+        idempotencyKey: 'key-lock-spec',
+      }),
+    ).rejects.toThrow('MATCH_LOCKED');
+  });
+
+  it('actor INVITED on locked match -> confirm succeeds (CONFIRMED)', async () => {
+    const { prisma, tx } = buildTxPrisma({ isLocked: true });
+    tx.matchParticipant.findUnique = jest
+      .fn()
+      .mockResolvedValue({ id: 'p-1', status: 'INVITED' });
+    // capacity not full (count = 0, capacity = 10)
+    tx.matchParticipant.count = jest.fn().mockResolvedValue(0);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      buildIdempotency(prisma),
+    );
+
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'user-1',
+      expectedRevision: 1,
+      idempotencyKey: 'key-lock-inv',
+    });
+
+    // Participant updated to CONFIRMED
+    expect(tx.matchParticipant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p-1' },
+        data: expect.objectContaining({ status: 'CONFIRMED' }),
+      }),
+    );
+    // Revision incremented
+    expect(tx.match.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ revision: 2 }),
+      }),
+    );
+  });
+
+  it('actor INVITED on locked match, capacity full -> confirm succeeds (WAITLISTED)', async () => {
+    const { prisma, tx } = buildTxPrisma({ isLocked: true, capacity: 1 });
+    tx.matchParticipant.findUnique = jest
+      .fn()
+      .mockResolvedValue({ id: 'p-1', status: 'INVITED' });
+    // capacity full
+    tx.matchParticipant.count = jest.fn().mockResolvedValue(1);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      buildIdempotency(prisma),
+    );
+
+    await useCase.execute({
+      matchId: 'match-1',
+      actorId: 'user-1',
+      expectedRevision: 1,
+      idempotencyKey: 'key-lock-inv-wl',
+    });
+
+    expect(tx.matchParticipant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'p-1' },
+        data: expect.objectContaining({ status: 'WAITLISTED' }),
+      }),
+    );
   });
 });

@@ -602,8 +602,8 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Actions: Confirm / Decline (hidden when locked, canceled, or spectator) */}
-      {!isCanceled && !displayMatch.isLocked && visibleActions.length > 0 && (
+      {/* Actions: Confirm / Decline (hidden when canceled or spectator; confirm still shown for INVITED when locked) */}
+      {!isCanceled && visibleActions.length > 0 && (
         <View style={styles.actions}>
           {actionError ? (
             <Text style={styles.actionError}>{actionError}</Text>

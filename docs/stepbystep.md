@@ -55,6 +55,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 47. [Fix: Leave Match button visible for creator without participation row](#47-fix-leave-match-button-visible-for-creator-without-participation-row)
 48. [Fix: Leave Match web confirmation + remove debug instrumentation](#48-fix-leave-match-web-confirmation--remove-debug-instrumentation)
 49. [Migración: Eliminar WITHDRAWN — unificar en SPECTATOR](#49-migración-eliminar-withdrawn--unificar-en-spectator)
+50. [Fix: Lock no bloquea confirm para usuarios INVITED](#50-fix-lock-no-bloquea-confirm-para-usuarios-invited)
 
 ---
 
@@ -4030,3 +4031,50 @@ Eliminación definitiva del estado legacy `WITHDRAWN`/`WITHDRAW` en toda la code
 - `apps/api/src/matches/application/participation.use-case.spec.ts`
 - `apps/api/test/e2e/creator-transfer.e2e-spec.ts`
 - `apps/mobile/src/screens/MatchDetailScreen.tsx`
+
+---
+
+## 50. Fix: Lock no bloquea confirm para usuarios INVITED
+
+### Problema
+
+Cuando un match estaba locked, cualquier llamada a `POST :id/confirm` fallaba con 409 MATCH_LOCKED, incluso para usuarios con status `INVITED`. La regla correcta: `locked` solo bloquea nuevas invitaciones; un usuario ya invitado debe poder confirmar su participación.
+
+### Causa
+
+`confirm-participation.use-case.ts` aplicaba el check `if (match.isLocked) throw` antes de consultar el row del participante, bloqueando a todos sin distinción.
+
+### Fix
+
+**`apps/api/src/matches/application/confirm-participation.use-case.ts`**:
+- Movido `findUnique` del participante **antes** del check de lock.
+- Primero se resuelven los casos idempotentes (ya CONFIRMED / ya WAITLISTED) — estos retornan snapshot sin importar el lock.
+- Nuevo check: `if (match.isLocked && existing?.status !== 'INVITED') throw MATCH_LOCKED`.
+- Resultado: `null`, `DECLINED`, `SPECTATOR` → bloqueados. `INVITED` → permitido.
+
+**`apps/api/src/matches/application/build-match-snapshot.ts`**:
+- Agregado bloque `else` al `if (!match.isLocked)`: cuando locked, si `myStatus === 'INVITED'` → se agrega `'confirm'` a `actionsAllowed`.
+- Invite, unlock, y otras acciones de admin siguen sin aparecer cuando locked.
+
+### Tests agregados (`update-lock.use-case.spec.ts`)
+
+Nuevo suite `describe('Confirm on locked match')` reemplaza el anterior `describe('Confirm blocked by lock')`:
+- `actor con null (sin row) → 409 MATCH_LOCKED` (regresión: comportamiento previo mantenido)
+- `actor DECLINED → 409 MATCH_LOCKED`
+- `actor SPECTATOR → 409 MATCH_LOCKED`
+- `actor INVITED, capacity disponible → confirm succeeds (CONFIRMED) + revision ++`
+- `actor INVITED, capacity full → confirm succeeds (WAITLISTED) + revision ++`
+
+### Invariantes mantenidos
+- Invite sigue bloqueado cuando locked (no se tocó `invite-participation.use-case.ts`).
+- Decline, spectator, leave: sin cambios de comportamiento.
+- Optimistic locking (revision), idempotencia, FIFO waitlist: sin regresiones.
+
+### Resultado
+- 106 unit tests verdes (+4 nuevos).
+- `nest build` limpio.
+
+### Archivos modificados
+- `apps/api/src/matches/application/confirm-participation.use-case.ts`
+- `apps/api/src/matches/application/build-match-snapshot.ts`
+- `apps/api/src/matches/application/update-lock.use-case.spec.ts`

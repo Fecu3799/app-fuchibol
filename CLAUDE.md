@@ -179,6 +179,6 @@ Preferir tests de use-cases (application layer) + integración DB para invariant
 ## 11) Documentación de desarrollo
 
 - El archivo `docs/stepbystep.md` es el registro cronológico del proyecto.
-- **Obligatorio**: cada vez que se agregue, modifique o elimine algo del proyecto (features, migraciones, cambios de arquitectura, integraciones, convenciones, fixes), se debe actualizar `docs/stepbystep.md` con una nueva sección si se agregaron features, o se debe editar la existente si se modificaron o eliminaron. No agregar por agregar.
+- **Obligatorio**: cada vez que se agregue algo nuevo (features, migraciones, cambios de arquitectura, integraciones, convenciones), se debe actualizar `docs/stepbystep.md` con una nueva sección. Si se hacen fixes solo se debe editar la existente. No agregar por agregar.
 - Documentar: qué se hizo, archivos creados/modificados, decisiones, SQL de migraciones relevantes, ejemplos de uso.
 - Mantener el índice del documento actualizado.

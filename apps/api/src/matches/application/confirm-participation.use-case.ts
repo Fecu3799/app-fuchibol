@@ -56,20 +56,14 @@ export class ConfirmParticipationUseCase {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
-      if (match.isLocked) {
-        throw new ConflictException('MATCH_LOCKED');
-      }
-
-      const confirmedCount = await tx.matchParticipant.count({
-        where: { matchId: input.matchId, status: 'CONFIRMED' },
-      });
-
       const existing = await tx.matchParticipant.findUnique({
         where: {
           matchId_userId: { matchId: input.matchId, userId: input.actorId },
         },
       });
 
+      // Idempotent: already in a terminal participation state → return snapshot
+      // (bypass lock check — no state change needed)
       if (existing?.status === 'CONFIRMED') {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
@@ -77,6 +71,16 @@ export class ConfirmParticipationUseCase {
       if (existing?.status === 'WAITLISTED') {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
+
+      // Locked: only INVITED participants may confirm their invitation.
+      // New sign-ups (null, DECLINED, SPECTATOR) are blocked until unlock.
+      if (match.isLocked && existing?.status !== 'INVITED') {
+        throw new ConflictException('MATCH_LOCKED');
+      }
+
+      const confirmedCount = await tx.matchParticipant.count({
+        where: { matchId: input.matchId, status: 'CONFIRMED' },
+      });
 
       const hasCapacity = confirmedCount < match.capacity;
       const newStatus = hasCapacity ? 'CONFIRMED' : 'WAITLISTED';
