@@ -26,7 +26,9 @@
       "Bash(pnpm -C apps/api prisma generate:*)",
       "Bash(npx ts-node:*)",
       "Bash(npx prisma generate:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(pnpm -C apps/api test:*)",
+      "Bash(pnpm -C apps/api build:*)"
     ]
   }
 }

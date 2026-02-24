@@ -93,8 +93,19 @@ export class InviteParticipationUseCase {
       });
 
       if (existing) {
-        // Already a participant — idempotent for INVITED, conflict for others
+        // Already a participant — idempotent for INVITED, reinvite spectators, conflict for others
         if (existing.status === 'INVITED') {
+          return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        }
+        if (existing.status === 'SPECTATOR') {
+          await tx.matchParticipant.update({
+            where: { id: existing.id },
+            data: { status: 'INVITED' },
+          });
+          await tx.match.update({
+            where: { id: input.matchId },
+            data: { revision: match.revision + 1 },
+          });
           return buildMatchSnapshot(tx, input.matchId, input.actorId);
         }
         throw new ConflictException('ALREADY_PARTICIPANT');

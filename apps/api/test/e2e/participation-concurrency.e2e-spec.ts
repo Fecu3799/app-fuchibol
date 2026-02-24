@@ -47,10 +47,15 @@ function confirm(
     .send({ expectedRevision: rev });
 }
 
-/** Withdraw participation; returns full response */
-function withdraw(server: Server, token: string, matchId: string, rev: number) {
+/** Toggle spectator (CONFIRMED → SPECTATOR, freeing the slot); returns full response */
+function toggleSpectator(
+  server: Server,
+  token: string,
+  matchId: string,
+  rev: number,
+) {
   return request(server)
-    .post(`/api/v1/matches/${matchId}/withdraw`)
+    .post(`/api/v1/matches/${matchId}/spectator`)
     .set(authHeader(token))
     .set('Idempotency-Key', randomKey())
     .send({ expectedRevision: rev });
@@ -185,7 +190,7 @@ describe('Participation Concurrency (e2e)', () => {
   /* ================================================================ */
   /*  3) FIFO promotion under race                                     */
   /* ================================================================ */
-  it('FIFO promotion — withdraw promotes first waitlisted, not second', async () => {
+  it('FIFO promotion — spectator toggle promotes first waitlisted, not second', async () => {
     const owner = await createAuthenticatedUser(server, 'fifo-owner');
     const u1 = await createAuthenticatedUser(server, 'fifo-u1');
     const u2 = await createAuthenticatedUser(server, 'fifo-u2');
@@ -218,21 +223,21 @@ describe('Participation Concurrency (e2e)', () => {
     expect(await countByStatus(app, id, 'CONFIRMED')).toBe(1);
     expect(await countByStatus(app, id, 'WAITLISTED')).toBe(2);
 
-    // Race: u1 withdraws + u2 tries to re-confirm (with new idempotency key)
+    // Race: u1 toggles spectator + u2 tries to re-confirm (with new idempotency key)
     // u2's re-confirm is a no-op when already WAITLISTED (returns 201 snapshot
     // without incrementing revision), so both can succeed.
-    // If u2's no-op runs first, u1's withdraw still sees the original revision.
-    // If u1's withdraw runs first, u2's confirm finds itself already CONFIRMED.
-    const [rWithdraw, rConfirm] = await Promise.all([
-      withdraw(server, u1.token, id, rev),
+    // If u2's no-op runs first, u1's spectator toggle still sees the original revision.
+    // If u1's spectator toggle runs first, u2's confirm finds itself already CONFIRMED.
+    const [rSpectator, rConfirm] = await Promise.all([
+      toggleSpectator(server, u1.token, id, rev),
       confirm(server, u2.token, id, rev),
     ]);
 
     // Both may succeed (201) since u2's confirm is idempotent when WAITLISTED
-    expect([201, 409]).toContain(rWithdraw.status);
+    expect([201, 409]).toContain(rSpectator.status);
     expect([201, 409]).toContain(rConfirm.status);
     // At least one must succeed
-    expect(rWithdraw.status === 201 || rConfirm.status === 201).toBe(true);
+    expect(rSpectator.status === 201 || rConfirm.status === 201).toBe(true);
 
     // --- DB assertions ---
     const participants = await getParticipants(app, id);
@@ -242,13 +247,13 @@ describe('Participation Concurrency (e2e)', () => {
     // Core invariant: never more confirmed than capacity
     expect(confirmed.length).toBeLessThanOrEqual(1);
 
-    if (rWithdraw.status === 201) {
-      // Withdraw succeeded → u1 withdrawn, u2 auto-promoted (FIFO), u3 still waitlisted
+    if (rSpectator.status === 201) {
+      // Spectator succeeded → u1 now SPECTATOR, u2 auto-promoted (FIFO), u3 still waitlisted
       expect(confirmed).toHaveLength(1);
       expect(confirmed[0].userId).toBe(u2.userId);
       expect(waitlisted.some((p) => p.userId === u3.userId)).toBe(true);
     } else {
-      // Withdraw got 409 — u1 still CONFIRMED, u2 still WAITLISTED
+      // Spectator got 409 — u1 still CONFIRMED, u2 still WAITLISTED
       expect(confirmed[0].userId).toBe(u1.userId);
     }
   });
@@ -256,7 +261,7 @@ describe('Participation Concurrency (e2e)', () => {
   /* ================================================================ */
   /*  4) Withdraw / Confirm interleaving                               */
   /* ================================================================ */
-  it('withdraw + confirm interleaving — total confirmed never exceeds capacity', async () => {
+  it('spectator + confirm interleaving — total confirmed never exceeds capacity', async () => {
     const owner = await createAuthenticatedUser(server, 'intl-owner');
     const u1 = await createAuthenticatedUser(server, 'intl-u1');
     const u2 = await createAuthenticatedUser(server, 'intl-u2');
@@ -273,13 +278,13 @@ describe('Participation Concurrency (e2e)', () => {
     expect(c1.status).toBe(201);
     rev = c1.body.revision;
 
-    // Race: u1 withdraws and u2 confirms simultaneously (same revision)
-    const [rW, rC] = await Promise.all([
-      withdraw(server, u1.token, id, rev),
+    // Race: u1 toggles spectator and u2 confirms simultaneously (same revision)
+    const [rS, rC] = await Promise.all([
+      toggleSpectator(server, u1.token, id, rev),
       confirm(server, u2.token, id, rev),
     ]);
 
-    const outcomes = [rW.status, rC.status].sort();
+    const outcomes = [rS.status, rC.status].sort();
     expect(outcomes).toEqual([201, 409]);
 
     // --- DB assertions ---
@@ -290,10 +295,9 @@ describe('Participation Concurrency (e2e)', () => {
     const participants = await getParticipants(app, id);
     const confirmed = participants.filter((p) => p.status === 'CONFIRMED');
 
-    if (rW.status === 201) {
-      // Withdraw succeeded: u1 withdrawn, no auto-promote for u2 (still INVITED)
+    if (rS.status === 201) {
+      // Spectator succeeded: u1 → SPECTATOR, no auto-promote (u2 is INVITED not WAITLISTED)
       // u2's confirm got 409
-      // But u2 was INVITED not WAITLISTED, so no auto-promotion from withdraw
       expect(confirmedCount).toBe(0);
     } else {
       // u2's confirm succeeded first: u2 waitlisted (capacity full) or confirmed

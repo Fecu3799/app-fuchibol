@@ -59,7 +59,6 @@ enum MatchParticipantStatus {
   CONFIRMED
   WAITLISTED
   DECLINED
-  WITHDRAWN
   SPECTATOR
 }
 

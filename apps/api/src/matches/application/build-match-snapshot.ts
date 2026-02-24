@@ -76,7 +76,7 @@ export async function buildMatchSnapshot(
 
   if (!isCanceled) {
     if (!match.isLocked) {
-      if (!myStatus || myStatus === 'DECLINED' || myStatus === 'WITHDRAWN') {
+      if (!myStatus || myStatus === 'DECLINED') {
         actionsAllowed.push('confirm');
       }
       if (myStatus === 'INVITED') {
@@ -87,7 +87,7 @@ export async function buildMatchSnapshot(
       }
     }
 
-    // Spectator toggle: always available (replaces withdraw semantics)
+    // Spectator toggle: always available
     // Not shown when SPECTATOR — instead 'confirm' is hidden and 'spectator' becomes "Participate"
     actionsAllowed.push('spectator');
 
@@ -107,9 +107,9 @@ export async function buildMatchSnapshot(
     }
   }
 
-  // Participants: exclude WITHDRAWN and SPECTATOR (spectators shown separately)
+  // Participants: exclude SPECTATOR (spectators shown separately)
   const participantViews: ParticipantView[] = participants
-    .filter((p) => p.status !== 'WITHDRAWN' && p.status !== 'SPECTATOR')
+    .filter((p) => p.status !== 'SPECTATOR')
     .map((p) => ({
       userId: p.userId,
       username: p.user.username,

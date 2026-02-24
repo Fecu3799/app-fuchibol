@@ -54,6 +54,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 46. [Refactor: Spectator Toggle + Leave Match Late-Leave Penalty](#46-refactor-spectator-toggle--leave-match-late-leave-penalty)
 47. [Fix: Leave Match button visible for creator without participation row](#47-fix-leave-match-button-visible-for-creator-without-participation-row)
 48. [Fix: Leave Match web confirmation + remove debug instrumentation](#48-fix-leave-match-web-confirmation--remove-debug-instrumentation)
+49. [Migración: Eliminar WITHDRAWN — unificar en SPECTATOR](#49-migración-eliminar-withdrawn--unificar-en-spectator)
 
 ---
 
@@ -3939,4 +3940,93 @@ Adicionalmente, `leave-match.use-case.ts` tenía un bug: el early-return por `!e
 ### Archivos modificados
 - `apps/mobile/src/lib/api.ts`
 - `apps/mobile/src/screens/HomeScreen.tsx`
+- `apps/mobile/src/screens/MatchDetailScreen.tsx`
+
+---
+
+## 49. Migración: Eliminar WITHDRAWN — unificar en SPECTATOR
+
+### Qué se hizo
+
+Eliminación definitiva del estado legacy `WITHDRAWN`/`WITHDRAW` en toda la codebase (API, DB, mobile, tests). El estado `SPECTATOR` absorbe su semántica: participante con row en DB pero sin ocupar cupo ni figurar en la lista de participantes.
+
+### Migración de datos (DB)
+
+**`apps/api/prisma/migrations/20260224000001_migrate_withdrawn_to_spectator/migration.sql`**:
+1. `UPDATE "MatchParticipant" SET status = 'SPECTATOR' WHERE status = 'WITHDRAWN'` — convierte rows legacy.
+2. Recrea el enum `MatchParticipantStatus` sin el valor `WITHDRAWN` (Postgres no permite DROP VALUE directo: se crea un tipo nuevo, se altera la columna, se elimina el tipo viejo, se renombra).
+
+### Cambios en API (`apps/api`)
+
+#### Prisma schema (`prisma/schema.prisma`)
+- Removido `WITHDRAWN` del enum `MatchParticipantStatus`.
+
+#### Eliminación de `WithdrawParticipationUseCase`
+- **Eliminado** `src/matches/application/withdraw-participation.use-case.ts`.
+- El use-case seteaba `WITHDRAWN`; la semántica equivalente es el `ToggleSpectatorUseCase` existente.
+
+#### Controller (`src/matches/api/matches.controller.ts`)
+- Removido import `WithdrawParticipationUseCase`.
+- Removido `withdrawUseCase` del constructor.
+- Removido endpoint `POST :id/withdraw`.
+
+#### Module (`src/matches/matches.module.ts`)
+- Removido import y provider `WithdrawParticipationUseCase`.
+
+#### `build-match-snapshot.ts`
+- Condición de `actionsAllowed.push('confirm')`: removido `|| myStatus === 'WITHDRAWN'`. SPECTATOR no puede confirmar directamente (debe togglear a INVITED primero).
+- Filtro de participantViews: `p.status !== 'WITHDRAWN' && p.status !== 'SPECTATOR'` → solo `p.status !== 'SPECTATOR'`.
+
+#### `leave-match.use-case.ts`
+- `notIn: ['WITHDRAWN', 'DECLINED', 'SPECTATOR']` → `notIn: ['DECLINED', 'SPECTATOR']`.
+
+#### `promote-admin.use-case.ts`
+- Condición NOT_PARTICIPANT: `participant.status === 'WITHDRAWN'` → `participant.status === 'SPECTATOR'`. SPECTATOR tampoco puede ser promovido a admin.
+
+#### `invite-participation.use-case.ts`
+- Si el usuario invitado tiene status `SPECTATOR`, ahora se setea a `INVITED` (en lugar de tirar 409 ALREADY_PARTICIPANT). Idempotente e invisible para el invitado que pasó por spectator.
+
+#### `toggle-spectator.use-case.ts`
+- Actualizado comentario: removido "WITHDRAWN" de la lista de estados que van a SPECTATOR.
+
+### Cambios en Mobile (`apps/mobile`)
+
+#### `src/screens/MatchDetailScreen.tsx`
+- Removido `WITHDRAWN: "Withdrawn"` de `STATUS_LABEL`.
+- Removido `WITHDRAWN: "#bdbdbd"` de `STATUS_COLOR`.
+
+### Cambios en Tests
+
+#### `src/matches/application/participation.use-case.spec.ts`
+- Removido import `WithdrawParticipationUseCase`.
+- Removido bloque `describe('WithdrawParticipationUseCase')` completo.
+
+#### `test/e2e/creator-transfer.e2e-spec.ts`
+- Todos los tests que usaban `/withdraw` migrados a `/leave`.
+- Error code `CREATOR_WITHDRAW_REQUIRES_ADMIN` → `CREATOR_TRANSFER_REQUIRED`.
+- Assertion `myStatus === 'WITHDRAWN'` → `myStatus === null` (leave hace hard-delete del row).
+
+### Resultado
+- `pnpm -C apps/api test`: 102 tests, todos verdes.
+- `pnpm -C apps/api build`: compilación limpia.
+- `npx tsc --noEmit` (mobile): sin errores.
+- Ninguna referencia a WITHDRAWN queda en código activo.
+
+### Archivos creados
+- `apps/api/prisma/migrations/20260224000001_migrate_withdrawn_to_spectator/migration.sql`
+
+### Archivos eliminados
+- `apps/api/src/matches/application/withdraw-participation.use-case.ts`
+
+### Archivos modificados
+- `apps/api/prisma/schema.prisma`
+- `apps/api/src/matches/api/matches.controller.ts`
+- `apps/api/src/matches/matches.module.ts`
+- `apps/api/src/matches/application/build-match-snapshot.ts`
+- `apps/api/src/matches/application/leave-match.use-case.ts`
+- `apps/api/src/matches/application/promote-admin.use-case.ts`
+- `apps/api/src/matches/application/toggle-spectator.use-case.ts`
+- `apps/api/src/matches/application/invite-participation.use-case.ts`
+- `apps/api/src/matches/application/participation.use-case.spec.ts`
+- `apps/api/test/e2e/creator-transfer.e2e-spec.ts`
 - `apps/mobile/src/screens/MatchDetailScreen.tsx`

@@ -57,18 +57,11 @@ describe('Creator Transfer (e2e)', () => {
     await app.close();
   });
 
-  it('creator withdraw with no admins → 422 CREATOR_WITHDRAW_REQUIRES_ADMIN', async () => {
+  it('creator leave with no admins → 422 CREATOR_TRANSFER_REQUIRED', async () => {
     const creator = await createAuthenticatedUser(server, 'ct-creator');
-    const user = await createAuthenticatedUser(server, 'ct-user');
     const { id } = await createMatch(server, creator.token);
 
-    // Creator must be a participant to withdraw. Confirm self:
     let rev = 1;
-    // Creator needs to be CONFIRMED or WAITLISTED to withdraw.
-    // Creator auto-doesn't participate, so let's invite+confirm user
-    // and try to withdraw creator who isn't even a participant — that should be no-op
-    // Actually, the creator is not automatically a participant. For them to withdraw,
-    // they need to be a participant first. Let's make creator confirm:
     const confirmRes = await request(server)
       .post(`/api/v1/matches/${id}/confirm`)
       .set(authHeader(creator.token))
@@ -77,20 +70,20 @@ describe('Creator Transfer (e2e)', () => {
     expect(confirmRes.status).toBe(201);
     rev = confirmRes.body.revision;
 
-    // Creator tries to withdraw without any matchAdmins
-    const withdrawRes = await request(server)
-      .post(`/api/v1/matches/${id}/withdraw`)
+    // Creator tries to leave without any matchAdmins
+    const leaveRes = await request(server)
+      .post(`/api/v1/matches/${id}/leave`)
       .set(authHeader(creator.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: rev });
 
-    expectError(withdrawRes, {
+    expectError(leaveRes, {
       status: 422,
-      code: 'CREATOR_WITHDRAW_REQUIRES_ADMIN',
+      code: 'CREATOR_TRANSFER_REQUIRED',
     });
   });
 
-  it('creator withdraw with 1 admin → transfers creatorId', async () => {
+  it('creator leave with 1 admin → transfers creatorId', async () => {
     const creator = await createAuthenticatedUser(server, 'tx-creator');
     const admin = await createAuthenticatedUser(server, 'tx-admin');
     const { id } = await createMatch(server, creator.token);
@@ -116,13 +109,13 @@ describe('Creator Transfer (e2e)', () => {
       .send({ userId: admin.userId, expectedRevision: rev });
     rev = promoteRes.body.revision;
 
-    // Creator withdraws
-    const withdrawRes = await request(server)
-      .post(`/api/v1/matches/${id}/withdraw`)
+    // Creator leaves
+    const leaveRes = await request(server)
+      .post(`/api/v1/matches/${id}/leave`)
       .set(authHeader(creator.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: rev });
-    expect(withdrawRes.status).toBe(201);
+    expect(leaveRes.status).toBe(201);
 
     // Verify: createdById transferred to admin
     const snap = await getMatch(server, admin.token, id);
@@ -137,12 +130,12 @@ describe('Creator Transfer (e2e)', () => {
     // Admin's myStatus should be CONFIRMED (they are the new creator and participant)
     expect(snap.body.match.myStatus).toBe('CONFIRMED');
 
-    // Creator's myStatus should be WITHDRAWN
+    // Creator's row is deleted → myStatus is null
     const creatorSnap = await getMatch(server, creator.token, id);
-    expect(creatorSnap.body.match.myStatus).toBe('WITHDRAWN');
+    expect(creatorSnap.body.match.myStatus).toBeNull();
   });
 
-  it('creator withdraw with multiple admins → picks earliest adminGrantedAt', async () => {
+  it('creator leave with multiple admins → picks earliest adminGrantedAt', async () => {
     const creator = await createAuthenticatedUser(server, 'ma-creator');
     const admin1 = await createAuthenticatedUser(server, 'ma-admin1');
     const admin2 = await createAuthenticatedUser(server, 'ma-admin2');
@@ -180,13 +173,13 @@ describe('Creator Transfer (e2e)', () => {
       .send({ userId: admin2.userId, expectedRevision: rev });
     rev = promote2.body.revision;
 
-    // Creator withdraws
-    const withdrawRes = await request(server)
-      .post(`/api/v1/matches/${id}/withdraw`)
+    // Creator leaves
+    const leaveRes = await request(server)
+      .post(`/api/v1/matches/${id}/leave`)
       .set(authHeader(creator.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: rev });
-    expect(withdrawRes.status).toBe(201);
+    expect(leaveRes.status).toBe(201);
 
     // Should transfer to admin1 (earliest adminGrantedAt)
     const snap = await getMatch(server, admin1.token, id);
@@ -260,13 +253,13 @@ describe('Creator Transfer (e2e)', () => {
       .send({ userId: admin.userId, expectedRevision: rev });
     rev = pr.body.revision;
 
-    // Creator withdraws → admin becomes creator
-    const wr = await request(server)
-      .post(`/api/v1/matches/${id}/withdraw`)
+    // Creator leaves → admin becomes creator
+    const lr = await request(server)
+      .post(`/api/v1/matches/${id}/leave`)
       .set(authHeader(creator.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: rev });
-    rev = wr.body.revision;
+    rev = lr.body.revision;
 
     // New creator (admin) can now update the match
     const patchRes = await request(server)

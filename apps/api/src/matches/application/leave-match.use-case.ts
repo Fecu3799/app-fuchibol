@@ -70,13 +70,13 @@ export class LeaveMatchUseCase {
       // Creator transfer must happen even if creator has no participation row
       if (isCreator) {
         // Transfer creator to first matchAdmin by adminGrantedAt
-        // Exclude WITHDRAWN, DECLINED, SPECTATOR from candidates
+        // Exclude DECLINED and SPECTATOR from candidates
         const candidate = await tx.matchParticipant.findFirst({
           where: {
             matchId: input.matchId,
             isMatchAdmin: true,
             userId: { not: input.actorId },
-            status: { notIn: ['WITHDRAWN', 'DECLINED', 'SPECTATOR'] },
+            status: { notIn: ['DECLINED', 'SPECTATOR'] },
           },
           orderBy: { adminGrantedAt: 'asc' },
         });

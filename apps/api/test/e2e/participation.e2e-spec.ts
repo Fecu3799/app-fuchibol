@@ -22,7 +22,7 @@ describe('Participation (e2e)', () => {
     await app.close();
   });
 
-  it('invite → confirm → withdraw → confirmedCount changes', async () => {
+  it('invite → confirm → spectator → confirmedCount changes', async () => {
     const owner = await createAuthenticatedUser(server, 'part-owner');
     const user = await createAuthenticatedUser(server, 'part-user');
     const { id, revision } = await createMatch(server, owner.token, {
@@ -50,15 +50,15 @@ describe('Participation (e2e)', () => {
     expect(confirmRes.body.confirmedCount).toBe(1);
     rev = confirmRes.body.revision;
 
-    // Withdraw
-    const withdrawRes = await request(server)
-      .post(`/api/v1/matches/${id}/withdraw`)
+    // Toggle spectator (CONFIRMED → SPECTATOR, frees slot)
+    const spectatorRes = await request(server)
+      .post(`/api/v1/matches/${id}/spectator`)
       .set(authHeader(user.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: rev });
 
-    expect(withdrawRes.status).toBe(201);
-    expect(withdrawRes.body.confirmedCount).toBe(0);
+    expect(spectatorRes.status).toBe(201);
+    expect(spectatorRes.body.confirmedCount).toBe(0);
   });
 
   it('invite → decline flow', async () => {

@@ -1,7 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
-import { WithdrawParticipationUseCase } from './withdraw-participation.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import {
   IdempotencyService,
@@ -147,69 +146,5 @@ describe('ConfirmParticipationUseCase', () => {
 
     expect(result).toEqual(cachedResponse);
     expect(tx.match.findUnique).not.toHaveBeenCalled();
-  });
-});
-
-describe('WithdrawParticipationUseCase', () => {
-  it('withdraw CONFIRMED promotes first WAITLISTED', async () => {
-    const { prisma, tx } = buildTxPrisma();
-    const existingConfirmed = {
-      id: 'p-1',
-      matchId: 'match-1',
-      userId: 'user-1',
-      status: 'CONFIRMED',
-      waitlistPosition: null,
-    };
-    const waitlisted = {
-      id: 'p-2',
-      matchId: 'match-1',
-      userId: 'user-2',
-      status: 'WAITLISTED',
-      waitlistPosition: 1,
-    };
-    tx.matchParticipant.findUnique = jest
-      .fn()
-      .mockResolvedValue(existingConfirmed);
-    tx.matchParticipant.findFirst = jest.fn().mockResolvedValue(waitlisted);
-    // After withdraw, return updated participants for snapshot
-    tx.matchParticipant.findMany = jest.fn().mockResolvedValue([
-      {
-        ...existingConfirmed,
-        status: 'WITHDRAWN',
-        user: { username: 'user1' },
-      },
-      {
-        ...waitlisted,
-        status: 'CONFIRMED',
-        waitlistPosition: null,
-        user: { username: 'user2' },
-      },
-    ]);
-
-    const idempotency = buildIdempotency(prisma);
-    const useCase = new WithdrawParticipationUseCase(prisma, idempotency);
-
-    await useCase.execute({
-      matchId: 'match-1',
-      actorId: 'user-1',
-      expectedRevision: 1,
-      idempotencyKey: 'key-w1',
-    });
-
-    // Verify the confirmed user was withdrawn
-    expect(tx.matchParticipant.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'p-1' },
-        data: expect.objectContaining({ status: 'WITHDRAWN' }),
-      }),
-    );
-
-    // Verify waitlisted user was promoted
-    expect(tx.matchParticipant.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'p-2' },
-        data: expect.objectContaining({ status: 'CONFIRMED' }),
-      }),
-    );
   });
 });

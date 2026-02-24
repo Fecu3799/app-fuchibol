@@ -76,7 +76,6 @@ const STATUS_LABEL: Record<string, string> = {
   INVITED: "Pending",
   WAITLISTED: "Waitlist",
   DECLINED: "Declined",
-  WITHDRAWN: "Withdrawn",
   SPECTATOR: "Spectator",
 };
 
@@ -85,7 +84,6 @@ const STATUS_COLOR: Record<string, string> = {
   INVITED: "#1976d2",
   WAITLISTED: "#f57c00",
   DECLINED: "#9e9e9e",
-  WITHDRAWN: "#bdbdbd",
   SPECTATOR: "#6d4c41",
 };
 

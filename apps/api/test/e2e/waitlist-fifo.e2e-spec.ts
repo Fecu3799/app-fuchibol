@@ -47,7 +47,7 @@ describe('Waitlist FIFO (e2e)', () => {
     await app.close();
   });
 
-  it('capacity 2: a,b confirm → c,d waitlisted → a withdraws → c promoted', async () => {
+  it('capacity 2: a,b confirm → c,d waitlisted → a goes spectator → c promoted', async () => {
     const owner = await createAuthenticatedUser(server, 'wl-owner');
     const a = await createAuthenticatedUser(server, 'wl-a');
     const b = await createAuthenticatedUser(server, 'wl-b');
@@ -102,14 +102,14 @@ describe('Waitlist FIFO (e2e)', () => {
     expect(snap.body.match.confirmedCount).toBe(2);
     expect(snap.body.match.waitlist.length).toBe(2);
 
-    // a withdraws
-    const withdrawRes = await request(server)
-      .post(`/api/v1/matches/${id}/withdraw`)
+    // a toggles spectator (CONFIRMED → SPECTATOR, promotes first waitlisted)
+    const spectatorRes = await request(server)
+      .post(`/api/v1/matches/${id}/spectator`)
       .set(authHeader(a.token))
       .set('Idempotency-Key', randomKey())
       .send({ expectedRevision: rev });
 
-    expect(withdrawRes.status).toBe(201);
+    expect(spectatorRes.status).toBe(201);
 
     // Verify: c promoted, d still waitlisted
     snap = await getMatch(server, owner.token, id);

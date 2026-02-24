@@ -55,7 +55,7 @@ export class PromoteAdminUseCase {
 
       if (
         !participant ||
-        participant.status === 'WITHDRAWN' ||
+        participant.status === 'SPECTATOR' ||
         participant.status === 'DECLINED'
       ) {
         throw new UnprocessableEntityException('NOT_PARTICIPANT');

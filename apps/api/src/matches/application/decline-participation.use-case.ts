@@ -72,7 +72,7 @@ export class DeclineParticipationUseCase {
 
       if (existing?.status === 'CONFIRMED') {
         throw new ConflictException(
-          'Cannot decline while confirmed. Use withdraw first.',
+          'Cannot decline while confirmed. Use leave or spectator first.',
         );
       }
 

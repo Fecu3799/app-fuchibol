@@ -104,7 +104,7 @@ export class ToggleSpectatorUseCase {
           });
         }
       } else {
-        // INVITED / WAITLISTED / DECLINED / WITHDRAWN → SPECTATOR
+        // INVITED / WAITLISTED / DECLINED → SPECTATOR
         await tx.matchParticipant.update({
           where: { id: existing.id },
           data: {
