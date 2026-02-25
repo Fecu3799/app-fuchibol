@@ -7,6 +7,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 export interface ToggleSpectatorInput {
   matchId: string;
@@ -20,6 +21,7 @@ export class ToggleSpectatorUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
+    private readonly audit: MatchAuditService,
   ) {}
 
   async execute(input: ToggleSpectatorInput): Promise<MatchSnapshot> {
@@ -62,6 +64,10 @@ export class ToggleSpectatorUseCase {
         },
       });
 
+      let auditType: string;
+      let auditMeta: Record<string, unknown> = {};
+      let promotedUserId: string | null = null;
+
       if (!existing) {
         // No participation → create as SPECTATOR
         await tx.matchParticipant.create({
@@ -71,12 +77,15 @@ export class ToggleSpectatorUseCase {
             status: 'SPECTATOR',
           },
         });
+        auditType = AuditLogType.PARTICIPANT_SPECTATOR_ON;
+        auditMeta = { fromStatus: 'none' };
       } else if (existing.status === 'SPECTATOR') {
         // SPECTATOR → INVITED (toggle back to participant)
         await tx.matchParticipant.update({
           where: { id: existing.id },
           data: { status: 'INVITED' },
         });
+        auditType = AuditLogType.PARTICIPANT_SPECTATOR_OFF;
       } else if (existing.status === 'CONFIRMED') {
         // CONFIRMED → SPECTATOR: promote first waitlisted
         await tx.matchParticipant.update({
@@ -102,7 +111,10 @@ export class ToggleSpectatorUseCase {
               confirmedAt: new Date(),
             },
           });
+          promotedUserId = nextInWaitlist.userId;
         }
+        auditType = AuditLogType.PARTICIPANT_SPECTATOR_ON;
+        auditMeta = { fromStatus: 'CONFIRMED' };
       } else {
         // INVITED / WAITLISTED / DECLINED → SPECTATOR
         await tx.matchParticipant.update({
@@ -113,12 +125,31 @@ export class ToggleSpectatorUseCase {
             confirmedAt: null,
           },
         });
+        auditType = AuditLogType.PARTICIPANT_SPECTATOR_ON;
+        auditMeta = { fromStatus: existing.status };
       }
 
       await tx.match.update({
         where: { id: input.matchId },
         data: { revision: match.revision + 1 },
       });
+
+      await this.audit.log(
+        tx,
+        input.matchId,
+        input.actorId,
+        auditType,
+        auditMeta,
+      );
+      if (promotedUserId) {
+        await this.audit.log(
+          tx,
+          input.matchId,
+          input.actorId,
+          AuditLogType.WAITLIST_PROMOTED,
+          { promotedUserId },
+        );
+      }
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

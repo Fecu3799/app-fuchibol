@@ -27,6 +27,7 @@ import { InviteParticipationUseCase } from '../application/invite-participation.
 import { LeaveMatchUseCase } from '../application/leave-match.use-case';
 import { PromoteAdminUseCase } from '../application/promote-admin.use-case';
 import { DemoteAdminUseCase } from '../application/demote-admin.use-case';
+import { GetMatchAuditLogsQuery } from '../application/get-match-audit-logs.query';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { CreateMatchResponseDto } from './dto/create-match-response.dto';
 import { GetMatchResponseDto } from './dto/match-snapshot.dto';
@@ -37,6 +38,7 @@ import {
   InviteCommandDto,
 } from './dto/participation-command.dto';
 import { PromoteAdminDto, DemoteAdminDto } from './dto/admin-command.dto';
+import { AuditLogsQueryDto } from './dto/audit-logs-query.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
@@ -61,6 +63,7 @@ export class MatchesController {
     private readonly promoteAdminUseCase: PromoteAdminUseCase,
     private readonly demoteAdminUseCase: DemoteAdminUseCase,
     private readonly realtimePublisher: MatchRealtimePublisher,
+    private readonly getMatchAuditLogsQuery: GetMatchAuditLogsQuery,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -312,6 +315,21 @@ export class MatchesController {
     });
     this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
     return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/audit-logs')
+  async getAuditLogs(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Query() query: AuditLogsQueryDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.getMatchAuditLogsQuery.execute({
+      matchId,
+      actorId: actor.userId,
+      page: query.page ?? 1,
+      pageSize: query.pageSize ?? 20,
+    });
   }
 
   private requireIdempotencyKey(

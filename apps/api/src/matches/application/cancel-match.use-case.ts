@@ -8,6 +8,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 export interface CancelMatchInput {
   matchId: string;
@@ -21,6 +22,7 @@ export class CancelMatchUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
+    private readonly audit: MatchAuditService,
   ) {}
 
   async execute(input: CancelMatchInput): Promise<MatchSnapshot> {
@@ -69,6 +71,14 @@ export class CancelMatchUseCase {
           revision: match.revision + 1,
         },
       });
+
+      await this.audit.log(
+        tx,
+        input.matchId,
+        input.actorId,
+        AuditLogType.MATCH_CANCELED,
+        {},
+      );
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

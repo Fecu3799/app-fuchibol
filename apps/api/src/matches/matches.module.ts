@@ -17,6 +17,8 @@ import { InviteParticipationUseCase } from './application/invite-participation.u
 import { LeaveMatchUseCase } from './application/leave-match.use-case';
 import { PromoteAdminUseCase } from './application/promote-admin.use-case';
 import { DemoteAdminUseCase } from './application/demote-admin.use-case';
+import { MatchAuditService } from './application/match-audit.service';
+import { GetMatchAuditLogsQuery } from './application/get-match-audit-logs.query';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule, MatchRealtimeModule],
@@ -36,6 +38,8 @@ import { DemoteAdminUseCase } from './application/demote-admin.use-case';
     LeaveMatchUseCase,
     PromoteAdminUseCase,
     DemoteAdminUseCase,
+    MatchAuditService,
+    GetMatchAuditLogsQuery,
   ],
 })
 export class MatchesModule {}

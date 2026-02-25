@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "MatchAuditLog" ALTER COLUMN "id" DROP DEFAULT,
+ALTER COLUMN "metadata" DROP DEFAULT;

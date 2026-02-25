@@ -1,5 +1,5 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { CreateMatchResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot } from '../../types/api';
+import type { CreateMatchResponse, GetMatchAuditLogsResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot } from '../../types/api';
 
 interface ListParams {
   page?: number;
@@ -100,6 +100,17 @@ export function promoteAdmin(
     },
     body: JSON.stringify({ userId, expectedRevision }),
   });
+}
+
+export function getMatchAuditLogs(
+  token: string,
+  matchId: string,
+  params?: { page?: number; pageSize?: number },
+): Promise<GetMatchAuditLogsResponse> {
+  return fetchJson<GetMatchAuditLogsResponse>(
+    buildUrl(`/api/v1/matches/${matchId}/audit-logs`, params as Record<string, string | number | undefined>),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
 }
 
 export function demoteAdmin(

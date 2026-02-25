@@ -8,6 +8,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 const LATE_LEAVE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -23,6 +24,7 @@ export class LeaveMatchUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
+    private readonly audit: MatchAuditService,
   ) {}
 
   async execute(input: LeaveMatchInput): Promise<MatchSnapshot> {
@@ -128,6 +130,7 @@ export class LeaveMatchUseCase {
       });
 
       // Promote from waitlist if the leaving user was confirmed
+      let promotedUserId: string | null = null;
       if (wasConfirmed) {
         const nextInWaitlist = await tx.matchParticipant.findFirst({
           where: { matchId: input.matchId, status: 'WAITLISTED' },
@@ -143,6 +146,7 @@ export class LeaveMatchUseCase {
               confirmedAt: new Date(),
             },
           });
+          promotedUserId = nextInWaitlist.userId;
         }
       }
 
@@ -150,6 +154,23 @@ export class LeaveMatchUseCase {
         where: { id: input.matchId },
         data: { revision: match.revision + 1 },
       });
+
+      await this.audit.log(
+        tx,
+        input.matchId,
+        input.actorId,
+        AuditLogType.PARTICIPANT_LEFT,
+        { wasConfirmed },
+      );
+      if (promotedUserId) {
+        await this.audit.log(
+          tx,
+          input.matchId,
+          input.actorId,
+          AuditLogType.WAITLIST_PROMOTED,
+          { promotedUserId },
+        );
+      }
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

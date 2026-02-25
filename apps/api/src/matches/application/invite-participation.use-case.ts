@@ -10,6 +10,7 @@ import { resolveUser } from '../../common/helpers/resolve-user.helper';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { isCreatorOrMatchAdmin } from './match-permissions';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 export interface InviteInput {
   matchId: string;
@@ -25,6 +26,7 @@ export class InviteParticipationUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
+    private readonly audit: MatchAuditService,
   ) {}
 
   async execute(input: InviteInput): Promise<MatchSnapshot> {
@@ -106,6 +108,13 @@ export class InviteParticipationUseCase {
             where: { id: input.matchId },
             data: { revision: match.revision + 1 },
           });
+          await this.audit.log(
+            tx,
+            input.matchId,
+            input.actorId,
+            AuditLogType.INVITE_SENT,
+            { targetUserId, identifier: input.identifier },
+          );
           return buildMatchSnapshot(tx, input.matchId, input.actorId);
         }
         throw new ConflictException('ALREADY_PARTICIPANT');
@@ -123,6 +132,14 @@ export class InviteParticipationUseCase {
         where: { id: input.matchId },
         data: { revision: match.revision + 1 },
       });
+
+      await this.audit.log(
+        tx,
+        input.matchId,
+        input.actorId,
+        AuditLogType.INVITE_SENT,
+        { targetUserId, identifier: input.identifier },
+      );
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

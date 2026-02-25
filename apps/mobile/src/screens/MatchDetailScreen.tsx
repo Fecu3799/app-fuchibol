@@ -19,6 +19,7 @@ import type {
   SpectatorView,
   GroupSummary,
   GroupMember,
+  AuditLogEntry,
 } from "../types/api";
 import { useMatch } from "../features/matches/useMatch";
 import { useMatchRealtime } from "../features/matches/useMatchRealtime";
@@ -44,6 +45,7 @@ import { ApiError } from "../lib/api";
 import { useGroups } from "../features/groups/useGroups";
 import { useGroup } from "../features/groups/useGroup";
 import { useBatchInviteFromGroup } from "../features/matches/useBatchInviteFromGroup";
+import { useMatchAuditLogs } from "../features/matches/useMatchAuditLogs";
 import {
   postMatchAction,
   promoteAdmin,
@@ -131,13 +133,79 @@ function deriveParticipantGroups(match: MatchSnapshot) {
   };
 }
 
+// ── Audit log formatter ──
+
+function formatAuditLog(entry: AuditLogEntry): string {
+  const who = entry.actor?.username ? `@${entry.actor.username}` : "Alguien";
+  const time = new Date(entry.createdAt).toLocaleString("es-AR", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const meta = entry.metadata as Record<string, unknown>;
+  switch (entry.type) {
+    case "match.locked":
+      return `${time} — ${who} bloqueó el partido`;
+    case "match.unlocked":
+      return `${time} — ${who} desbloqueó el partido`;
+    case "match.canceled":
+      return `${time} — ${who} canceló el partido`;
+    case "match.updated_major":
+      return `${time} — ${who} actualizó el partido (${(meta.fieldsChanged as string[])?.join(", ")})`;
+    case "participant.confirmed":
+      return `${time} — ${who} confirmó (${meta.newStatus ?? "CONFIRMED"})`;
+    case "participant.declined":
+      return `${time} — ${who} declinó`;
+    case "participant.left":
+      return `${time} — ${who} abandonó el partido`;
+    case "participant.spectator_on":
+      return `${time} — ${who} pasó a espectador`;
+    case "participant.spectator_off":
+      return `${time} — ${who} volvió como participante`;
+    case "waitlist.promoted":
+      return `${time} — ${who} promovió a alguien de la lista de espera`;
+    case "invite.sent":
+      return `${time} — ${who} invitó a un jugador`;
+    case "admin.promoted":
+      return `${time} — ${who} promovió a un admin`;
+    case "admin.demoted":
+      return `${time} — ${who} quitó admin`;
+    default:
+      return `${time} — ${entry.type}`;
+  }
+}
+
+// ── DEV logger hook ──
+
+function useDevMatchLogger() {
+  const countRef = useRef(0);
+  const [devStats, setDevStats] = useState<{
+    count: number;
+    lastSources: string[];
+  }>({ count: 0, lastSources: [] });
+
+  const devLog = (source: string) => {
+    if (!__DEV__) return;
+    countRef.current += 1;
+    const count = countRef.current;
+    setDevStats((prev) => ({
+      count,
+      lastSources: [...prev.lastSources.slice(-4), source],
+    }));
+  };
+
+  return { devStats, devLog };
+}
+
 // ── Component ──
 
 export default function MatchDetailScreen({ route, navigation }: Props) {
   const { matchId } = route.params;
   const query = useMatch(matchId);
   useLogoutOn401(query);
-  useMatchRealtime(matchId, query.data?.revision);
+  const { devStats, devLog } = useDevMatchLogger();
+  useMatchRealtime(matchId, query.data?.revision, devLog);
   const mutation = useMatchAction(matchId);
   const inviteMutation = useInviteToMatch(matchId);
   const lockMutation = useLockMatch(matchId);
@@ -160,7 +228,12 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   );
   const groupsQuery = useGroups();
   const groupDetailQuery = useGroup(selectedGroupId);
-  const batchInviteMutation = useBatchInviteFromGroup(matchId);
+  const batchInviteMutation = useBatchInviteFromGroup(matchId, {
+    onQueryInvalidated: () => devLog("afterMutation"),
+  });
+
+  const [actividadExpanded, setActividadExpanded] = useState(false);
+  const auditLogs = useMatchAuditLogs(matchId, { enabled: actividadExpanded });
 
   const { token, logout } = useAuth();
   const qc = useQueryClient();
@@ -192,6 +265,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       }
     };
   }, [isFetching, isLoading, displayMatch]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    console.log(`[MatchDetail] isFetching=${isFetching} count=${devStats.count}`);
+  }, [isFetching, devStats.count]);
 
   const handleAction = (action: string) => {
     if (!displayMatch) return;
@@ -280,6 +358,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         displayMatch.revision,
         randomUUID(),
       );
+      devLog("afterMutation");
       qc.invalidateQueries({ queryKey: ["match", matchId] });
       qc.invalidateQueries({ queryKey: ["matches"] });
     } catch (err) {
@@ -348,6 +427,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     setAdminActionLoading(true);
     try {
       await promoteAdmin(token, matchId, targetUserId, displayMatch.revision);
+      devLog("afterMutation");
       qc.invalidateQueries({ queryKey: ["match", matchId] });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -365,6 +445,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     setAdminActionLoading(true);
     try {
       await demoteAdmin(token, matchId, targetUserId, displayMatch.revision);
+      devLog("afterMutation");
       qc.invalidateQueries({ queryKey: ["match", matchId] });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -428,6 +509,15 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* DEV-only GET counter badge */}
+      {__DEV__ && (
+        <View style={styles.devBadge}>
+          <Text style={styles.devBadgeText}>
+            GET count: {devStats.count}{"  "}[{devStats.lastSources.join(", ")}]
+          </Text>
+        </View>
+      )}
+
       {/* Refetch indicator (debounced 250ms) */}
       {showUpdating && (
         <View style={styles.refreshBanner}>
@@ -845,6 +935,46 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           )}
         </View>
       )}
+      {/* Actividad section */}
+      <View style={styles.actividadBlock}>
+        <Pressable
+          style={styles.actividadHeader}
+          onPress={() => setActividadExpanded((v) => !v)}
+        >
+          <Text style={styles.actividadTitle}>
+            Actividad {actividadExpanded ? "▼" : "▶"}
+          </Text>
+        </Pressable>
+        {actividadExpanded && (
+          <>
+            {auditLogs.isLoading ? (
+              <ActivityIndicator size="small" style={{ marginTop: 8 }} />
+            ) : auditLogs.entries.length === 0 ? (
+              <Text style={styles.actividadEmpty}>Sin actividad registrada</Text>
+            ) : (
+              <>
+                {auditLogs.entries.map((entry) => (
+                  <Text key={entry.id} style={styles.actividadEntry}>
+                    {formatAuditLog(entry)}
+                  </Text>
+                ))}
+                {auditLogs.hasNextPage && (
+                  <Pressable
+                    style={styles.actividadMore}
+                    onPress={auditLogs.fetchNextPage}
+                    disabled={auditLogs.isFetchingNextPage}
+                  >
+                    <Text style={styles.actividadMoreText}>
+                      {auditLogs.isFetchingNextPage ? "Cargando…" : "Cargar más"}
+                    </Text>
+                  </Pressable>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </View>
+
       {/* Leave match button */}
       {!isCanceled && canLeave && (
         <View style={styles.leaveBlock}>
@@ -1349,6 +1479,55 @@ const styles = StyleSheet.create({
   batchInviteBtnText: {
     color: "#fff",
     fontSize: 14,
+    fontWeight: "600" as const,
+  },
+
+  // DEV badge
+  devBadge: {
+    backgroundColor: "#e8e8e8",
+    borderRadius: 4,
+    padding: 6,
+    marginBottom: 6,
+  },
+  devBadgeText: {
+    fontFamily: "monospace",
+    fontSize: 11,
+    color: "#444",
+  },
+
+  // Actividad section
+  actividadBlock: {
+    marginTop: 20,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 10,
+    padding: 12,
+  },
+  actividadHeader: {
+    paddingVertical: 4,
+  },
+  actividadTitle: {
+    fontSize: 15,
+    fontWeight: "700" as const,
+    color: "#333",
+  },
+  actividadEmpty: {
+    fontSize: 13,
+    color: "#999",
+    marginTop: 8,
+  },
+  actividadEntry: {
+    fontSize: 12,
+    color: "#555",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  actividadMore: {
+    marginTop: 10,
+    alignItems: "center" as const,
+  },
+  actividadMoreText: {
+    fontSize: 13,
+    color: "#1976d2",
     fontWeight: "600" as const,
   },
 

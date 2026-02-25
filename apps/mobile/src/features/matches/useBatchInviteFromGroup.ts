@@ -16,7 +16,7 @@ interface BatchInviteResult {
   errors: { username: string; error: string }[];
 }
 
-export function useBatchInviteFromGroup(matchId: string) {
+export function useBatchInviteFromGroup(matchId: string, options?: { onQueryInvalidated?: () => void }) {
   const { token } = useAuth();
   const queryClient = useQueryClient();
 
@@ -76,6 +76,7 @@ export function useBatchInviteFromGroup(matchId: string) {
       };
     },
     onSuccess: () => {
+      options?.onQueryInvalidated?.();
       queryClient.invalidateQueries({ queryKey: ['match', matchId] });
       queryClient.invalidateQueries({ queryKey: ['matches'] });
     },

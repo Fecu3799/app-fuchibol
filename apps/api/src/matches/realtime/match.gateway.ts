@@ -51,7 +51,8 @@ export class MatchGateway
   @SubscribeMessage('match.subscribe')
   async handleSubscribe(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { matchId: string },
+    // lastKnownRevision accepted for forward compatibility (gap detection)
+    @MessageBody() data: { matchId: string; lastKnownRevision?: number },
   ): Promise<void> {
     await client.join(`match:${data.matchId}`);
   }

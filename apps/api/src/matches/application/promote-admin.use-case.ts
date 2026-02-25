@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 export interface PromoteAdminInput {
   matchId: string;
@@ -18,7 +19,10 @@ export interface PromoteAdminInput {
 
 @Injectable()
 export class PromoteAdminUseCase {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: MatchAuditService,
+  ) {}
 
   async execute(input: PromoteAdminInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
@@ -78,6 +82,14 @@ export class PromoteAdminUseCase {
         where: { id: input.matchId },
         data: { revision: match.revision + 1 },
       });
+
+      await this.audit.log(
+        tx,
+        input.matchId,
+        input.actorId,
+        AuditLogType.ADMIN_PROMOTED,
+        { targetUserId: input.targetUserId },
+      );
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

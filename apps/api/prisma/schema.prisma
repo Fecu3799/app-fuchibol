@@ -31,6 +31,7 @@ model User {
   participations   MatchParticipant[]
   ownedGroups      Group[]       @relation("GroupOwner")
   groupMemberships GroupMember[]
+  auditLogs        MatchAuditLog[] @relation("UserAuditLogs")
 }
 
 model Match {
@@ -49,6 +50,7 @@ model Match {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   participants MatchParticipant[]
+  auditLogs    MatchAuditLog[]
 
   @@index([createdById], map: "Match_createdById_idx")
   @@index([startsAt], map: "Match_startsAt_idx")
@@ -105,6 +107,20 @@ model GroupMember {
 
   @@id([groupId, userId])
   @@index([userId])
+}
+
+model MatchAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  matchId   String   @db.Uuid
+  actorId   String?  @db.Uuid
+  type      String
+  metadata  Json
+  createdAt DateTime @default(now())
+
+  match Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  actor User?  @relation("UserAuditLogs", fields: [actorId], references: [id])
+
+  @@index([matchId, createdAt(sort: Desc)])
 }
 
 model IdempotencyRecord {

@@ -5,6 +5,8 @@ import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 
+const mockAudit = { log: jest.fn() } as any;
+
 const mockMatch = {
   id: 'match-1',
   title: 'Test',
@@ -70,7 +72,7 @@ describe('CancelMatchUseCase', () => {
   it('cancels a match successfully', async () => {
     const { prisma, tx } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency);
+    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
 
     const result = await useCase.execute({
       matchId: 'match-1',
@@ -96,7 +98,7 @@ describe('CancelMatchUseCase', () => {
       .fn()
       .mockResolvedValue({ ...mockMatch, status: 'canceled' });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency);
+    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
 
     const result = await useCase.execute({
       matchId: 'match-1',
@@ -112,7 +114,7 @@ describe('CancelMatchUseCase', () => {
   it('throws ForbiddenException for non-admin', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency);
+    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
 
     await expect(
       useCase.execute({
@@ -127,7 +129,7 @@ describe('CancelMatchUseCase', () => {
   it('throws REVISION_CONFLICT on mismatch', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency);
+    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
 
     await expect(
       useCase.execute({
@@ -147,7 +149,11 @@ describe('MATCH_CANCELLED guard', () => {
       .fn()
       .mockResolvedValue({ ...mockMatch, status: 'canceled' });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await expect(
       useCase.execute({

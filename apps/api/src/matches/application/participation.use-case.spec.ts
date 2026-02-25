@@ -2,6 +2,8 @@ import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+
+const mockAudit = { log: jest.fn() } as any;
 import {
   IdempotencyService,
   computeRequestHash,
@@ -71,7 +73,11 @@ describe('ConfirmParticipationUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     tx.matchParticipant.count = jest.fn().mockResolvedValue(0);
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     const result = await useCase.execute({
       matchId: 'match-1',
@@ -92,7 +98,11 @@ describe('ConfirmParticipationUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2); // capacity=2, full
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -111,7 +121,11 @@ describe('ConfirmParticipationUseCase', () => {
   it('rejects wrong expectedRevision -> 409', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await expect(
       useCase.execute({
@@ -135,7 +149,11 @@ describe('ConfirmParticipationUseCase', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ConfirmParticipationUseCase(prisma, idempotency);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     const result = await useCase.execute({
       matchId: 'match-1',

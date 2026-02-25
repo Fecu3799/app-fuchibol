@@ -57,6 +57,8 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 49. [Migración: Eliminar WITHDRAWN — unificar en SPECTATOR](#49-migración-eliminar-withdrawn--unificar-en-spectator)
 50. [Fix: Lock no bloquea confirm para usuarios INVITED](#50-fix-lock-no-bloquea-confirm-para-usuarios-invited)
 51. [Realtime: WebSocket (Socket.IO) para MatchDetail](#51-realtime-websocket-socketio-para-matchdetail)
+52. [Realtime: Coalesce refetch + Resync al reconectar](#52-realtime-coalesce-refetch--resync-al-reconectar)
+53. [Match Audit Logs + DEV Logging en MatchDetail](#53-match-audit-logs--dev-logging-en-matchdetail)
 
 ---
 
@@ -4121,4 +4123,220 @@ Notificar a los clientes conectados a un match cuando el estado cambia, sin envi
 - `apps/mobile/src/screens/MatchDetailScreen.tsx`: agrega `useMatchRealtime(matchId, query.data?.revision)`.
 
 ### Escalado multi-instancia
-En producción con múltiples instancias, los rooms de Socket.IO son locales a cada proceso. Para sincronizar entre instancias se debe configurar el adaptador Redis de Socket.IO (`@socket.io/redis-adapter`). Para el MVP de instancia única no es necesario.
+Ver [`docs/future-implementations.md`](./future-implementations.md).
+
+---
+
+## 52. Realtime: Coalesce refetch + Resync al reconectar
+
+### Objetivo
+Dos mejoras de robustez al hook `useMatchRealtime`:
+1. **Coalesce**: evitar N GETs seguidos cuando llegan múltiples eventos `match.updated` en ráfaga.
+2. **Resync al reconectar**: al recuperar la conexión WS, forzar un GET para converger con cambios perdidos durante la desconexión.
+
+### Coalesce (anti-spam)
+
+Estado manejado con `useRef` (no `useState`, para no generar re-renders):
+- `isFetchingRef`: hay un GET en vuelo
+- `pendingRefetchRef`: llegó un evento más reciente mientras el GET estaba en vuelo
+- `latestSeenRevisionRef`: mayor revision observada desde el servidor
+
+Algoritmo:
+1. Llega `match.updated { revision }` con `revision > localRevision`
+2. `latestSeenRevision = max(latestSeenRevision, revision)`
+3. Si `isFetching`: `pendingRefetch = true` → return (sin GET)
+4. Si no: ejecutar `refetchSnapshot()` (marca `isFetching = true`)
+5. En `finally` del GET: `isFetching = false`
+   - si `pendingRefetch` y `latestSeenRevision > localRevision`: limpiar flag y ejecutar 1 GET más
+   - caso contrario: limpiar flag
+
+Resultado: ráfaga de 10 eventos → máximo 2 GETs (1 en vuelo + 1 follow-up).
+
+### Resync al reconectar
+
+En el evento `connect` del socket (dispara en primera conexión y en cada reconexión):
+- Re-emitir `match.subscribe { matchId, lastKnownRevision }` al servidor
+- Ejecutar `refetchSnapshot()` (pasa por coalesce; si hay un GET en vuelo, lo coalescerá)
+
+Si el socket ya está conectado cuando el hook monta (singleton reutilizado), se emite `match.subscribe` inmediatamente sin GET extra (los datos ya están frescos del mount inicial).
+
+### Guard de unmount
+
+`mountedRef` inicializado en `true`, seteado a `false` en cleanup del primer `useEffect`. El `finally` de `refetchSnapshot` verifica `mountedRef.current` antes de mutar estado.
+
+### Archivos modificados
+- `apps/mobile/src/features/matches/useMatchRealtime.ts`: reescritura completa con coalesce + reconnect.
+- `apps/api/src/matches/realtime/match.gateway.ts`: `handleSubscribe` acepta `lastKnownRevision?: number` en payload (forward compatibility).
+
+---
+
+## 53. Match Audit Logs + DEV Logging en MatchDetail
+
+### Objetivo
+
+Dos entregables independientes:
+
+**A) DEV Logging**: observabilidad `__DEV__`-only en `MatchDetailScreen` para rastrear cuántos GETs se hacen al snapshot (ws, reconnect, afterMutation) y de qué fuente.
+
+**B) Match Audit Logs**: historial append-only de actividad por partido. DB → servicio → hooks en use-cases → endpoint GET → sección "Actividad" en mobile.
+
+---
+
+### Part A — DEV Logging
+
+#### Qué hace
+
+- `useDevMatchLogger()` — hook local en `MatchDetailScreen.tsx`:
+  - `countRef` acumula total de GETs en la sesión
+  - `devStats: { count, lastSources }` — estado que muestra el badge
+  - `devLog(source: string)` — guard `if (!__DEV__) return` antes de mutar estado
+
+- `useMatchRealtime` ahora acepta `devLog?: (source: 'ws' | 'reconnect') => void` (tercer parámetro opcional). Lo llama justo antes de `refetchSnapshot()` en `onUpdated` y `onConnect`.
+
+- DEV badge renderizado al tope del `ScrollView` cuando `__DEV__`:
+  ```
+  GET count: 3  [ws, afterMutation, ws]
+  ```
+
+- Llamadas `devLog('afterMutation')` antes de `invalidateQueries(['match', matchId])` en:
+  - `handleSpectatorToggle`
+  - `handlePromote`
+  - `handleDemote`
+  - `useBatchInviteFromGroup` (via callback `onQueryInvalidated`)
+
+- `useEffect` de isFetching: `console.log('[MatchDetail] isFetching=... count=...')` solo en DEV.
+
+#### Archivos modificados — Part A
+
+- `apps/mobile/src/features/matches/useMatchRealtime.ts`: parámetro `devLog` opcional
+- `apps/mobile/src/features/matches/useBatchInviteFromGroup.ts`: parámetro `options?: { onQueryInvalidated?: () => void }`
+- `apps/mobile/src/screens/MatchDetailScreen.tsx`: hook `useDevMatchLogger`, badge DEV, llamadas `devLog`
+
+---
+
+### Part B — Match Audit Logs
+
+#### B1: Schema Prisma + Migración
+
+Nuevo modelo `MatchAuditLog`:
+
+```prisma
+model MatchAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  matchId   String   @db.Uuid
+  actorId   String?  @db.Uuid
+  type      String
+  metadata  Json
+  createdAt DateTime @default(now())
+
+  match Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  actor User?  @relation("UserAuditLogs", fields: [actorId], references: [id])
+
+  @@index([matchId, createdAt(sort: Desc)])
+}
+```
+
+`type` es `String` (no enum Prisma) para evitar costo de migración al agregar nuevos eventos. Seguridad de tipos via constante `AuditLogType` en TypeScript.
+
+Migración: `apps/api/prisma/migrations/20260224120000_add_match_audit_log/migration.sql`
+
+#### B2: MatchAuditService + AuditLogType
+
+**`apps/api/src/matches/application/match-audit.service.ts`**:
+
+```typescript
+export const AuditLogType = {
+  PARTICIPANT_CONFIRMED:    'participant.confirmed',
+  PARTICIPANT_DECLINED:     'participant.declined',
+  PARTICIPANT_LEFT:         'participant.left',
+  PARTICIPANT_SPECTATOR_ON: 'participant.spectator_on',
+  PARTICIPANT_SPECTATOR_OFF:'participant.spectator_off',
+  WAITLIST_PROMOTED:        'waitlist.promoted',
+  MATCH_LOCKED:             'match.locked',
+  MATCH_UNLOCKED:           'match.unlocked',
+  MATCH_CANCELED:           'match.canceled',
+  MATCH_UPDATED_MAJOR:      'match.updated_major',
+  INVITE_SENT:              'invite.sent',
+  ADMIN_PROMOTED:           'admin.promoted',
+  ADMIN_DEMOTED:            'admin.demoted',
+} as const;
+```
+
+`MatchAuditService.log(tx, matchId, actorId, type, metadata)` — inserta dentro de la transacción existente. No lanza errores; el log es parte del mismo commit atómico.
+
+#### B3: Hooks en use-cases
+
+Los audit logs se insertan DENTRO de la transacción (`tx`), después del cambio de estado, antes de `buildMatchSnapshot`. Las rutas de retorno idempotente (early return sin cambio real) NO generan log.
+
+| Use-case | Evento | Metadata clave |
+|----------|--------|---------------|
+| `lock-match` | `match.locked` | `{}` |
+| `unlock-match` | `match.unlocked` | `{}` |
+| `cancel-match` | `match.canceled` | `{}` |
+| `update-match` | `match.updated_major` | `{ fieldsChanged, reconfirmationCount }` |
+| `confirm-participation` | `participant.confirmed` | `{ newStatus }` |
+| `decline-participation` | `participant.declined` | `{}` |
+| `leave-match` | `participant.left` + opcionalmente `waitlist.promoted` | `{ wasConfirmed }` / `{ promotedUserId }` |
+| `toggle-spectator` | `participant.spectator_on` / `spectator_off` + opcionalmente `waitlist.promoted` | `{ fromStatus }` |
+| `invite-participation` | `invite.sent` | `{ targetUserId, identifier? }` |
+| `promote-admin` | `admin.promoted` | `{ targetUserId }` |
+| `demote-admin` | `admin.demoted` | `{ targetUserId }` |
+
+#### B4: Endpoint GET
+
+```
+GET /api/v1/matches/:id/audit-logs?page=1&pageSize=20
+Authorization: Bearer <token>
+```
+
+Respuesta:
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "type": "match.locked",
+      "metadata": {},
+      "actor": { "id": "uuid", "username": "facu" },
+      "createdAt": "2026-02-24T12:00:00.000Z"
+    }
+  ],
+  "pageInfo": { "page": 1, "pageSize": 20, "totalItems": 5, "totalPages": 1, "hasNextPage": false, "hasPrevPage": false }
+}
+```
+
+#### B5: Mobile — Sección "Actividad"
+
+- Tipos en `apps/mobile/src/types/api.ts`: `AuditLogActor`, `AuditLogEntry`, `GetMatchAuditLogsResponse`
+- `apps/mobile/src/features/matches/matchesClient.ts`: `getMatchAuditLogs(token, matchId, params?)`
+- `apps/mobile/src/features/matches/useMatchAuditLogs.ts`: hook con `useInfiniteQuery`, retorna `{ entries, hasNextPage, fetchNextPage, isFetchingNextPage, isLoading }`. Acepta `enabled?: boolean` para lazy-fetch.
+- `apps/mobile/src/screens/MatchDetailScreen.tsx`: sección "Actividad" colapsable antes de botones Leave/Cancel. Formateador `formatAuditLog(entry)` en español.
+
+#### E2E Tests
+
+**`apps/api/test/e2e/match-audit.e2e-spec.ts`** — 5 tests:
+1. lock/unlock → audit logs contienen `match.locked` y `match.unlocked`
+2. leave con waitlisted → logs `participant.left` + `waitlist.promoted`
+3. update major (location) → log `match.updated_major` con `fieldsChanged`
+4. GET audit-logs paginado → devuelve `items` y `pageInfo` correctos
+5. GET audit-logs sin auth → 401
+
+#### Archivos creados/modificados
+
+| Archivo | Rol |
+|---------|-----|
+| `apps/api/prisma/schema.prisma` | +MatchAuditLog model + relaciones en Match y User |
+| `apps/api/prisma/migrations/20260224120000_add_match_audit_log/migration.sql` | Migración DB |
+| `apps/api/src/matches/application/match-audit.service.ts` | Servicio de audit + constantes AuditLogType |
+| `apps/api/src/matches/application/get-match-audit-logs.query.ts` | Query paginada |
+| `apps/api/src/matches/api/dto/audit-logs-query.dto.ts` | DTO params |
+| `apps/api/src/matches/matches.module.ts` | +MatchAuditService +GetMatchAuditLogsQuery |
+| `apps/api/src/matches/api/matches.controller.ts` | +GET :id/audit-logs +GetMatchAuditLogsQuery |
+| 11 use-cases de mutación | Inyección de MatchAuditService + llamadas `audit.log()` |
+| `apps/mobile/src/types/api.ts` | +AuditLogActor +AuditLogEntry +GetMatchAuditLogsResponse |
+| `apps/mobile/src/features/matches/matchesClient.ts` | +getMatchAuditLogs |
+| `apps/mobile/src/features/matches/useMatchAuditLogs.ts` | Hook nuevo |
+| `apps/mobile/src/features/matches/useBatchInviteFromGroup.ts` | +onQueryInvalidated callback |
+| `apps/mobile/src/features/matches/useMatchRealtime.ts` | +devLog param opcional |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | +useDevMatchLogger +DEV badge +Actividad section |
+| `apps/api/test/e2e/match-audit.e2e-spec.ts` | 5 tests E2E |

@@ -29,7 +29,19 @@
       "Bash(git stash:*)",
       "Bash(pnpm -C apps/api test:*)",
       "Bash(pnpm -C apps/api build:*)",
-      "Bash(pnpm -C apps/mobile exec tsc:*)"
+      "Bash(pnpm -C apps/mobile exec tsc:*)",
+      "Bash(pnpm -C apps/api exec tsc:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(pnpm -C apps/api exec prisma migrate dev:*)",
+      "Bash(grep:*)",
+      "Bash(pnpm -C apps/api exec prisma migrate:*)",
+      "Bash(pnpm -C apps/api exec prisma generate:*)",
+      "Bash(pnpm -C apps/api test:e2e:*)",
+      "Bash(npx --prefix /Users/facu3799/fuchibol-app/apps/api tsc:*)",
+      "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api exec tsc:*)",
+      "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api test)",
+      "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/mobile exec tsc:*)",
+      "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api test:e2e)"
     ]
   }
 }

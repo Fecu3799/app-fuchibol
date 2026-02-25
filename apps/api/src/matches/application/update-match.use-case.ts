@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 export interface UpdateMatchInput {
   matchId: string;
@@ -20,7 +21,10 @@ export interface UpdateMatchInput {
 
 @Injectable()
 export class UpdateMatchUseCase {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: MatchAuditService,
+  ) {}
 
   async execute(input: UpdateMatchInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
@@ -88,7 +92,7 @@ export class UpdateMatchUseCase {
 
       if (isMajorChange) {
         // CONFIRMED -> INVITED (reconfirmation), except creator stays CONFIRMED
-        await tx.matchParticipant.updateMany({
+        const reconfirmResult = await tx.matchParticipant.updateMany({
           where: {
             matchId: input.matchId,
             status: 'CONFIRMED',
@@ -99,6 +103,17 @@ export class UpdateMatchUseCase {
             confirmedAt: null,
           },
         });
+
+        await this.audit.log(
+          tx,
+          input.matchId,
+          input.actorId,
+          AuditLogType.MATCH_UPDATED_MAJOR,
+          {
+            fieldsChanged: Object.keys(data).filter((k) => k !== 'revision'),
+            reconfirmationCount: reconfirmResult.count,
+          },
+        );
       }
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);

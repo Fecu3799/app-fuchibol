@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { ToggleSpectatorUseCase } from './toggle-spectator.use-case';
 import { LeaveMatchUseCase } from './leave-match.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+
+const mockAudit = { log: jest.fn() } as any;
 import {
   IdempotencyService,
   computeRequestHash,
@@ -77,7 +79,7 @@ describe('ToggleSpectatorUseCase', () => {
     // No existing participation
     tx.matchParticipant.findUnique = jest.fn().mockResolvedValue(null);
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ToggleSpectatorUseCase(prisma, idempotency);
+    const useCase = new ToggleSpectatorUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -100,7 +102,7 @@ describe('ToggleSpectatorUseCase', () => {
       status: 'SPECTATOR',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ToggleSpectatorUseCase(prisma, idempotency);
+    const useCase = new ToggleSpectatorUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -127,7 +129,7 @@ describe('ToggleSpectatorUseCase', () => {
     const waitlisted = { id: 'p-2', status: 'WAITLISTED', waitlistPosition: 1 };
     tx.matchParticipant.findFirst = jest.fn().mockResolvedValue(waitlisted);
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ToggleSpectatorUseCase(prisma, idempotency);
+    const useCase = new ToggleSpectatorUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -157,7 +159,7 @@ describe('ToggleSpectatorUseCase', () => {
       status: 'INVITED',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ToggleSpectatorUseCase(prisma, idempotency);
+    const useCase = new ToggleSpectatorUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -177,7 +179,7 @@ describe('ToggleSpectatorUseCase', () => {
   it('rejects wrong revision → 409', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ToggleSpectatorUseCase(prisma, idempotency);
+    const useCase = new ToggleSpectatorUseCase(prisma, idempotency, mockAudit);
 
     await expect(
       useCase.execute({
@@ -195,7 +197,7 @@ describe('ToggleSpectatorUseCase', () => {
       .fn()
       .mockResolvedValue({ ...mockMatch, status: 'canceled' });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new ToggleSpectatorUseCase(prisma, idempotency);
+    const useCase = new ToggleSpectatorUseCase(prisma, idempotency, mockAudit);
 
     await expect(
       useCase.execute({
@@ -223,7 +225,7 @@ describe('LeaveMatchUseCase — creator without participation row', () => {
     };
     tx.matchParticipant.findFirst = jest.fn().mockResolvedValue(adminCandidate);
     const idempotency = buildIdempotency(prisma);
-    const useCase = new LeaveMatchUseCase(prisma, idempotency);
+    const useCase = new LeaveMatchUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -255,7 +257,7 @@ describe('LeaveMatchUseCase — creator without participation row', () => {
     // No other admin
     tx.matchParticipant.findFirst = jest.fn().mockResolvedValue(null);
     const idempotency = buildIdempotency(prisma);
-    const useCase = new LeaveMatchUseCase(prisma, idempotency);
+    const useCase = new LeaveMatchUseCase(prisma, idempotency, mockAudit);
 
     await expect(
       useCase.execute({
@@ -283,7 +285,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
       userId: 'user-1',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new LeaveMatchUseCase(prisma, idempotency);
+    const useCase = new LeaveMatchUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -315,7 +317,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
       userId: 'user-1',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new LeaveMatchUseCase(prisma, idempotency);
+    const useCase = new LeaveMatchUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -342,7 +344,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
       userId: 'user-1',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new LeaveMatchUseCase(prisma, idempotency);
+    const useCase = new LeaveMatchUseCase(prisma, idempotency, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',

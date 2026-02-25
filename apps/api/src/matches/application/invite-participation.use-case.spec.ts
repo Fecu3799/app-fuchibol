@@ -5,6 +5,8 @@ import { InviteParticipationUseCase } from './invite-participation.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 
+const mockAudit = { log: jest.fn() } as any;
+
 const mockMatch = {
   id: 'match-1',
   title: 'Test',
@@ -65,7 +67,11 @@ describe('InviteParticipationUseCase', () => {
   it('invite by userId works (backward compat)', async () => {
     const { prisma, tx } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -90,7 +96,11 @@ describe('InviteParticipationUseCase', () => {
       email: 'john@test.com',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -117,7 +127,11 @@ describe('InviteParticipationUseCase', () => {
       username: 'janedoe',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -139,7 +153,11 @@ describe('InviteParticipationUseCase', () => {
       email: 'mike@test.com',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -158,7 +176,11 @@ describe('InviteParticipationUseCase', () => {
     const { prisma } = buildTxPrisma();
     (prisma.client.user.findFirst as jest.Mock).mockResolvedValue(null);
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await expect(
       useCase.execute({
@@ -174,7 +196,11 @@ describe('InviteParticipationUseCase', () => {
   it('throws 409 SELF_INVITE when inviting self', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await expect(
       useCase.execute({
@@ -194,7 +220,11 @@ describe('InviteParticipationUseCase', () => {
       status: 'CONFIRMED',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     await expect(
       useCase.execute({
@@ -214,7 +244,11 @@ describe('InviteParticipationUseCase', () => {
       status: 'INVITED',
     });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new InviteParticipationUseCase(prisma, idempotency);
+    const useCase = new InviteParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
 
     const result = await useCase.execute({
       matchId: 'match-1',

@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
+import { MatchAuditService, AuditLogType } from './match-audit.service';
 
 export interface DemoteAdminInput {
   matchId: string;
@@ -18,7 +19,10 @@ export interface DemoteAdminInput {
 
 @Injectable()
 export class DemoteAdminUseCase {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: MatchAuditService,
+  ) {}
 
   async execute(input: DemoteAdminInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
@@ -74,6 +78,14 @@ export class DemoteAdminUseCase {
         where: { id: input.matchId },
         data: { revision: match.revision + 1 },
       });
+
+      await this.audit.log(
+        tx,
+        input.matchId,
+        input.actorId,
+        AuditLogType.ADMIN_DEMOTED,
+        { targetUserId: input.targetUserId },
+      );
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

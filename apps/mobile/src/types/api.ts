@@ -129,6 +129,46 @@ export interface CreateGroupResponse {
   createdAt: string;
 }
 
+// ── Match Audit Logs ──
+
+export interface AuditLogActor {
+  id: string;
+  username: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  type: string;
+  metadata: Record<string, unknown>;
+  actor: AuditLogActor | null;
+  createdAt: string;
+}
+
+export interface GetMatchAuditLogsResponse {
+  items: AuditLogEntry[];
+  pageInfo: PageInfo;
+}
+
+// ── Audit Logs ──
+
+export interface AuditLogActor {
+  id: string;
+  username: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  type: string;
+  metadata: Record<string, unknown>;
+  actor: AuditLogActor | null;
+  createdAt: string;
+}
+
+export interface GetMatchAuditLogsResponse {
+  items: AuditLogEntry[];
+  pageInfo: PageInfo;
+}
+
 // ── Errors ──
 
 export interface ApiErrorBody {
