@@ -32,6 +32,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 24. [Match Audit Logs + Banners en MatchDetail](#24-match-audit-logs--banners-en-matchdetail)
 25. [Push Notifications Step 1: plumbing + prueba e2e](#25-push-notifications-step-1-plumbing--prueba-e2e)
 26. [Push Notifications Step 2: triggers de dominio + dedupe](#26-push-notifications-step-2-triggers-de-dominio--dedupe)
+27. [Auth: Sessions + Refresh Rotation + Email Verification (Sprint 1)](#27-auth-sessions--refresh-rotation--email-verification-sprint-1)
 
 ---
 
@@ -753,4 +754,88 @@ Todos los payloads incluyen `data: { type, matchId }` para que el handler de tap
 ### Extensión futura
 
 - **FCM/APNs**: implementar nueva clase `FcmNotificationProvider implements NotificationProvider`, cambiar el `useClass` en `PushModule`. Cero cambios en dominio.
+
+---
+
+## 27. Auth: Sessions + Refresh Rotation + Email Verification (Sprint 1)
+
+### Que se hizo
+
+Upgrade del módulo auth a autenticación production-quality:
+- Access tokens de 15 minutos (antes 7 días)
+- Refresh tokens opacos con rotación y reuse-detection
+- Sesiones multi-dispositivo persistidas en DB (`AuthSession`)
+- Verificación de email obligatoria antes del primer login
+- Login por email **o** username (campo `identifier`)
+
+### Migración
+
+`20260226225341_auth_sessions_email_verify`
+
+```sql
+-- User: +emailVerifiedAt DateTime?
+-- New: AuthSession (id, userId, refreshTokenHash, expiresAt, revokedAt, device info, ...)
+-- New: EmailVerificationToken (id, userId, tokenHash, expiresAt, usedAt)
+```
+
+### Formato del refresh token
+
+```
+refreshToken = "${sessionId}.${secret}"
+```
+
+- `sessionId`: UUID — lookup directo sin scan
+- `secret`: `crypto.randomBytes(32).toString('base64url')` — validado contra argon2 hash
+- DB guarda: `refreshTokenHash = argon2.hash(secret)` (rotate: update en la misma session)
+
+Email verification token: `crypto.randomBytes(32).toString('hex')`, DB guarda `sha256(token)` (determinístico → lookup by hash).
+
+### Reuse detection
+
+Si `argon2.verify(hash, secret) === false` en un refresh válido: se revocan **todas** las sesiones del usuario y se responde `401 REFRESH_REUSED`.
+
+### Archivos nuevos/modificados
+
+| Archivo | Acción |
+|---------|--------|
+| `prisma/schema.prisma` | +emailVerifiedAt en User, +AuthSession, +EmailVerificationToken |
+| `auth/infra/token.service.ts` | nuevo — genera/parsea/hashea refresh y email tokens |
+| `auth/infra/email.service.ts` | nuevo — abstract EmailService + DevEmailService (logs to console) |
+| `auth/infra/jwt.strategy.ts` | +sid claim en validate() |
+| `auth/interfaces/actor-payload.interface.ts` | +sessionId?: string |
+| `auth/@types/express/index.d.ts` | +sessionId?: string en req.user |
+| `auth/application/register.use-case.ts` | no retorna JWT; crea emailToken; llama EmailService |
+| `auth/application/login.use-case.ts` | identifier (email/username); check emailVerifiedAt; crea AuthSession; retorna accessToken + refreshToken |
+| `auth/application/refresh.use-case.ts` | nuevo — valida sesión, rotate, reuse detection |
+| `auth/application/logout.use-case.ts` | nuevo — revoca sesión actual por sid |
+| `auth/application/logout-all.use-case.ts` | nuevo — revoca todas las sesiones del usuario |
+| `auth/application/list-sessions.query.ts` | nuevo — lista sesiones activas |
+| `auth/application/revoke-session.command.ts` | nuevo — revoca sesión específica con ownership check |
+| `auth/application/request-email-verify.use-case.ts` | nuevo — invalida tokens anteriores, crea nuevo, envía email |
+| `auth/application/confirm-email-verify.use-case.ts` | nuevo — valida hash, marca usedAt, setea emailVerifiedAt |
+| `auth/api/auth.controller.ts` | +/refresh, /logout, /logout-all |
+| `auth/api/sessions.controller.ts` | nuevo — GET /auth/sessions, DELETE /auth/sessions/:id |
+| `auth/api/email-verify.controller.ts` | nuevo — POST /auth/email/verify/request y /confirm |
+| `auth/api/dto/login.dto.ts` | email → identifier (sin @IsEmail); +device opcional |
+| `auth/api/dto/refresh.dto.ts` | nuevo |
+| `auth/api/dto/request-email-verify.dto.ts` | nuevo |
+| `auth/api/dto/confirm-email-verify.dto.ts` | nuevo |
+| `auth/auth.module.ts` | registra todos los nuevos providers y controllers; JWT default 15m |
+| `common/filters/api-exception.filter.ts` | +EMAIL_NOT_VERIFIED (403), +REFRESH_REUSED/SESSION_REVOKED/REFRESH_EXPIRED (401) |
+| `common/guards/app-throttle.guard.ts` | email → identifier en login tracker |
+| `.env.example` | JWT_EXPIRES_IN="15m" + REFRESH_TOKEN_TTL_DAYS=30 |
+
+### Nuevos endpoints
+
+| Endpoint | Auth | Throttle |
+|----------|------|----------|
+| `POST /auth/register` | — | mutations |
+| `POST /auth/login` | — | login |
+| `POST /auth/refresh` | — | login |
+| `POST /auth/logout` | JWT | — |
+| `POST /auth/logout-all` | JWT | — |
+| `GET /auth/sessions` | JWT | — |
+| `DELETE /auth/sessions/:id` | JWT | — |
+| `POST /auth/email/verify/request` | — | login |
+| `POST /auth/email/verify/confirm` | — | — |
 - **Job queue (BullMQ)**: si se necesita garantía de entrega, envolver los `void service.onX()` en jobs de Redis. El `MatchNotificationService` queda igual, solo cambia quién lo invoca (worker vs use-case).

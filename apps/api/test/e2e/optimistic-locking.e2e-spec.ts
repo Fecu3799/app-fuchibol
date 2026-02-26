@@ -24,7 +24,7 @@ describe('Optimistic Locking (e2e)', () => {
   });
 
   it('PATCH with correct revision → 200', async () => {
-    const { token } = await createAuthenticatedUser(server);
+    const { token } = await createAuthenticatedUser(app);
     const { id, revision } = await createMatch(server, token);
 
     const res = await request(server)
@@ -37,7 +37,7 @@ describe('Optimistic Locking (e2e)', () => {
   });
 
   it('PATCH with stale revision → 409 REVISION_CONFLICT', async () => {
-    const { token } = await createAuthenticatedUser(server);
+    const { token } = await createAuthenticatedUser(app);
     const { id, revision } = await createMatch(server, token);
 
     // First update succeeds

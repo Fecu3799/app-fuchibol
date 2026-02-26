@@ -24,8 +24,8 @@ describe('Idempotency (e2e)', () => {
   });
 
   it('replay same idempotency key + same body → same response', async () => {
-    const owner = await createAuthenticatedUser(server, 'owner-idem');
-    const user = await createAuthenticatedUser(server, 'user-idem');
+    const owner = await createAuthenticatedUser(app, 'owner-idem');
+    const user = await createAuthenticatedUser(app, 'user-idem');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Owner invites user
@@ -64,8 +64,8 @@ describe('Idempotency (e2e)', () => {
   });
 
   it('same idempotency key + different body → 409 IDEMPOTENCY_KEY_REUSE', async () => {
-    const owner = await createAuthenticatedUser(server, 'owner-idem2');
-    const user = await createAuthenticatedUser(server, 'user-idem2');
+    const owner = await createAuthenticatedUser(app, 'owner-idem2');
+    const user = await createAuthenticatedUser(app, 'user-idem2');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Owner invites user
@@ -99,7 +99,7 @@ describe('Idempotency (e2e)', () => {
   });
 
   it('missing idempotency key → 422', async () => {
-    const owner = await createAuthenticatedUser(server, 'owner-idem3');
+    const owner = await createAuthenticatedUser(app, 'owner-idem3');
     const { id, revision } = await createMatch(server, owner.token);
 
     const res = await request(server)

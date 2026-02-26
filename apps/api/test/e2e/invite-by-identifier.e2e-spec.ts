@@ -36,8 +36,8 @@ describe('Invite by identifier (e2e)', () => {
   }
 
   it('invite by username creates INVITED participant', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin1');
-    const target = await createAuthenticatedUser(server, 'inv-target1');
+    const admin = await createAuthenticatedUser(app, 'inv-admin1');
+    const target = await createAuthenticatedUser(app, 'inv-target1');
     const match = await createMatch(admin.token);
 
     // Get target's username from register response — we registered via helper,
@@ -63,8 +63,8 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('invite by @username works', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin2');
-    const target = await createAuthenticatedUser(server, 'inv-target2');
+    const admin = await createAuthenticatedUser(app, 'inv-admin2');
+    const target = await createAuthenticatedUser(app, 'inv-target2');
     const match = await createMatch(admin.token);
 
     const meRes = await request(server)
@@ -82,8 +82,8 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('invite by email works', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin3');
-    const target = await createAuthenticatedUser(server, 'inv-target3');
+    const admin = await createAuthenticatedUser(app, 'inv-admin3');
+    const target = await createAuthenticatedUser(app, 'inv-target3');
     const match = await createMatch(admin.token);
 
     const res = await request(server)
@@ -101,7 +101,7 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('404 USER_NOT_FOUND for unknown identifier', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin4');
+    const admin = await createAuthenticatedUser(app, 'inv-admin4');
     const match = await createMatch(admin.token);
 
     const res = await request(server)
@@ -118,7 +118,7 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('409 SELF_INVITE when admin invites self', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin5');
+    const admin = await createAuthenticatedUser(app, 'inv-admin5');
     const match = await createMatch(admin.token);
 
     const meRes = await request(server)
@@ -139,8 +139,8 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('409 ALREADY_PARTICIPANT when user is already confirmed', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin6');
-    const target = await createAuthenticatedUser(server, 'inv-target6');
+    const admin = await createAuthenticatedUser(app, 'inv-admin6');
+    const target = await createAuthenticatedUser(app, 'inv-target6');
     const match = await createMatch(admin.token);
 
     // Invite first
@@ -174,8 +174,8 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('backward compat: invite by userId still works', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin7');
-    const target = await createAuthenticatedUser(server, 'inv-target7');
+    const admin = await createAuthenticatedUser(app, 'inv-admin7');
+    const target = await createAuthenticatedUser(app, 'inv-target7');
     const match = await createMatch(admin.token);
 
     const res = await request(server)
@@ -188,8 +188,8 @@ describe('Invite by identifier (e2e)', () => {
   });
 
   it('snapshot reflects invited user in participants', async () => {
-    const admin = await createAuthenticatedUser(server, 'inv-admin8');
-    const target = await createAuthenticatedUser(server, 'inv-target8');
+    const admin = await createAuthenticatedUser(app, 'inv-admin8');
+    const target = await createAuthenticatedUser(app, 'inv-target8');
     const match = await createMatch(admin.token);
 
     const res = await request(server)

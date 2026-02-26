@@ -46,6 +46,16 @@ const DOMAIN_UNPROCESSABLE_CODES = new Set([
   'NOT_PARTICIPANT',
 ]);
 
+/** Known domain error codes sent as ForbiddenException message strings. */
+const DOMAIN_FORBIDDEN_CODES = new Set(['EMAIL_NOT_VERIFIED']);
+
+/** Known domain error codes sent as UnauthorizedException message strings. */
+const DOMAIN_UNAUTHORIZED_CODES = new Set([
+  'REFRESH_REUSED',
+  'SESSION_REVOKED',
+  'REFRESH_EXPIRED',
+]);
+
 /** Known domain error codes sent as NotFoundException message strings. */
 const DOMAIN_NOT_FOUND_CODES = new Set(['USER_NOT_FOUND']);
 
@@ -58,6 +68,8 @@ function resolveCode(status: number, response: unknown): string {
         if (msg.startsWith('CAPACITY_BELOW_CONFIRMED'))
           return 'CAPACITY_BELOW_CONFIRMED';
       }
+      if (status === 403 && DOMAIN_FORBIDDEN_CODES.has(msg)) return msg;
+      if (status === 401 && DOMAIN_UNAUTHORIZED_CODES.has(msg)) return msg;
       if (status === 422 && DOMAIN_UNPROCESSABLE_CODES.has(msg)) return msg;
       if (status === 404 && DOMAIN_NOT_FOUND_CODES.has(msg)) return msg;
     }

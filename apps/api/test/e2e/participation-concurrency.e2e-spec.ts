@@ -116,10 +116,10 @@ describe('Participation Concurrency (e2e)', () => {
   /*  1) Last slot race                                                */
   /* ================================================================ */
   it('last slot race — confirmedCount never exceeds capacity', async () => {
-    const owner = await createAuthenticatedUser(server, 'race-owner');
-    const u1 = await createAuthenticatedUser(server, 'race-u1');
-    const u2 = await createAuthenticatedUser(server, 'race-u2');
-    const u3 = await createAuthenticatedUser(server, 'race-u3');
+    const owner = await createAuthenticatedUser(app, 'race-owner');
+    const u1 = await createAuthenticatedUser(app, 'race-u1');
+    const u2 = await createAuthenticatedUser(app, 'race-u2');
+    const u3 = await createAuthenticatedUser(app, 'race-u3');
 
     const { id } = await createMatch(server, owner.token, { capacity: 2 });
 
@@ -162,8 +162,8 @@ describe('Participation Concurrency (e2e)', () => {
   /*  2) Double confirm same user concurrent                           */
   /* ================================================================ */
   it('double confirm same user — only one participation row, consistent state', async () => {
-    const owner = await createAuthenticatedUser(server, 'dbl-owner');
-    const u1 = await createAuthenticatedUser(server, 'dbl-u1');
+    const owner = await createAuthenticatedUser(app, 'dbl-owner');
+    const u1 = await createAuthenticatedUser(app, 'dbl-u1');
 
     const { id } = await createMatch(server, owner.token, { capacity: 5 });
     let rev = 1;
@@ -191,10 +191,10 @@ describe('Participation Concurrency (e2e)', () => {
   /*  3) FIFO promotion under race                                     */
   /* ================================================================ */
   it('FIFO promotion — spectator toggle promotes first waitlisted, not second', async () => {
-    const owner = await createAuthenticatedUser(server, 'fifo-owner');
-    const u1 = await createAuthenticatedUser(server, 'fifo-u1');
-    const u2 = await createAuthenticatedUser(server, 'fifo-u2');
-    const u3 = await createAuthenticatedUser(server, 'fifo-u3');
+    const owner = await createAuthenticatedUser(app, 'fifo-owner');
+    const u1 = await createAuthenticatedUser(app, 'fifo-u1');
+    const u2 = await createAuthenticatedUser(app, 'fifo-u2');
+    const u3 = await createAuthenticatedUser(app, 'fifo-u3');
 
     const { id } = await createMatch(server, owner.token, { capacity: 1 });
 
@@ -262,9 +262,9 @@ describe('Participation Concurrency (e2e)', () => {
   /*  4) Withdraw / Confirm interleaving                               */
   /* ================================================================ */
   it('spectator + confirm interleaving — total confirmed never exceeds capacity', async () => {
-    const owner = await createAuthenticatedUser(server, 'intl-owner');
-    const u1 = await createAuthenticatedUser(server, 'intl-u1');
-    const u2 = await createAuthenticatedUser(server, 'intl-u2');
+    const owner = await createAuthenticatedUser(app, 'intl-owner');
+    const u1 = await createAuthenticatedUser(app, 'intl-u1');
+    const u2 = await createAuthenticatedUser(app, 'intl-u2');
 
     const { id } = await createMatch(server, owner.token, { capacity: 1 });
 
@@ -313,7 +313,7 @@ describe('Participation Concurrency (e2e)', () => {
   /*  5) Optimistic locking race on PATCH                              */
   /* ================================================================ */
   it('concurrent PATCH — exactly one 200, one 409 REVISION_CONFLICT', async () => {
-    const owner = await createAuthenticatedUser(server, 'lock-owner');
+    const owner = await createAuthenticatedUser(app, 'lock-owner');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Two PATCHes with the same revision in parallel
@@ -350,10 +350,10 @@ describe('Participation Concurrency (e2e)', () => {
   /*  Stress: many concurrent confirms                                 */
   /* ================================================================ */
   it('stress — 5 users race to confirm capacity=3, never exceed capacity', async () => {
-    const owner = await createAuthenticatedUser(server, 'stress-owner');
+    const owner = await createAuthenticatedUser(app, 'stress-owner');
     const users: AuthUser[] = [];
     for (let i = 0; i < 5; i++) {
-      users.push(await createAuthenticatedUser(server, `stress-u${i}`));
+      users.push(await createAuthenticatedUser(app, `stress-u${i}`));
     }
 
     const { id } = await createMatch(server, owner.token, { capacity: 3 });

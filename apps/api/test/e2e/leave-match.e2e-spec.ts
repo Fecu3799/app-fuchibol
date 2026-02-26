@@ -58,8 +58,8 @@ describe('Leave Match (e2e)', () => {
   });
 
   it('non-creator leave → hard deletes participation row', async () => {
-    const creator = await createAuthenticatedUser(server, 'lv-creator');
-    const user = await createAuthenticatedUser(server, 'lv-user');
+    const creator = await createAuthenticatedUser(app, 'lv-creator');
+    const user = await createAuthenticatedUser(app, 'lv-user');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -96,8 +96,8 @@ describe('Leave Match (e2e)', () => {
   });
 
   it('leave is idempotent (no row → returns snapshot)', async () => {
-    const creator = await createAuthenticatedUser(server, 'id-creator');
-    const user = await createAuthenticatedUser(server, 'id-user');
+    const creator = await createAuthenticatedUser(app, 'id-creator');
+    const user = await createAuthenticatedUser(app, 'id-user');
     const { id } = await createMatch(server, creator.token);
 
     // User is not a participant — leave should be idempotent
@@ -112,8 +112,8 @@ describe('Leave Match (e2e)', () => {
   });
 
   it('re-invite after leave works (row is recreated)', async () => {
-    const creator = await createAuthenticatedUser(server, 'ri-creator');
-    const user = await createAuthenticatedUser(server, 'ri-user');
+    const creator = await createAuthenticatedUser(app, 'ri-creator');
+    const user = await createAuthenticatedUser(app, 'ri-user');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -137,7 +137,7 @@ describe('Leave Match (e2e)', () => {
   });
 
   it('creator leave without admin → 422 CREATOR_TRANSFER_REQUIRED', async () => {
-    const creator = await createAuthenticatedUser(server, 'ct-creator');
+    const creator = await createAuthenticatedUser(app, 'ct-creator');
     const { id } = await createMatch(server, creator.token);
 
     // Creator confirms self
@@ -158,8 +158,8 @@ describe('Leave Match (e2e)', () => {
   });
 
   it('creator leave with admin → transfers and hard deletes creator', async () => {
-    const creator = await createAuthenticatedUser(server, 'tx-creator');
-    const admin = await createAuthenticatedUser(server, 'tx-admin');
+    const creator = await createAuthenticatedUser(app, 'tx-creator');
+    const admin = await createAuthenticatedUser(app, 'tx-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -206,10 +206,10 @@ describe('Leave Match (e2e)', () => {
   });
 
   it('leave confirmed promotes waitlist', async () => {
-    const creator = await createAuthenticatedUser(server, 'wl-creator');
-    const a = await createAuthenticatedUser(server, 'wl-a');
-    const b = await createAuthenticatedUser(server, 'wl-b');
-    const c = await createAuthenticatedUser(server, 'wl-c');
+    const creator = await createAuthenticatedUser(app, 'wl-creator');
+    const a = await createAuthenticatedUser(app, 'wl-a');
+    const b = await createAuthenticatedUser(app, 'wl-b');
+    const c = await createAuthenticatedUser(app, 'wl-c');
     const { id } = await createMatch(server, creator.token, { capacity: 2 });
 
     let rev = 1;

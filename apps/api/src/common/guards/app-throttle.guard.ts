@@ -16,13 +16,13 @@ export class AppThrottleGuard extends ThrottlerGuard {
 
     const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
 
-    // Login endpoint → combine IP + normalized email for brute-force protection
+    // Login endpoint → combine IP + normalized identifier for brute-force protection
     if (req.path.endsWith('/auth/login') && req.method === 'POST') {
-      const email =
-        typeof req.body?.email === 'string'
-          ? req.body.email.toLowerCase().trim()
+      const identifier =
+        typeof req.body?.identifier === 'string'
+          ? req.body.identifier.toLowerCase().trim()
           : '';
-      if (email) return Promise.resolve(`${ip}:${email}`);
+      if (identifier) return Promise.resolve(`${ip}:${identifier}`);
     }
 
     return Promise.resolve(ip);

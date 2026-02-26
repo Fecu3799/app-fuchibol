@@ -1,29 +1,48 @@
+import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import type { Server } from 'http';
+import { verifyEmailInDb } from './db.helper';
 
-export function registerUser(server: Server, email: string, password: string) {
+export function registerUser(
+  server: ReturnType<INestApplication['getHttpServer']>,
+  email: string,
+  password: string,
+  username?: string,
+) {
   return request(server)
     .post('/api/v1/auth/register')
-    .send({ email, password });
+    .send({ email, password, ...(username ? { username } : {}) });
 }
 
-export function loginUser(server: Server, email: string, password: string) {
-  return request(server).post('/api/v1/auth/login').send({ email, password });
+export function loginUser(
+  server: ReturnType<INestApplication['getHttpServer']>,
+  identifier: string,
+  password: string,
+) {
+  return request(server)
+    .post('/api/v1/auth/login')
+    .send({ identifier, password });
 }
 
 export async function createAuthenticatedUser(
-  server: Server,
+  app: INestApplication,
   suffix = Math.random().toString(36).slice(2, 8),
 ) {
+  const server = app.getHttpServer();
   const email = `e2e-${suffix}@test.com`;
   const password = 'Test1234!';
 
-  const res = await registerUser(server, email, password);
-  expect(res.status).toBe(201);
+  const reg = await registerUser(server, email, password);
+  expect(reg.status).toBe(201);
+
+  await verifyEmailInDb(app, email);
+
+  const login = await loginUser(server, email, password);
+  expect(login.status).toBe(201);
 
   return {
-    token: res.body.accessToken as string,
-    userId: res.body.user.id as string,
+    token: login.body.accessToken as string,
+    refreshToken: login.body.refreshToken as string,
+    userId: login.body.user.id as string,
     email,
   };
 }

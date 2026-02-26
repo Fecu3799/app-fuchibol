@@ -57,8 +57,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('creator promotes participant to matchAdmin', async () => {
-    const creator = await createAuthenticatedUser(server, 'adm-creator');
-    const user = await createAuthenticatedUser(server, 'adm-user');
+    const creator = await createAuthenticatedUser(app, 'adm-creator');
+    const user = await createAuthenticatedUser(app, 'adm-user');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -82,8 +82,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('promote is idempotent (already admin)', async () => {
-    const creator = await createAuthenticatedUser(server, 'idm-creator');
-    const user = await createAuthenticatedUser(server, 'idm-user');
+    const creator = await createAuthenticatedUser(app, 'idm-creator');
+    const user = await createAuthenticatedUser(app, 'idm-user');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -108,9 +108,9 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('matchAdmin can invite', async () => {
-    const creator = await createAuthenticatedUser(server, 'inv-creator');
-    const admin = await createAuthenticatedUser(server, 'inv-admin');
-    const target = await createAuthenticatedUser(server, 'inv-target');
+    const creator = await createAuthenticatedUser(app, 'inv-creator');
+    const admin = await createAuthenticatedUser(app, 'inv-admin');
+    const target = await createAuthenticatedUser(app, 'inv-target');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -135,8 +135,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('matchAdmin can lock and unlock', async () => {
-    const creator = await createAuthenticatedUser(server, 'lk-creator');
-    const admin = await createAuthenticatedUser(server, 'lk-admin');
+    const creator = await createAuthenticatedUser(app, 'lk-creator');
+    const admin = await createAuthenticatedUser(app, 'lk-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -166,8 +166,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('matchAdmin cannot patch/edit → 403', async () => {
-    const creator = await createAuthenticatedUser(server, 'ed-creator');
-    const admin = await createAuthenticatedUser(server, 'ed-admin');
+    const creator = await createAuthenticatedUser(app, 'ed-creator');
+    const admin = await createAuthenticatedUser(app, 'ed-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -189,8 +189,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('matchAdmin cannot cancel → 403', async () => {
-    const creator = await createAuthenticatedUser(server, 'cn-creator');
-    const admin = await createAuthenticatedUser(server, 'cn-admin');
+    const creator = await createAuthenticatedUser(app, 'cn-creator');
+    const admin = await createAuthenticatedUser(app, 'cn-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -213,9 +213,9 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('matchAdmin cannot promote/demote → 403', async () => {
-    const creator = await createAuthenticatedUser(server, 'pm-creator');
-    const admin = await createAuthenticatedUser(server, 'pm-admin');
-    const target = await createAuthenticatedUser(server, 'pm-target');
+    const creator = await createAuthenticatedUser(app, 'pm-creator');
+    const admin = await createAuthenticatedUser(app, 'pm-admin');
+    const target = await createAuthenticatedUser(app, 'pm-target');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -239,8 +239,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('creator demotes admin', async () => {
-    const creator = await createAuthenticatedUser(server, 'dm-creator');
-    const admin = await createAuthenticatedUser(server, 'dm-admin');
+    const creator = await createAuthenticatedUser(app, 'dm-creator');
+    const admin = await createAuthenticatedUser(app, 'dm-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -268,7 +268,7 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('cannot demote creator → 422 CANNOT_DEMOTE_CREATOR', async () => {
-    const creator = await createAuthenticatedUser(server, 'dc-creator');
+    const creator = await createAuthenticatedUser(app, 'dc-creator');
     const { id } = await createMatch(server, creator.token);
 
     const demoteRes = await request(server)
@@ -280,8 +280,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('promote non-participant → 422 NOT_PARTICIPANT', async () => {
-    const creator = await createAuthenticatedUser(server, 'np-creator');
-    const outsider = await createAuthenticatedUser(server, 'np-outsider');
+    const creator = await createAuthenticatedUser(app, 'np-creator');
+    const outsider = await createAuthenticatedUser(app, 'np-outsider');
     const { id } = await createMatch(server, creator.token);
 
     const promoteRes = await request(server)
@@ -293,8 +293,8 @@ describe('Match Admin (e2e)', () => {
   });
 
   it('actionsAllowed includes manage_admins for creator only', async () => {
-    const creator = await createAuthenticatedUser(server, 'aa-creator');
-    const admin = await createAuthenticatedUser(server, 'aa-admin');
+    const creator = await createAuthenticatedUser(app, 'aa-creator');
+    const admin = await createAuthenticatedUser(app, 'aa-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;

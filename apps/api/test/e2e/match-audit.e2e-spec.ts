@@ -36,7 +36,7 @@ describe('Match Audit Logs (e2e)', () => {
   }
 
   it('lock and unlock actions produce audit log entries', async () => {
-    const owner = await createAuthenticatedUser(server, 'audit-lock');
+    const owner = await createAuthenticatedUser(app, 'audit-lock');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Lock
@@ -66,9 +66,9 @@ describe('Match Audit Logs (e2e)', () => {
   });
 
   it('leave by confirmed user with waitlist produces participant.left + waitlist.promoted logs', async () => {
-    const owner = await createAuthenticatedUser(server, 'audit-leave-own');
-    const user1 = await createAuthenticatedUser(server, 'audit-leave-u1');
-    const user2 = await createAuthenticatedUser(server, 'audit-leave-u2');
+    const owner = await createAuthenticatedUser(app, 'audit-leave-own');
+    const user1 = await createAuthenticatedUser(app, 'audit-leave-u1');
+    const user2 = await createAuthenticatedUser(app, 'audit-leave-u2');
 
     // Create match with capacity 1 (so the second confirm goes to waitlist)
     const { id, revision } = await createMatch(server, owner.token, {
@@ -127,7 +127,7 @@ describe('Match Audit Logs (e2e)', () => {
   });
 
   it('major match update produces match.updated_major log with fieldsChanged', async () => {
-    const owner = await createAuthenticatedUser(server, 'audit-update');
+    const owner = await createAuthenticatedUser(app, 'audit-update');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Change startsAt (major change)
@@ -155,7 +155,7 @@ describe('Match Audit Logs (e2e)', () => {
   });
 
   it('GET audit-logs returns paginated results with correct pageInfo', async () => {
-    const owner = await createAuthenticatedUser(server, 'audit-page');
+    const owner = await createAuthenticatedUser(app, 'audit-page');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Produce 3 audit events: lock, unlock, lock
@@ -194,7 +194,7 @@ describe('Match Audit Logs (e2e)', () => {
   });
 
   it('GET audit-logs returns 401 when unauthenticated', async () => {
-    const owner = await createAuthenticatedUser(server, 'audit-unauth');
+    const owner = await createAuthenticatedUser(app, 'audit-unauth');
     const { id } = await createMatch(server, owner.token);
 
     const res = await request(server).get(`/api/v1/matches/${id}/audit-logs`);

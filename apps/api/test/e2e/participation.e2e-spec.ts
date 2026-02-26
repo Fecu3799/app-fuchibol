@@ -23,8 +23,8 @@ describe('Participation (e2e)', () => {
   });
 
   it('invite → confirm → spectator → confirmedCount changes', async () => {
-    const owner = await createAuthenticatedUser(server, 'part-owner');
-    const user = await createAuthenticatedUser(server, 'part-user');
+    const owner = await createAuthenticatedUser(app, 'part-owner');
+    const user = await createAuthenticatedUser(app, 'part-user');
     const { id, revision } = await createMatch(server, owner.token, {
       capacity: 10,
     });
@@ -62,8 +62,8 @@ describe('Participation (e2e)', () => {
   });
 
   it('invite → decline flow', async () => {
-    const owner = await createAuthenticatedUser(server, 'dec-owner');
-    const user = await createAuthenticatedUser(server, 'dec-user');
+    const owner = await createAuthenticatedUser(app, 'dec-owner');
+    const user = await createAuthenticatedUser(app, 'dec-user');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Invite

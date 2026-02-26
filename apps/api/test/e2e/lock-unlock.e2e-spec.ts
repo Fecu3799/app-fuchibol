@@ -24,8 +24,8 @@ describe('Lock / Unlock (e2e)', () => {
   });
 
   it('lock → non-invited user confirm on locked → 409 MATCH_LOCKED', async () => {
-    const owner = await createAuthenticatedUser(server, 'lock-owner');
-    const outsider = await createAuthenticatedUser(server, 'lock-outsider');
+    const owner = await createAuthenticatedUser(app, 'lock-owner');
+    const outsider = await createAuthenticatedUser(app, 'lock-outsider');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Lock match (no invitation sent to outsider)
@@ -48,8 +48,8 @@ describe('Lock / Unlock (e2e)', () => {
   });
 
   it('lock → INVITED user can still confirm on locked match', async () => {
-    const owner = await createAuthenticatedUser(server, 'lock-owner2');
-    const invited = await createAuthenticatedUser(server, 'lock-invited');
+    const owner = await createAuthenticatedUser(app, 'lock-owner2');
+    const invited = await createAuthenticatedUser(app, 'lock-invited');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Invite user before locking
@@ -80,7 +80,7 @@ describe('Lock / Unlock (e2e)', () => {
   });
 
   it('unlock → isLocked false', async () => {
-    const owner = await createAuthenticatedUser(server, 'unlock-owner');
+    const owner = await createAuthenticatedUser(app, 'unlock-owner');
     const { id, revision } = await createMatch(server, owner.token);
 
     // Lock

@@ -1,11 +1,40 @@
-import { IsEmail, IsString } from 'class-validator';
-import { Transform } from 'class-transformer';
+import {
+  IsObject,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+
+class DeviceDto {
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceName?: string;
+
+  @IsOptional()
+  @IsString()
+  platform?: string;
+
+  @IsOptional()
+  @IsString()
+  appVersion?: string;
+}
 
 export class LoginDto {
-  @IsEmail()
+  @IsString()
   @Transform(({ value }) => (value as string).toLowerCase().trim())
-  email: string;
+  identifier: string;
 
   @IsString()
   password: string;
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => DeviceDto)
+  device?: DeviceDto;
 }

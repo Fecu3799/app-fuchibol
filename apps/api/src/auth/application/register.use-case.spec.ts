@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { ConflictException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { RegisterUseCase } from './register.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { TokenService } from '../infra/token.service';
+import { EmailService } from '../infra/email.service';
 
 jest.mock('argon2', () => ({
   hash: jest.fn().mockResolvedValue('hashed-password'),
@@ -13,23 +14,29 @@ const buildPrisma = () =>
     client: {
       user: {
         findUnique: jest.fn(),
-        findFirst: jest.fn(),
         create: jest.fn(),
       },
     },
   }) as unknown as PrismaService;
 
-const buildJwt = () =>
+const buildTokenService = () =>
   ({
-    sign: jest.fn().mockReturnValue('mock-token'),
-  }) as unknown as JwtService;
+    generateEmailToken: jest.fn().mockReturnValue('raw-token-abc'),
+    hashEmailToken: jest.fn().mockReturnValue('hashed-token-abc'),
+  }) as unknown as TokenService;
+
+const buildEmailService = () =>
+  ({
+    sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as EmailService;
 
 describe('RegisterUseCase', () => {
-  it('registers a new user with auto-generated username and returns token', async () => {
+  it('registers a new user, creates email token, does NOT return accessToken', async () => {
     const prisma = buildPrisma();
-    const jwt = buildJwt();
+    const tokenService = buildTokenService();
+    const emailService = buildEmailService();
 
-    // email check
+    // email check → null; username check → null
     (prisma.client.user.findUnique as jest.Mock)
       .mockResolvedValueOnce(null) // email not taken
       .mockResolvedValueOnce(null); // username "test" not taken
@@ -41,27 +48,29 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, jwt);
+    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
     const result = await useCase.execute({
       email: 'test@example.com',
       password: 'password123',
     });
 
-    expect(result).toEqual({
-      accessToken: 'mock-token',
-      user: {
-        id: 'uuid-1',
-        email: 'test@example.com',
-        username: 'test',
-        role: 'USER',
-      },
+    expect(result).not.toHaveProperty('accessToken');
+    expect(result).toHaveProperty('message');
+    expect(result.user).toMatchObject({
+      id: 'uuid-1',
+      email: 'test@example.com',
+      username: 'test',
     });
-    expect(jwt.sign).toHaveBeenCalledWith({ sub: 'uuid-1', role: 'USER' });
+    expect(emailService.sendEmailVerification).toHaveBeenCalledWith(
+      'test@example.com',
+      'raw-token-abc',
+    );
   });
 
   it('registers with explicit username', async () => {
     const prisma = buildPrisma();
-    const jwt = buildJwt();
+    const tokenService = buildTokenService();
+    const emailService = buildEmailService();
 
     (prisma.client.user.findUnique as jest.Mock).mockResolvedValue(null);
     prisma.client.user.create = jest.fn().mockResolvedValue({
@@ -71,7 +80,7 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, jwt);
+    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
     const result = await useCase.execute({
       email: 'test2@example.com',
       password: 'password123',
@@ -83,14 +92,15 @@ describe('RegisterUseCase', () => {
 
   it('throws 409 when email already exists', async () => {
     const prisma = buildPrisma();
-    const jwt = buildJwt();
+    const tokenService = buildTokenService();
+    const emailService = buildEmailService();
 
     prisma.client.user.findUnique = jest.fn().mockResolvedValue({
       id: 'uuid-1',
       email: 'test@example.com',
     });
 
-    const useCase = new RegisterUseCase(prisma, jwt);
+    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
 
     await expect(
       useCase.execute({ email: 'test@example.com', password: 'password123' }),
@@ -99,7 +109,8 @@ describe('RegisterUseCase', () => {
 
   it('auto-generates username with suffix on collision', async () => {
     const prisma = buildPrisma();
-    const jwt = buildJwt();
+    const tokenService = buildTokenService();
+    const emailService = buildEmailService();
 
     (prisma.client.user.findUnique as jest.Mock)
       .mockResolvedValueOnce(null) // email not taken
@@ -113,7 +124,7 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, jwt);
+    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
     await useCase.execute({
       email: 'facu@example.com',
       password: 'password123',
@@ -128,7 +139,8 @@ describe('RegisterUseCase', () => {
 
   it('pads short email local to 3 chars', async () => {
     const prisma = buildPrisma();
-    const jwt = buildJwt();
+    const tokenService = buildTokenService();
+    const emailService = buildEmailService();
 
     (prisma.client.user.findUnique as jest.Mock)
       .mockResolvedValueOnce(null) // email
@@ -141,7 +153,7 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, jwt);
+    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
     await useCase.execute({ email: 'ab@x.com', password: 'password123' });
 
     expect(prisma.client.user.create).toHaveBeenCalledWith(

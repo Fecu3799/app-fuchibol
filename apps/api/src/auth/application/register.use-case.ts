@@ -1,9 +1,11 @@
-import { ConflictException, Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { TokenService } from '../infra/token.service';
+import { EmailService } from '../infra/email.service';
 
 const USERNAME_REGEX = /^[a-z0-9][a-z0-9_]{2,19}$/;
+const EMAIL_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
 export interface RegisterInput {
   email: string;
@@ -13,9 +15,12 @@ export interface RegisterInput {
 
 @Injectable()
 export class RegisterUseCase {
+  private readonly logger = new Logger(RegisterUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
+    private readonly tokenService: TokenService,
+    private readonly emailService: EmailService,
   ) {}
 
   async execute(input: RegisterInput) {
@@ -33,26 +38,33 @@ export class RegisterUseCase {
 
     const passwordHash = await argon2.hash(input.password);
 
+    const rawToken = this.tokenService.generateEmailToken();
+    const tokenHash = this.tokenService.hashEmailToken(rawToken);
+    const expiresAt = new Date(Date.now() + EMAIL_TOKEN_TTL_MS);
+
     const user = await this.prisma.client.user.create({
       data: {
         email: input.email,
         username,
         passwordHash,
+        emailVerifiedAt: null,
+        emailTokens: {
+          create: { tokenHash, expiresAt },
+        },
       },
     });
 
-    const accessToken = this.jwtService.sign({
-      sub: user.id,
-      role: user.role,
-    });
+    await this.emailService.sendEmailVerification(user.email, rawToken);
+
+    this.logger.log(`register_success userId=${user.id}`);
 
     return {
-      accessToken,
+      message:
+        'Registration successful. Check your email to verify your account.',
       user: {
         id: user.id,
         email: user.email,
         username: user.username,
-        role: user.role,
       },
     };
   }
@@ -75,7 +87,6 @@ export class RegisterUseCase {
       .replace(/[^a-z0-9_]/g, '');
     const base = local.length >= 3 ? local.slice(0, 20) : local.padEnd(3, '0');
 
-    // Try base first, then base2, base3, ...
     let candidate = base;
     let suffix = 2;
     while (

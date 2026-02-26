@@ -19,20 +19,23 @@ enum Role {
 }
 
 model User {
-  id             String             @id @default(uuid()) @db.Uuid
-  email          String             @unique
-  username       String             @unique
-  passwordHash   String
-  role           Role               @default(USER)
-  lateLeaveCount Int                @default(0)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  id               String             @id @default(uuid()) @db.Uuid
+  email            String             @unique
+  username         String             @unique
+  passwordHash     String
+  role             Role               @default(USER)
+  lateLeaveCount   Int                @default(0)
+  emailVerifiedAt  DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
   matches          Match[]
   participations   MatchParticipant[]
-  ownedGroups      Group[]       @relation("GroupOwner")
+  ownedGroups      Group[]            @relation("GroupOwner")
   groupMemberships GroupMember[]
-  auditLogs        MatchAuditLog[] @relation("UserAuditLogs")
+  auditLogs        MatchAuditLog[]    @relation("UserAuditLogs")
   pushDevices      PushDevice[]
+  authSessions     AuthSession[]
+  emailTokens      EmailVerificationToken[]
 }
 
 model Match {
@@ -163,4 +166,38 @@ model IdempotencyRecord {
 
   @@unique([key, actorId, route], map: "IdempotencyRecord_key_actorId_route_key")
   @@index([expiresAt], map: "IdempotencyRecord_expiresAt_idx")
+}
+
+model AuthSession {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @db.Uuid
+  refreshTokenHash    String
+  createdAt           DateTime  @default(now())
+  lastUsedAt          DateTime  @default(now())
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  deviceId            String?
+  deviceName          String?
+  platform            String?
+  appVersion          String?
+  ip                  String?
+  userAgent           String?
+  replacedBySessionId String?   @db.Uuid
+  user                User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
 }

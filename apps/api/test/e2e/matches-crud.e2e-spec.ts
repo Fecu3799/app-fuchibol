@@ -24,7 +24,7 @@ describe('Matches CRUD (e2e)', () => {
   });
 
   it('POST /matches → 201 with id, revision 1, status scheduled', async () => {
-    const { token } = await createAuthenticatedUser(server);
+    const { token } = await createAuthenticatedUser(app);
     const match = await createMatch(server, token);
 
     expect(match.id).toBeDefined();
@@ -32,7 +32,7 @@ describe('Matches CRUD (e2e)', () => {
   });
 
   it('GET /matches → 200 with items and pageInfo', async () => {
-    const { token } = await createAuthenticatedUser(server);
+    const { token } = await createAuthenticatedUser(app);
     await createMatch(server, token);
 
     const res = await request(server)
@@ -46,7 +46,7 @@ describe('Matches CRUD (e2e)', () => {
   });
 
   it('GET /matches/:id → 200 with full snapshot', async () => {
-    const { token } = await createAuthenticatedUser(server);
+    const { token } = await createAuthenticatedUser(app);
     const { id } = await createMatch(server, token);
 
     const res = await getMatch(server, token, id);
@@ -63,8 +63,8 @@ describe('Matches CRUD (e2e)', () => {
   });
 
   it('GET /matches/:id → participants include username, no email', async () => {
-    const admin = await createAuthenticatedUser(server, 'crud-admin');
-    const target = await createAuthenticatedUser(server, 'crud-target');
+    const admin = await createAuthenticatedUser(app, 'crud-admin');
+    const target = await createAuthenticatedUser(app, 'crud-target');
     const { id, revision } = await createMatch(server, admin.token);
 
     // Invite target by email

@@ -67,11 +67,11 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('startsAt change resets confirmed→invited, waitlist untouched', async () => {
-    const owner = await createAuthenticatedUser(server, 'mc-owner');
-    const u1 = await createAuthenticatedUser(server, 'mc-u1');
-    const u2 = await createAuthenticatedUser(server, 'mc-u2');
-    const u3 = await createAuthenticatedUser(server, 'mc-u3');
-    const u4 = await createAuthenticatedUser(server, 'mc-u4');
+    const owner = await createAuthenticatedUser(app, 'mc-owner');
+    const u1 = await createAuthenticatedUser(app, 'mc-u1');
+    const u2 = await createAuthenticatedUser(app, 'mc-u2');
+    const u3 = await createAuthenticatedUser(app, 'mc-u3');
+    const u4 = await createAuthenticatedUser(app, 'mc-u4');
 
     const { id } = await createMatch(server, owner.token, { capacity: 2 });
 
@@ -130,8 +130,8 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('location change triggers reconfirmation', async () => {
-    const owner = await createAuthenticatedUser(server, 'loc-owner');
-    const u1 = await createAuthenticatedUser(server, 'loc-u1');
+    const owner = await createAuthenticatedUser(app, 'loc-owner');
+    const u1 = await createAuthenticatedUser(app, 'loc-u1');
 
     const { id } = await createMatch(server, owner.token, { capacity: 5 });
 
@@ -159,9 +159,9 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('capacity reduction triggers reconfirmation', async () => {
-    const owner = await createAuthenticatedUser(server, 'cap-owner');
-    const u1 = await createAuthenticatedUser(server, 'cap-u1');
-    const u2 = await createAuthenticatedUser(server, 'cap-u2');
+    const owner = await createAuthenticatedUser(app, 'cap-owner');
+    const u1 = await createAuthenticatedUser(app, 'cap-u1');
+    const u2 = await createAuthenticatedUser(app, 'cap-u2');
 
     const { id } = await createMatch(server, owner.token, { capacity: 5 });
 
@@ -184,8 +184,8 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('title-only change does NOT trigger reconfirmation', async () => {
-    const owner = await createAuthenticatedUser(server, 'tit-owner');
-    const u1 = await createAuthenticatedUser(server, 'tit-u1');
+    const owner = await createAuthenticatedUser(app, 'tit-owner');
+    const u1 = await createAuthenticatedUser(app, 'tit-u1');
 
     const { id } = await createMatch(server, owner.token, { capacity: 5 });
 
@@ -205,8 +205,8 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('same startsAt value does NOT trigger reconfirmation', async () => {
-    const owner = await createAuthenticatedUser(server, 'same-owner');
-    const u1 = await createAuthenticatedUser(server, 'same-u1');
+    const owner = await createAuthenticatedUser(app, 'same-owner');
+    const u1 = await createAuthenticatedUser(app, 'same-u1');
 
     const { id } = await createMatch(server, owner.token, { capacity: 5 });
 
@@ -231,7 +231,7 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('PATCH on locked match → 409 MATCH_LOCKED', async () => {
-    const owner = await createAuthenticatedUser(server, 'lk-owner');
+    const owner = await createAuthenticatedUser(app, 'lk-owner');
     const { id } = await createMatch(server, owner.token);
 
     // Lock
@@ -253,10 +253,10 @@ describe('Major Change Reconfirmation (e2e)', () => {
   });
 
   it('confirmedCount <= capacity invariant after reconfirmation', async () => {
-    const owner = await createAuthenticatedUser(server, 'inv-owner');
+    const owner = await createAuthenticatedUser(app, 'inv-owner');
     const users: Awaited<ReturnType<typeof createAuthenticatedUser>>[] = [];
     for (let i = 0; i < 5; i++) {
-      users.push(await createAuthenticatedUser(server, `inv-u${i}`));
+      users.push(await createAuthenticatedUser(app, `inv-u${i}`));
     }
 
     const { id } = await createMatch(server, owner.token, { capacity: 5 });

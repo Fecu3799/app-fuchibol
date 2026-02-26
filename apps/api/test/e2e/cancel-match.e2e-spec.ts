@@ -24,7 +24,7 @@ describe('Cancel Match (e2e)', () => {
   });
 
   it('POST /matches/:id/cancel → 200 with status canceled', async () => {
-    const admin = await createAuthenticatedUser(server, 'cancel-admin');
+    const admin = await createAuthenticatedUser(app, 'cancel-admin');
     const { id, revision } = await createMatch(server, admin.token);
 
     const res = await request(server)
@@ -39,7 +39,7 @@ describe('Cancel Match (e2e)', () => {
   });
 
   it('cancel is idempotent (repeat with same key)', async () => {
-    const admin = await createAuthenticatedUser(server, 'cancel-idem');
+    const admin = await createAuthenticatedUser(app, 'cancel-idem');
     const { id, revision } = await createMatch(server, admin.token);
     const key = randomUUID();
 
@@ -64,8 +64,8 @@ describe('Cancel Match (e2e)', () => {
   });
 
   it('confirm after cancel → 409 MATCH_CANCELLED', async () => {
-    const admin = await createAuthenticatedUser(server, 'cancel-block-admin');
-    const target = await createAuthenticatedUser(server, 'cancel-block-user');
+    const admin = await createAuthenticatedUser(app, 'cancel-block-admin');
+    const target = await createAuthenticatedUser(app, 'cancel-block-user');
     const { id, revision } = await createMatch(server, admin.token);
 
     // Invite target
@@ -102,8 +102,8 @@ describe('Cancel Match (e2e)', () => {
   });
 
   it('actionsAllowed is empty for all users on canceled match', async () => {
-    const admin = await createAuthenticatedUser(server, 'cancel-actions-admin');
-    const target = await createAuthenticatedUser(server, 'cancel-actions-user');
+    const admin = await createAuthenticatedUser(app, 'cancel-actions-admin');
+    const target = await createAuthenticatedUser(app, 'cancel-actions-user');
     const { id, revision } = await createMatch(server, admin.token);
 
     await request(server)
@@ -122,7 +122,7 @@ describe('Cancel Match (e2e)', () => {
   });
 
   it('lock after cancel → 409 MATCH_CANCELLED', async () => {
-    const admin = await createAuthenticatedUser(server, 'cancel-lock-admin');
+    const admin = await createAuthenticatedUser(app, 'cancel-lock-admin');
     const { id, revision } = await createMatch(server, admin.token);
 
     // Cancel

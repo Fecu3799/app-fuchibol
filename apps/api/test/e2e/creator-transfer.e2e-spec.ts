@@ -58,7 +58,7 @@ describe('Creator Transfer (e2e)', () => {
   });
 
   it('creator leave with no admins → 422 CREATOR_TRANSFER_REQUIRED', async () => {
-    const creator = await createAuthenticatedUser(server, 'ct-creator');
+    const creator = await createAuthenticatedUser(app, 'ct-creator');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -84,8 +84,8 @@ describe('Creator Transfer (e2e)', () => {
   });
 
   it('creator leave with 1 admin → transfers creatorId', async () => {
-    const creator = await createAuthenticatedUser(server, 'tx-creator');
-    const admin = await createAuthenticatedUser(server, 'tx-admin');
+    const creator = await createAuthenticatedUser(app, 'tx-creator');
+    const admin = await createAuthenticatedUser(app, 'tx-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -136,9 +136,9 @@ describe('Creator Transfer (e2e)', () => {
   });
 
   it('creator leave with multiple admins → picks earliest adminGrantedAt', async () => {
-    const creator = await createAuthenticatedUser(server, 'ma-creator');
-    const admin1 = await createAuthenticatedUser(server, 'ma-admin1');
-    const admin2 = await createAuthenticatedUser(server, 'ma-admin2');
+    const creator = await createAuthenticatedUser(app, 'ma-creator');
+    const admin1 = await createAuthenticatedUser(app, 'ma-admin1');
+    const admin2 = await createAuthenticatedUser(app, 'ma-admin2');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;
@@ -187,8 +187,8 @@ describe('Creator Transfer (e2e)', () => {
   });
 
   it('major change reconfirm skips creator (creator stays CONFIRMED)', async () => {
-    const creator = await createAuthenticatedUser(server, 'rc-creator');
-    const user = await createAuthenticatedUser(server, 'rc-user');
+    const creator = await createAuthenticatedUser(app, 'rc-creator');
+    const user = await createAuthenticatedUser(app, 'rc-user');
     const { id } = await createMatch(server, creator.token, { capacity: 10 });
 
     let rev = 1;
@@ -230,8 +230,8 @@ describe('Creator Transfer (e2e)', () => {
   });
 
   it('new creator after transfer gets full creator permissions', async () => {
-    const creator = await createAuthenticatedUser(server, 'fp-creator');
-    const admin = await createAuthenticatedUser(server, 'fp-admin');
+    const creator = await createAuthenticatedUser(app, 'fp-creator');
+    const admin = await createAuthenticatedUser(app, 'fp-admin');
     const { id } = await createMatch(server, creator.token);
 
     let rev = 1;

@@ -2,7 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createE2eApp } from './helpers/bootstrap';
 import { createAuthenticatedUser, authHeader } from './helpers/auth.helper';
-import { truncateAll } from './helpers/db.helper';
+import { truncateAll, verifyEmailInDb } from './helpers/db.helper';
 
 describe('Users Lookup (e2e)', () => {
   let app: INestApplication;
@@ -57,34 +57,38 @@ describe('Users Lookup (e2e)', () => {
   });
 
   it('lookup by username returns user DTO', async () => {
-    // Register and capture the auto-generated username from response
     const email = 'lookup1@test.com';
+    const password = 'Test1234!';
+
     const regRes = await request(server)
       .post('/api/v1/auth/register')
-      .send({ email, password: 'Test1234!' });
+      .send({ email, password });
     expect(regRes.status).toBe(201);
-    const user = {
-      token: regRes.body.accessToken as string,
-      userId: regRes.body.user.id as string,
-      username: regRes.body.user.username as string,
-      email,
-    };
+
+    const username = regRes.body.user.username as string;
+    const userId = regRes.body.user.id as string;
+
+    await verifyEmailInDb(app, email);
+    const loginRes = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ identifier: email, password });
+    expect(loginRes.status).toBe(201);
+    const token = loginRes.body.accessToken as string;
 
     const res = await request(server)
       .get('/api/v1/users/lookup')
-      .query({ query: user.username })
-      .set(authHeader(user.token));
+      .query({ query: username })
+      .set({ Authorization: `Bearer ${token}` });
 
     expect(res.status).toBe(200);
-    expect(res.body.id).toBe(user.userId);
+    expect(res.body.id).toBe(userId);
     expect(res.body.username).toBeDefined();
-    expect(res.body.email).toBe(user.email);
-    // Must NOT expose sensitive fields
+    expect(res.body.email).toBe(email);
     expect(res.body.passwordHash).toBeUndefined();
   });
 
   it('lookup by email returns user DTO', async () => {
-    const user = await createAuthenticatedUser(server, 'lookup2');
+    const user = await createAuthenticatedUser(app, 'lookup2');
 
     const res = await request(server)
       .get('/api/v1/users/lookup')
@@ -97,7 +101,7 @@ describe('Users Lookup (e2e)', () => {
   });
 
   it('lookup returns 404 for non-existent user', async () => {
-    const user = await createAuthenticatedUser(server, 'lookup3');
+    const user = await createAuthenticatedUser(app, 'lookup3');
 
     const res = await request(server)
       .get('/api/v1/users/lookup')
@@ -116,7 +120,7 @@ describe('Users Lookup (e2e)', () => {
   });
 
   it('/me returns username', async () => {
-    const user = await createAuthenticatedUser(server, 'me1');
+    const user = await createAuthenticatedUser(app, 'me1');
 
     const res = await request(server)
       .get('/api/v1/me')

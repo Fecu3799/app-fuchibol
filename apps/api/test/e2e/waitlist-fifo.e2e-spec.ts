@@ -48,11 +48,11 @@ describe('Waitlist FIFO (e2e)', () => {
   });
 
   it('capacity 2: a,b confirm → c,d waitlisted → a goes spectator → c promoted', async () => {
-    const owner = await createAuthenticatedUser(server, 'wl-owner');
-    const a = await createAuthenticatedUser(server, 'wl-a');
-    const b = await createAuthenticatedUser(server, 'wl-b');
-    const c = await createAuthenticatedUser(server, 'wl-c');
-    const d = await createAuthenticatedUser(server, 'wl-d');
+    const owner = await createAuthenticatedUser(app, 'wl-owner');
+    const a = await createAuthenticatedUser(app, 'wl-a');
+    const b = await createAuthenticatedUser(app, 'wl-b');
+    const c = await createAuthenticatedUser(app, 'wl-c');
+    const d = await createAuthenticatedUser(app, 'wl-d');
 
     const { id } = await createMatch(server, owner.token, { capacity: 2 });
 
