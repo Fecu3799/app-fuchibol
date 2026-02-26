@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
@@ -8,6 +9,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchNotificationService } from './match-notification.service';
 
 export interface ToggleSpectatorInput {
   matchId: string;
@@ -18,14 +20,17 @@ export interface ToggleSpectatorInput {
 
 @Injectable()
 export class ToggleSpectatorUseCase {
+  private readonly logger = new Logger(ToggleSpectatorUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
+    private readonly matchNotification: MatchNotificationService,
   ) {}
 
   async execute(input: ToggleSpectatorInput): Promise<MatchSnapshot> {
-    return this.idempotency.run({
+    const result = await this.idempotency.run({
       key: input.idempotencyKey,
       actorId: input.actorId,
       route: 'POST /matches/:id/spectator',
@@ -36,9 +41,28 @@ export class ToggleSpectatorUseCase {
       },
       execute: () => this.run(input),
     });
+
+    if (result.promotedUserId) {
+      void this.matchNotification
+        .onPromoted({
+          matchId: input.matchId,
+          matchTitle: result.snapshot.title,
+          promotedUserId: result.promotedUserId,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `[MatchNotification] onPromoted failed: ${(err as Error)?.message}`,
+            { matchId: input.matchId },
+          ),
+        );
+    }
+
+    return result.snapshot;
   }
 
-  private async run(input: ToggleSpectatorInput): Promise<MatchSnapshot> {
+  private async run(
+    input: ToggleSpectatorInput,
+  ): Promise<{ snapshot: MatchSnapshot; promotedUserId: string | null }> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -151,7 +175,10 @@ export class ToggleSpectatorUseCase {
         );
       }
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return {
+        snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
+        promotedUserId,
+      };
     });
   }
 }

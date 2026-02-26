@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchNotificationService } from './match-notification.service';
 
 const LATE_LEAVE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -21,14 +23,17 @@ export interface LeaveMatchInput {
 
 @Injectable()
 export class LeaveMatchUseCase {
+  private readonly logger = new Logger(LeaveMatchUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
+    private readonly matchNotification: MatchNotificationService,
   ) {}
 
   async execute(input: LeaveMatchInput): Promise<MatchSnapshot> {
-    return this.idempotency.run({
+    const result = await this.idempotency.run({
       key: input.idempotencyKey,
       actorId: input.actorId,
       route: 'POST /matches/:id/leave',
@@ -39,9 +44,28 @@ export class LeaveMatchUseCase {
       },
       execute: () => this.run(input),
     });
+
+    if (result.promotedUserId) {
+      void this.matchNotification
+        .onPromoted({
+          matchId: input.matchId,
+          matchTitle: result.snapshot.title,
+          promotedUserId: result.promotedUserId,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `[MatchNotification] onPromoted failed: ${(err as Error)?.message}`,
+            { matchId: input.matchId },
+          ),
+        );
+    }
+
+    return result.snapshot;
   }
 
-  private async run(input: LeaveMatchInput): Promise<MatchSnapshot> {
+  private async run(
+    input: LeaveMatchInput,
+  ): Promise<{ snapshot: MatchSnapshot; promotedUserId: string | null }> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -110,7 +134,10 @@ export class LeaveMatchUseCase {
             data: { revision: match.revision + 1 },
           });
         }
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        return {
+          snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
+          promotedUserId: null,
+        };
       }
 
       const wasConfirmed = existing.status === 'CONFIRMED';
@@ -172,7 +199,10 @@ export class LeaveMatchUseCase {
         );
       }
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return {
+        snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
+        promotedUserId,
+      };
     });
   }
 }

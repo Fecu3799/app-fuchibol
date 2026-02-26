@@ -41,7 +41,8 @@
       "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api exec tsc:*)",
       "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api test)",
       "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/mobile exec tsc:*)",
-      "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api test:e2e)"
+      "Bash(pnpm -C /Users/facu3799/fuchibol-app/apps/api test:e2e)",
+      "Bash(pnpm tsc:*)"
     ]
   }
 }

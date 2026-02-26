@@ -6,6 +6,12 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockMatchNotification = {
+  onInvited: jest.fn().mockResolvedValue(undefined),
+  onPromoted: jest.fn().mockResolvedValue(undefined),
+  onReconfirmRequired: jest.fn().mockResolvedValue(undefined),
+  onCanceled: jest.fn().mockResolvedValue(undefined),
+} as any;
 
 const mockMatch = {
   id: 'match-1',
@@ -72,7 +78,12 @@ describe('CancelMatchUseCase', () => {
   it('cancels a match successfully', async () => {
     const { prisma, tx } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
+    const useCase = new CancelMatchUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     const result = await useCase.execute({
       matchId: 'match-1',
@@ -98,7 +109,12 @@ describe('CancelMatchUseCase', () => {
       .fn()
       .mockResolvedValue({ ...mockMatch, status: 'canceled' });
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
+    const useCase = new CancelMatchUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     const result = await useCase.execute({
       matchId: 'match-1',
@@ -114,7 +130,12 @@ describe('CancelMatchUseCase', () => {
   it('throws ForbiddenException for non-admin', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
+    const useCase = new CancelMatchUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await expect(
       useCase.execute({
@@ -129,7 +150,12 @@ describe('CancelMatchUseCase', () => {
   it('throws REVISION_CONFLICT on mismatch', async () => {
     const { prisma } = buildTxPrisma();
     const idempotency = buildIdempotency(prisma);
-    const useCase = new CancelMatchUseCase(prisma, idempotency, mockAudit);
+    const useCase = new CancelMatchUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await expect(
       useCase.execute({

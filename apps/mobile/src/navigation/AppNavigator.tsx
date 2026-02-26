@@ -1,5 +1,5 @@
 import { ActivityIndicator, View } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -43,6 +43,9 @@ export type RootStackParamList = {
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
 export type AppStackParamList = RootStackParamList;
+
+/** Use this ref to navigate imperatively (e.g. from push notification handlers). */
+export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 // ── Navigators ──
 
@@ -172,7 +175,7 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {isAuthenticated ? <AppNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );

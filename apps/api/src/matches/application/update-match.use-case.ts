@@ -2,12 +2,14 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchNotificationService } from './match-notification.service';
 
 export interface UpdateMatchInput {
   matchId: string;
@@ -21,13 +23,18 @@ export interface UpdateMatchInput {
 
 @Injectable()
 export class UpdateMatchUseCase {
+  private readonly logger = new Logger(UpdateMatchUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: MatchAuditService,
+    private readonly matchNotification: MatchNotificationService,
   ) {}
 
   async execute(input: UpdateMatchInput): Promise<MatchSnapshot> {
-    return this.prisma.client.$transaction(async (tx) => {
+    let reconfirmUserIds: string[] = [];
+
+    const snapshot = await this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
       const match = await tx.match.findUnique({
@@ -91,6 +98,17 @@ export class UpdateMatchUseCase {
       });
 
       if (isMajorChange) {
+        // Capture confirmed user IDs before resetting them (for post-commit notifications)
+        const confirmedRows = await tx.matchParticipant.findMany({
+          where: {
+            matchId: input.matchId,
+            status: 'CONFIRMED',
+            userId: { not: match.createdById },
+          },
+          select: { userId: true },
+        });
+        reconfirmUserIds = confirmedRows.map((r) => r.userId);
+
         // CONFIRMED -> INVITED (reconfirmation), except creator stays CONFIRMED
         const reconfirmResult = await tx.matchParticipant.updateMany({
           where: {
@@ -118,5 +136,22 @@ export class UpdateMatchUseCase {
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });
+
+    if (reconfirmUserIds.length > 0) {
+      void this.matchNotification
+        .onReconfirmRequired({
+          matchId: input.matchId,
+          matchTitle: snapshot.title,
+          userIds: reconfirmUserIds,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `[MatchNotification] onReconfirmRequired failed: ${(err as Error)?.message}`,
+            { matchId: input.matchId },
+          ),
+        );
+    }
+
+    return snapshot;
   }
 }

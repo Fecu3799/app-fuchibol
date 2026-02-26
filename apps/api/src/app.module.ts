@@ -8,6 +8,7 @@ import { MatchesModule } from './matches/matches.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { GroupsModule } from './groups/groups.module';
+import { PushModule } from './push/push.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { GroupsModule } from './groups/groups.module';
     UsersModule,
     MatchesModule,
     GroupsModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [],

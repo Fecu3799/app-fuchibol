@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
@@ -9,6 +10,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchNotificationService } from './match-notification.service';
 
 export interface CancelMatchInput {
   matchId: string;
@@ -19,14 +21,17 @@ export interface CancelMatchInput {
 
 @Injectable()
 export class CancelMatchUseCase {
+  private readonly logger = new Logger(CancelMatchUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
+    private readonly matchNotification: MatchNotificationService,
   ) {}
 
   async execute(input: CancelMatchInput): Promise<MatchSnapshot> {
-    return this.idempotency.run({
+    const snapshot = await this.idempotency.run({
       key: input.idempotencyKey,
       actorId: input.actorId,
       route: 'POST /matches/:id/cancel',
@@ -36,6 +41,40 @@ export class CancelMatchUseCase {
         expectedRevision: input.expectedRevision,
       },
       execute: () => this.run(input),
+    });
+
+    void this.notifyCanceled(
+      input.matchId,
+      snapshot.title,
+      input.actorId,
+    ).catch((err: unknown) =>
+      this.logger.warn(
+        `[MatchNotification] onCanceled failed: ${(err as Error)?.message}`,
+        { matchId: input.matchId },
+      ),
+    );
+
+    return snapshot;
+  }
+
+  private async notifyCanceled(
+    matchId: string,
+    matchTitle: string,
+    actorId: string,
+  ): Promise<void> {
+    const participants = await this.prisma.client.matchParticipant.findMany({
+      where: {
+        matchId,
+        status: { in: ['CONFIRMED', 'WAITLISTED', 'INVITED', 'SPECTATOR'] },
+      },
+      select: { userId: true },
+    });
+
+    await this.matchNotification.onCanceled({
+      matchId,
+      matchTitle,
+      userIds: participants.map((p) => p.userId),
+      actorId,
     });
   }
 

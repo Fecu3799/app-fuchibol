@@ -8,6 +8,12 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockMatchNotification = {
+  onInvited: jest.fn().mockResolvedValue(undefined),
+  onPromoted: jest.fn().mockResolvedValue(undefined),
+  onReconfirmRequired: jest.fn().mockResolvedValue(undefined),
+  onCanceled: jest.fn().mockResolvedValue(undefined),
+} as any;
 
 const now = new Date();
 
@@ -72,7 +78,11 @@ function buildTxPrisma(matchOverrides: Record<string, unknown> = {}) {
 describe('UpdateMatchUseCase', () => {
   it('rejects wrong expectedRevision -> 409', async () => {
     const { prisma } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await expect(
       useCase.execute({
@@ -86,7 +96,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('rejects non-admin -> 403', async () => {
     const { prisma } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await expect(
       useCase.execute({
@@ -101,7 +115,11 @@ describe('UpdateMatchUseCase', () => {
   it('major change (startsAt) resets CONFIRMED -> INVITED', async () => {
     const { prisma, tx } = buildTxPrisma();
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2);
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -122,7 +140,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('major change (location) resets CONFIRMED -> INVITED', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -143,7 +165,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('capacity reduction triggers reconfirmation (is a major change)', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -165,7 +191,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('capacity increase does NOT trigger reconfirmation', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -179,7 +209,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('capacity unchanged does NOT trigger reconfirmation', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -195,7 +229,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('title-only change does NOT reset participants', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -209,7 +247,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('same startsAt value does NOT trigger reconfirmation', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -225,7 +267,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('same location value does NOT trigger reconfirmation', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',
@@ -240,7 +286,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('rejects update on locked match -> 409 MATCH_LOCKED', async () => {
     const { prisma } = buildTxPrisma({ isLocked: true });
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await expect(
       useCase.execute({
@@ -254,7 +304,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('capacity reduction + major change → reconfirmation (no overflow)', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     // Both startsAt (major) and capacity change → major change reconfirmation wins
     await useCase.execute({
@@ -280,7 +334,11 @@ describe('UpdateMatchUseCase', () => {
 
   it('increments revision on real update', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new UpdateMatchUseCase(prisma, mockAudit);
+    const useCase = new UpdateMatchUseCase(
+      prisma,
+      mockAudit,
+      mockMatchNotification,
+    );
 
     await useCase.execute({
       matchId: 'match-1',

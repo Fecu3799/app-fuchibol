@@ -6,6 +6,12 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockMatchNotification = {
+  onInvited: jest.fn().mockResolvedValue(undefined),
+  onPromoted: jest.fn().mockResolvedValue(undefined),
+  onReconfirmRequired: jest.fn().mockResolvedValue(undefined),
+  onCanceled: jest.fn().mockResolvedValue(undefined),
+} as any;
 
 const mockMatch = {
   id: 'match-1',
@@ -71,6 +77,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await useCase.execute({
@@ -100,6 +107,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await useCase.execute({
@@ -131,6 +139,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await useCase.execute({
@@ -157,6 +166,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await useCase.execute({
@@ -180,6 +190,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await expect(
@@ -200,6 +211,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await expect(
@@ -224,6 +236,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     await expect(
@@ -248,6 +261,7 @@ describe('InviteParticipationUseCase', () => {
       prisma,
       idempotency,
       mockAudit,
+      mockMatchNotification,
     );
 
     const result = await useCase.execute({

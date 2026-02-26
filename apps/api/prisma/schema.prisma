@@ -32,6 +32,7 @@ model User {
   ownedGroups      Group[]       @relation("GroupOwner")
   groupMemberships GroupMember[]
   auditLogs        MatchAuditLog[] @relation("UserAuditLogs")
+  pushDevices      PushDevice[]
 }
 
 model Match {
@@ -121,6 +122,31 @@ model MatchAuditLog {
   actor User?  @relation("UserAuditLogs", fields: [actorId], references: [id])
 
   @@index([matchId, createdAt(sort: Desc)])
+}
+
+model PushDevice {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @db.Uuid
+  expoPushToken String    @unique
+  platform      String
+  deviceName    String?
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  disabledAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model NotificationDelivery {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  matchId   String   @db.Uuid
+  type      String
+  createdAt DateTime @default(now())
+
+  @@index([userId, matchId, type, createdAt])
 }
 
 model IdempotencyRecord {

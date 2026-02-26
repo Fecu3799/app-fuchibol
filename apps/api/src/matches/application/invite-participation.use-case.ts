@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
@@ -11,6 +12,7 @@ import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { isCreatorOrMatchAdmin } from './match-permissions';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchNotificationService } from './match-notification.service';
 
 export interface InviteInput {
   matchId: string;
@@ -23,10 +25,13 @@ export interface InviteInput {
 
 @Injectable()
 export class InviteParticipationUseCase {
+  private readonly logger = new Logger(InviteParticipationUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
+    private readonly matchNotification: MatchNotificationService,
   ) {}
 
   async execute(input: InviteInput): Promise<MatchSnapshot> {
@@ -38,7 +43,7 @@ export class InviteParticipationUseCase {
       throw new ConflictException('SELF_INVITE');
     }
 
-    return this.idempotency.run({
+    const snapshot = await this.idempotency.run({
       key: input.idempotencyKey,
       actorId: input.actorId,
       route: 'POST /matches/:id/invite',
@@ -50,6 +55,21 @@ export class InviteParticipationUseCase {
       },
       execute: () => this.run(input, targetUserId),
     });
+
+    void this.matchNotification
+      .onInvited({
+        matchId: input.matchId,
+        matchTitle: snapshot.title,
+        invitedUserId: targetUserId,
+      })
+      .catch((err: unknown) =>
+        this.logger.warn(
+          `[MatchNotification] onInvited failed: ${(err as Error)?.message}`,
+          { matchId: input.matchId },
+        ),
+      );
+
+    return snapshot;
   }
 
   private async run(
