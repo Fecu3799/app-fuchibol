@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { getMatchSocket } from '../../lib/socket';
@@ -11,30 +11,24 @@ interface MatchUpdatedPayload {
 /**
  * Subscribes to realtime match updates via Socket.IO.
  *
- * Coalesce logic (anti-spam):
- *   - While a GET is in flight, extra `match.updated` events set `pendingRefetch=true`
- *     instead of firing new GETs.
- *   - After the GET resolves, if `pendingRefetch` is set AND the latest seen revision
- *     is still ahead of the local revision, exactly one more GET is executed.
+ * Returns { wsConnected } — null on mount, then true/false from socket events.
+ * null avoids a false "reconnecting" banner on initial load.
  *
- * Reconnect resync:
- *   - On every `connect` event (first connect or any reconnect) the hook re-emits
- *     `match.subscribe` with the current known revision and forces one GET to
- *     converge with any state changes that arrived while disconnected.
+ * Coalesce: while a GET is in flight, extra `match.updated` events set pendingRefetch
+ * instead of firing new GETs. After the GET resolves, one follow-up fires if needed.
  *
- * Manual verification:
- *   1. Coalesce: trigger 10 rapid mutations from another client → the hook should
- *      produce at most 2 GETs (one in-flight + one follow-up).
- *   2. Reconnect: disable network, make mutations from another client, re-enable →
- *      reconnect should fire one GET that reflects all missed changes.
+ * Reconnect: on every `connect` (first or any reconnect) re-subscribes and forces
+ * one GET to converge with missed changes.
  */
 export function useMatchRealtime(
   matchId: string,
   currentRevision: number | undefined,
   devLog?: (source: 'ws' | 'reconnect') => void,
-): void {
+): { wsConnected: boolean | null } {
   const { token } = useAuth();
   const queryClient = useQueryClient();
+  // null = not yet determined (avoids false "reconnecting" flash on mount)
+  const [wsConnected, setWsConnected] = useState<boolean | null>(null);
 
   // Current known revision, kept in sync with React Query data (no re-subscribe)
   const revisionRef = useRef(currentRevision);
@@ -67,6 +61,9 @@ export function useMatchRealtime(
     latestSeenRevisionRef.current = revisionRef.current ?? -1;
 
     const socket = getMatchSocket(token);
+
+    // Initialize from current socket state immediately
+    setWsConnected(socket.connected);
 
     async function refetchSnapshot(): Promise<void> {
       if (!mountedRef.current) return;
@@ -110,6 +107,7 @@ export function useMatchRealtime(
     }
 
     function onConnect(): void {
+      setWsConnected(true);
       // Re-subscribe (forward lastKnownRevision for future server-side gap detection)
       socket.emit('match.subscribe', {
         matchId,
@@ -120,7 +118,12 @@ export function useMatchRealtime(
       void refetchSnapshot();
     }
 
+    function onDisconnect(): void {
+      setWsConnected(false);
+    }
+
     socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
     socket.on('match.updated', onUpdated);
 
     // If already connected, subscribe without an extra GET (data is fresh from mount)
@@ -133,8 +136,11 @@ export function useMatchRealtime(
 
     return () => {
       socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('match.updated', onUpdated);
       socket.emit('match.unsubscribe', { matchId });
     };
   }, [matchId, token, queryClient]);
+
+  return { wsConnected };
 }

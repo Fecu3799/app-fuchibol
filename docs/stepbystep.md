@@ -59,6 +59,7 @@ Registro cronologico del desarrollo del proyecto. Cada seccion documenta un paso
 51. [Realtime: WebSocket (Socket.IO) para MatchDetail](#51-realtime-websocket-socketio-para-matchdetail)
 52. [Realtime: Coalesce refetch + Resync al reconectar](#52-realtime-coalesce-refetch--resync-al-reconectar)
 53. [Match Audit Logs + DEV Logging en MatchDetail](#53-match-audit-logs--dev-logging-en-matchdetail)
+54. [Mobile UX: Banners en MatchDetail](#54-mobile-ux-banners-en-matchdetail)
 
 ---
 
@@ -4340,3 +4341,49 @@ Respuesta:
 | `apps/mobile/src/features/matches/useMatchRealtime.ts` | +devLog param opcional |
 | `apps/mobile/src/screens/MatchDetailScreen.tsx` | +useDevMatchLogger +DEV badge +Actividad section |
 | `apps/api/test/e2e/match-audit.e2e-spec.ts` | 5 tests E2E |
+
+---
+
+## 54. Mobile UX: Banners en MatchDetail
+
+### Que se hizo
+
+Se agregó feedback visual persistente en `MatchDetailScreen` mediante banners para estados importantes del partido. Los toasts fueron descartados para mantener la UI limpia.
+
+### Arquitectura
+
+**Hook `useMatchUxSignals`** — detecta el banner de mayor prioridad a partir del snapshot y estado WS. Expone `{ banner, dismissPromoted }`.
+
+**Componente nuevo:**
+- `MatchBanner` — View persistente coloreada por tipo de banner, con botón ✕ solo en el banner "promovido".
+
+### Banners (prioridad estricta)
+
+| Prioridad | Tipo | Condición | Color |
+|---|---|---|---|
+| 1 | `canceled` | `match.status === 'canceled'` | Rojo |
+| 2 | `reconfirm` | `myStatus === 'INVITED'` + `'confirm' in actionsAllowed` | Amarillo |
+| 3 | `promoted` | Transición WAITLISTED→CONFIRMED (sesión, 1 sola vez) | Verde |
+| 4 | `reconnecting` | `wsConnected === false` + match cargado | Gris |
+
+**Señal de reconfirmación:** no existe un campo `requiresReconfirm` en el snapshot. Se usa `myStatus === 'INVITED'` con `actionsAllowed.includes('confirm')` como proxy. Este estado ocurre tanto para usuarios recién invitados como para los reconvertidos a INVITED por un cambio mayor — ambos casos requieren confirmar, por lo que el banner es correcto en ambos.
+
+**Banner "promovido":** se detecta con un `useRef` que trackea el `myStatus` previo dentro de la sesión de la pantalla (no persiste entre sesiones). El banner es descartable (botón ✕).
+
+**Banner "reconectando":** `useMatchRealtime` expone `{ wsConnected: boolean | null }`. Se inicializa con `socket.connected` al montar y se actualiza en eventos `connect`/`disconnect`. `null` al inicio evita el falso positivo al cargar.
+
+### Archivos creados/modificados
+
+| Archivo | Cambio |
+|---|---|
+| `apps/mobile/src/features/matches/useMatchUxSignals.ts` | Hook nuevo — lógica de banners |
+| `apps/mobile/src/components/MatchBanner.tsx` | Componente nuevo — banner persistente |
+| `apps/mobile/src/features/matches/useMatchRealtime.ts` | +`wsConnected` en valor de retorno, +listener `disconnect` |
+| `apps/mobile/src/screens/MatchDetailScreen.tsx` | +`useMatchUxSignals`, +`MatchBanner`, eliminado banner `cancelledBanner` inline (reemplazado por `MatchBanner`) |
+
+### Verificación manual
+
+- **Banner canceled**: cancelar el partido → aparece banner rojo en la parte superior.
+- **Banner reconfirm**: editar fecha/hora/lugar desde otro cliente (major change) → el usuario ve banner amarillo al volver a MatchDetail.
+- **Banner promoted**: estar en waitlist, que otro usuario libere un cupo → banner verde aparece al recibir el WS update.
+- **Banner reconnecting**: apagar el servidor WS → aparece banner gris; al reconectar desaparece.

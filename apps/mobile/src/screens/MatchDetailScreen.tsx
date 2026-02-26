@@ -27,6 +27,8 @@ import {
   useMatchAction,
   formatActionError,
 } from "../features/matches/useMatchAction";
+import { useMatchUxSignals } from "../features/matches/useMatchUxSignals";
+import { MatchBanner } from "../components/MatchBanner";
 import {
   useInviteToMatch,
   formatInviteError,
@@ -205,7 +207,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const query = useMatch(matchId);
   useLogoutOn401(query);
   const { devStats, devLog } = useDevMatchLogger();
-  useMatchRealtime(matchId, query.data?.revision, devLog);
+  const { wsConnected } = useMatchRealtime(matchId, query.data?.revision, devLog);
   const mutation = useMatchAction(matchId);
   const inviteMutation = useInviteToMatch(matchId);
   const lockMutation = useLockMatch(matchId);
@@ -243,6 +245,12 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const lastMatchRef = useRef(match);
   if (match) lastMatchRef.current = match;
   const displayMatch = match ?? lastMatchRef.current;
+
+  // ── UX signals: banner ──
+  const { banner, dismissPromoted } = useMatchUxSignals(
+    displayMatch,
+    wsConnected,
+  );
 
   // ── Debounced "Updating…" banner (avoid 1-frame flicker) ──
   const [showUpdating, setShowUpdating] = useState(false);
@@ -508,6 +516,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const groups = deriveParticipantGroups(displayMatch);
 
   return (
+    <View style={styles.screenWrap}>
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* DEV-only GET counter badge */}
       {__DEV__ && (
@@ -524,6 +533,14 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           <ActivityIndicator size="small" color="#1976d2" />
           <Text style={styles.refreshText}>Updating…</Text>
         </View>
+      )}
+
+      {/* Persistent banner (canceled / reconfirm / promoted / reconnecting) */}
+      {banner && (
+        <MatchBanner
+          banner={banner}
+          onDismiss={banner.type === "promoted" ? dismissPromoted : undefined}
+        />
       )}
 
       {/* Header */}
@@ -563,15 +580,6 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         >
           <Text style={styles.editBtnText}>Edit Match</Text>
         </Pressable>
-      )}
-
-      {/* Cancelled banner */}
-      {isCanceled && (
-        <View style={styles.cancelledBanner}>
-          <Text style={styles.cancelledBannerText}>
-            This match has been cancelled
-          </Text>
-        </View>
       )}
 
       {/* Lock/Unlock button (admin only, hidden when canceled) */}
@@ -1019,6 +1027,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       )}
 
     </ScrollView>
+    </View>
   );
 }
 
@@ -1150,6 +1159,7 @@ function SpectatorSection({ spectators }: { spectators: SpectatorView[] }) {
 // ── Styles ──
 
 const styles = StyleSheet.create({
+  screenWrap: { flex: 1 },
   container: { flex: 1, backgroundColor: "#fff" },
   content: { padding: 20, paddingTop: 16, paddingBottom: 40 },
   refreshBanner: {
@@ -1210,22 +1220,6 @@ const styles = StyleSheet.create({
     color: "#c62828",
     fontSize: 13,
     fontWeight: "600" as const,
-  },
-
-  // Cancelled banner
-  cancelledBanner: {
-    backgroundColor: "#f5f5f5",
-    borderWidth: 1,
-    borderColor: "#bdbdbd",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-    alignItems: "center" as const,
-  },
-  cancelledBannerText: {
-    color: "#616161",
-    fontSize: 14,
-    fontWeight: "700" as const,
   },
 
   // Cancel button
