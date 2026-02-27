@@ -3,6 +3,7 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
 import { EmailService } from '../infra/email.service';
+import { AuthAuditService } from '../infra/auth-audit.service';
 
 const USERNAME_REGEX = /^[a-z0-9][a-z0-9_]{2,19}$/;
 const EMAIL_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
@@ -21,6 +22,7 @@ export class RegisterUseCase {
     private readonly prisma: PrismaService,
     private readonly tokenService: TokenService,
     private readonly emailService: EmailService,
+    private readonly auditService: AuthAuditService,
   ) {}
 
   async execute(input: RegisterInput) {
@@ -57,6 +59,9 @@ export class RegisterUseCase {
     await this.emailService.sendEmailVerification(user.email, rawToken);
 
     this.logger.log(`register_success userId=${user.id}`);
+    void this.auditService
+      .log({ eventType: 'register', userId: user.id })
+      .catch((err) => this.logger.warn('audit_log_failed', err));
 
     return {
       message:

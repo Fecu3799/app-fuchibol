@@ -1,11 +1,23 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { LoginResponse, MeResponse, RefreshResponse } from '../../types/api';
+import type { LoginResponse, MeResponse, RefreshResponse, RegisterResponse, SessionItem } from '../../types/api';
 
 interface DeviceInfo {
   deviceId?: string;
   deviceName?: string | null;
   platform?: string;
   appVersion?: string;
+}
+
+export function postRegister(
+  email: string,
+  password: string,
+  username: string,
+): Promise<RegisterResponse> {
+  return fetchJson<RegisterResponse>(buildUrl('/api/v1/auth/register'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, username }),
+  });
 }
 
 export function postLogin(
@@ -57,5 +69,44 @@ export function postEmailVerifyConfirm(token: string): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token }),
+  });
+}
+
+/** Request a password reset email. Always resolves (anti-enumeration). */
+export function postPasswordResetRequest(email: string): Promise<void> {
+  return fetchJson<void>(buildUrl('/api/v1/auth/password/reset/request'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Confirm password reset with the token from the email and the new password. */
+export function postPasswordResetConfirm(token: string, newPassword: string): Promise<void> {
+  return fetchJson<void>(buildUrl('/api/v1/auth/password/reset/confirm'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, newPassword }),
+  });
+}
+
+/** Change password while logged in. Bearer auto-added. */
+export function postPasswordChange(currentPassword: string, newPassword: string): Promise<void> {
+  return fetchJson<void>(buildUrl('/api/v1/auth/password/change'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+/** List active sessions. Bearer auto-added. */
+export function getSessions(): Promise<SessionItem[]> {
+  return fetchJson<SessionItem[]>(buildUrl('/api/v1/auth/sessions'));
+}
+
+/** Revoke a session by ID. Bearer auto-added. */
+export function deleteSession(sessionId: string): Promise<void> {
+  return fetchJson<void>(buildUrl(`/api/v1/auth/sessions/${sessionId}`), {
+    method: 'DELETE',
   });
 }

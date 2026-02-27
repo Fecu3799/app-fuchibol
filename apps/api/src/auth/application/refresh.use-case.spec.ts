@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { RefreshUseCase } from './refresh.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
+import type { AuthAuditService } from '../infra/auth-audit.service';
 
 const buildPrisma = () =>
   ({
@@ -36,6 +37,11 @@ const buildTokenService = (
     verifySecret: jest.fn(),
   }) as unknown as TokenService;
 
+const buildAuditService = () =>
+  ({
+    log: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as AuthAuditService;
+
 const validSession = {
   id: 'session-id',
   userId: 'user-id',
@@ -54,6 +60,7 @@ describe('RefreshUseCase', () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService();
+    const auditService = buildAuditService();
 
     prisma.client.authSession.findUnique = jest
       .fn()
@@ -61,7 +68,7 @@ describe('RefreshUseCase', () => {
     (tokenService.verifySecret as jest.Mock).mockResolvedValue(true);
     prisma.client.authSession.update = jest.fn().mockResolvedValue({});
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     const result = await useCase.execute('session-id.secret');
 
     expect(result).toHaveProperty('accessToken', 'new-access-token');
@@ -74,8 +81,9 @@ describe('RefreshUseCase', () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService(null);
+    const auditService = buildAuditService();
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     await expect(useCase.execute('bad-token')).rejects.toThrow(
       UnauthorizedException,
     );
@@ -85,10 +93,11 @@ describe('RefreshUseCase', () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService();
+    const auditService = buildAuditService();
 
     prisma.client.authSession.findUnique = jest.fn().mockResolvedValue(null);
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     await expect(useCase.execute('session-id.secret')).rejects.toThrow(
       UnauthorizedException,
     );
@@ -98,13 +107,14 @@ describe('RefreshUseCase', () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService();
+    const auditService = buildAuditService();
 
     prisma.client.authSession.findUnique = jest.fn().mockResolvedValue({
       ...validSession,
       revokedAt: new Date(),
     });
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     await expect(useCase.execute('session-id.secret')).rejects.toThrow(
       UnauthorizedException,
     );
@@ -114,26 +124,29 @@ describe('RefreshUseCase', () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService();
+    const auditService = buildAuditService();
 
     prisma.client.authSession.findUnique = jest.fn().mockResolvedValue({
       ...validSession,
       expiresAt: new Date(Date.now() - 1000),
     });
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     const err = await useCase
       .execute('session-id.secret')
-      .catch((e) => e as UnauthorizedException);
+      .catch((e) => e as unknown);
     expect(err).toBeInstanceOf(UnauthorizedException);
-    expect((err.getResponse() as Record<string, unknown>).message).toBe(
-      'REFRESH_EXPIRED',
-    );
+    expect(
+      ((err as UnauthorizedException).getResponse() as Record<string, unknown>)
+        .message,
+    ).toBe('REFRESH_EXPIRED');
   });
 
-  it('detects reuse: revokes all sessions and throws REFRESH_REUSED', async () => {
+  it('detects reuse: revokes all sessions, logs refresh_reused_detected, throws REFRESH_REUSED', async () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService();
+    const auditService = buildAuditService();
 
     prisma.client.authSession.findUnique = jest
       .fn()
@@ -141,19 +154,27 @@ describe('RefreshUseCase', () => {
     (tokenService.verifySecret as jest.Mock).mockResolvedValue(false); // hash mismatch
     prisma.client.authSession.updateMany = jest.fn().mockResolvedValue({});
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     const err = await useCase
       .execute('session-id.secret')
-      .catch((e) => e as UnauthorizedException);
+      .catch((e) => e as unknown);
 
     expect(err).toBeInstanceOf(UnauthorizedException);
-    expect((err.getResponse() as Record<string, unknown>).message).toBe(
-      'REFRESH_REUSED',
-    );
+    expect(
+      ((err as UnauthorizedException).getResponse() as Record<string, unknown>)
+        .message,
+    ).toBe('REFRESH_REUSED');
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.authSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ userId: 'user-id' }),
+      }),
+    );
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'refresh_reused_detected',
+        userId: 'user-id',
       }),
     );
   });
@@ -162,6 +183,7 @@ describe('RefreshUseCase', () => {
     const prisma = buildPrisma();
     const jwt = buildJwt();
     const tokenService = buildTokenService();
+    const auditService = buildAuditService();
 
     prisma.client.authSession.findUnique = jest.fn().mockResolvedValue({
       ...validSession,
@@ -169,7 +191,7 @@ describe('RefreshUseCase', () => {
     });
     (tokenService.verifySecret as jest.Mock).mockResolvedValue(true);
 
-    const useCase = new RefreshUseCase(prisma, jwt, tokenService);
+    const useCase = new RefreshUseCase(prisma, jwt, tokenService, auditService);
     await expect(useCase.execute('session-id.secret')).rejects.toBeInstanceOf(
       ForbiddenException,
     );

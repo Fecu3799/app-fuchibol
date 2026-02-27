@@ -8,6 +8,7 @@ import { AuthController } from './api/auth.controller';
 import { MeController } from './api/me.controller';
 import { SessionsController } from './api/sessions.controller';
 import { EmailVerifyController } from './api/email-verify.controller';
+import { PasswordController } from './api/password.controller';
 import { RegisterUseCase } from './application/register.use-case';
 import { LoginUseCase } from './application/login.use-case';
 import { GetMeUseCase } from './application/get-me.use-case';
@@ -18,9 +19,13 @@ import { ListSessionsQuery } from './application/list-sessions.query';
 import { RevokeSessionCommand } from './application/revoke-session.command';
 import { RequestEmailVerifyUseCase } from './application/request-email-verify.use-case';
 import { ConfirmEmailVerifyUseCase } from './application/confirm-email-verify.use-case';
+import { RequestPasswordResetUseCase } from './application/request-password-reset.use-case';
+import { ConfirmPasswordResetUseCase } from './application/confirm-password-reset.use-case';
+import { ChangePasswordUseCase } from './application/change-password.use-case';
 import { JwtStrategy } from './infra/jwt.strategy';
 import { TokenService } from './infra/token.service';
 import { EmailService, DevEmailService } from './infra/email.service';
+import { AuthAuditService } from './infra/auth-audit.service';
 
 @Module({
   imports: [
@@ -41,6 +46,7 @@ import { EmailService, DevEmailService } from './infra/email.service';
     MeController,
     SessionsController,
     EmailVerifyController,
+    PasswordController,
   ],
   providers: [
     RegisterUseCase,
@@ -53,8 +59,12 @@ import { EmailService, DevEmailService } from './infra/email.service';
     RevokeSessionCommand,
     RequestEmailVerifyUseCase,
     ConfirmEmailVerifyUseCase,
+    RequestPasswordResetUseCase,
+    ConfirmPasswordResetUseCase,
+    ChangePasswordUseCase,
     JwtStrategy,
     TokenService,
+    AuthAuditService,
     { provide: EmailService, useClass: DevEmailService },
   ],
   exports: [JwtStrategy],

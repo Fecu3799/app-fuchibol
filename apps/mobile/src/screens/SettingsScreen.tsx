@@ -1,4 +1,7 @@
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../navigation/AppNavigator';
 import { usePushNotifications } from '../features/push/usePushNotifications';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -13,6 +16,7 @@ const STATUS_LABEL: Record<string, string> = {
 export default function SettingsScreen() {
   const { status, expoPushToken, requestAndRegister, isSupported } = usePushNotifications();
   const { logout } = useAuth();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const label = STATUS_LABEL[status] ?? 'Enable notifications';
   const isRegistered = status === 'registered';
@@ -52,6 +56,20 @@ export default function SettingsScreen() {
 
       <View style={[styles.section, styles.sectionDanger]}>
         <Text style={styles.sectionTitle}>Account</Text>
+        <TouchableOpacity
+          style={styles.changePasswordButton}
+          onPress={() => navigation.navigate('Sessions')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.changePasswordButtonText}>Manage devices</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.changePasswordButton}
+          onPress={() => navigation.navigate('ChangePassword')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.changePasswordButtonText}>Change password</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.logoutButton} onPress={logout} activeOpacity={0.8}>
           <Text style={styles.logoutButtonText}>Log Out</Text>
         </TouchableOpacity>
@@ -86,6 +104,17 @@ const styles = StyleSheet.create({
   unsupported: { color: '#999', fontSize: 14 },
   tokenDebug: { marginTop: 10, fontSize: 11, color: '#aaa', fontFamily: 'monospace' },
   sectionDanger: { marginTop: 24 },
+  changePasswordButton: {
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  changePasswordButtonText: { color: '#333', fontWeight: '600', fontSize: 15 },
   logoutButton: {
     backgroundColor: '#d32f2f',
     borderRadius: 8,

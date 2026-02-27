@@ -7,6 +7,7 @@ import type { NavigatorScreenParams } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import VerifyEmailScreen from '../screens/VerifyEmailScreen';
+import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
 import MatchDetailScreen from '../screens/MatchDetailScreen';
 import CreateMatchScreen from '../screens/CreateMatchScreen';
@@ -17,12 +18,19 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CreateGroupScreen from '../screens/CreateGroupScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import EditMatchScreen from '../screens/EditMatchScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/ResetPasswordScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
+import SessionsScreen from '../screens/SessionsScreen';
 
 // ── Param lists ──
 
 export type AuthStackParamList = {
-  Login: undefined;
-  VerifyEmail: { identifier?: string };
+  Login: { prefillEmail?: string } | undefined;
+  Register: undefined;
+  VerifyEmail: { email?: string };
+  ForgotPassword: undefined;
+  ResetPassword: undefined;
 };
 
 export type TabParamList = {
@@ -41,6 +49,8 @@ export type RootStackParamList = {
   MatchHistory: undefined;
   CreateGroup: undefined;
   GroupDetail: { groupId: string };
+  ChangePassword: undefined;
+  Sessions: undefined;
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -116,9 +126,24 @@ function AuthNavigator() {
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
       <AuthStack.Screen
+        name="Register"
+        component={RegisterScreen}
+        options={{ headerShown: true, title: 'Create account' }}
+      />
+      <AuthStack.Screen
         name="VerifyEmail"
         component={VerifyEmailScreen}
         options={{ headerShown: true, title: 'Verify Email' }}
+      />
+      <AuthStack.Screen
+        name="ForgotPassword"
+        component={ForgotPasswordScreen}
+        options={{ headerShown: true, title: 'Forgot Password' }}
+      />
+      <AuthStack.Screen
+        name="ResetPassword"
+        component={ResetPasswordScreen}
+        options={{ headerShown: true, title: 'Reset Password' }}
       />
     </AuthStack.Navigator>
   );
@@ -163,6 +188,16 @@ function AppNavigator() {
         name="GroupDetail"
         component={GroupDetailScreen}
         options={{ title: 'Group Detail' }}
+      />
+      <RootStack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ title: 'Change Password' }}
+      />
+      <RootStack.Screen
+        name="Sessions"
+        component={SessionsScreen}
+        options={{ title: 'Devices' }}
       />
     </RootStack.Navigator>
   );

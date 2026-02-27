@@ -5,7 +5,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 export class ListSessionsQuery {
   constructor(private readonly prisma: PrismaService) {}
 
-  async execute(userId: string) {
+  async execute(userId: string, currentSessionId?: string) {
     const sessions = await this.prisma.client.authSession.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { lastUsedAt: 'desc' },
@@ -22,6 +22,9 @@ export class ListSessionsQuery {
       },
     });
 
-    return sessions;
+    return sessions.map((s) => ({
+      ...s,
+      isCurrent: s.id === (currentSessionId ?? ''),
+    }));
   }
 }

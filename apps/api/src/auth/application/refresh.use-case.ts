@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
+import { AuthAuditService } from '../infra/auth-audit.service';
 
 @Injectable()
 export class RefreshUseCase {
@@ -16,6 +17,7 @@ export class RefreshUseCase {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly tokenService: TokenService,
+    private readonly auditService: AuthAuditService,
   ) {}
 
   async execute(rawToken: string) {
@@ -61,6 +63,14 @@ export class RefreshUseCase {
       this.logger.warn(
         `refresh_reused_detected userId=${session.userId} sessionId=${sessionId}`,
       );
+      void this.auditService
+        .log({
+          eventType: 'refresh_reused_detected',
+          userId: session.userId,
+          sessionId,
+          metadata: { reason: 'token_hash_mismatch' },
+        })
+        .catch((err) => this.logger.warn('audit_log_failed', err));
       throw new UnauthorizedException('REFRESH_REUSED');
     }
 
@@ -86,6 +96,13 @@ export class RefreshUseCase {
     this.logger.log(
       `refresh_success userId=${session.userId} sessionId=${session.id}`,
     );
+    void this.auditService
+      .log({
+        eventType: 'refresh_success',
+        userId: session.userId,
+        sessionId: session.id,
+      })
+      .catch((err) => this.logger.warn('audit_log_failed', err));
 
     return { accessToken, refreshToken: newRefreshToken };
   }

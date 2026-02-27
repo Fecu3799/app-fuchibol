@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
+import { AuthAuditService } from '../infra/auth-audit.service';
 
 @Injectable()
 export class ConfirmEmailVerifyUseCase {
@@ -9,6 +10,7 @@ export class ConfirmEmailVerifyUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokenService: TokenService,
+    private readonly auditService: AuthAuditService,
   ) {}
 
   async execute(rawToken: string): Promise<void> {
@@ -42,5 +44,8 @@ export class ConfirmEmailVerifyUseCase {
     ]);
 
     this.logger.log(`email_verified userId=${record.userId}`);
+    void this.auditService
+      .log({ eventType: 'email_verified', userId: record.userId })
+      .catch((err) => this.logger.warn('audit_log_failed', err));
   }
 }

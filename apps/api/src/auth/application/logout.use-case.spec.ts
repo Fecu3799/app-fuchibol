@@ -1,5 +1,6 @@
 import { LogoutUseCase } from './logout.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import type { AuthAuditService } from '../infra/auth-audit.service';
 
 const buildPrisma = () =>
   ({
@@ -10,10 +11,16 @@ const buildPrisma = () =>
     },
   }) as unknown as PrismaService;
 
+const buildAuditService = () =>
+  ({
+    log: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as AuthAuditService;
+
 describe('LogoutUseCase', () => {
   it('revokes the current session by sessionId and userId', async () => {
     const prisma = buildPrisma();
-    const useCase = new LogoutUseCase(prisma);
+    const auditService = buildAuditService();
+    const useCase = new LogoutUseCase(prisma, auditService);
 
     await useCase.execute('session-uuid', 'user-uuid');
 

@@ -16,9 +16,9 @@ import { ApiError } from '../lib/api';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
-export default function LoginScreen({ navigation }: Props) {
+export default function LoginScreen({ navigation, route }: Props) {
   const { login } = useAuth();
-  const [identifier, setIdentifier] = useState('');
+  const [identifier, setIdentifier] = useState(route.params?.prefillEmail ?? '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -31,7 +31,9 @@ export default function LoginScreen({ navigation }: Props) {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'EMAIL_NOT_VERIFIED' || err.status === 403) {
-          navigation.navigate('VerifyEmail', { identifier: identifier.trim() });
+          navigation.navigate('VerifyEmail', {
+            email: identifier.trim().includes('@') ? identifier.trim() : undefined,
+          });
           return;
         }
         setError(err.body.detail ?? err.body.message ?? 'Login failed');
@@ -82,6 +84,22 @@ export default function LoginScreen({ navigation }: Props) {
             <Text style={styles.buttonText}>Log In</Text>
           )}
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.link}
+          onPress={() => navigation.navigate('ForgotPassword')}
+          disabled={loading}
+        >
+          <Text style={styles.linkText}>Forgot password?</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.link}
+          onPress={() => navigation.navigate('Register')}
+          disabled={loading}
+        >
+          <Text style={styles.linkText}>Create an account</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -109,4 +127,6 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  link: { marginTop: 20, alignItems: 'center' },
+  linkText: { color: '#1976d2', fontSize: 14 },
 });

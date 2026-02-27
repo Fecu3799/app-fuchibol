@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
 import { EmailService } from '../infra/email.service';
+import { AuthAuditService } from '../infra/auth-audit.service';
 
 const EMAIL_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
@@ -13,6 +14,7 @@ export class RequestEmailVerifyUseCase {
     private readonly prisma: PrismaService,
     private readonly tokenService: TokenService,
     private readonly emailService: EmailService,
+    private readonly auditService: AuthAuditService,
   ) {}
 
   async execute(email: string): Promise<void> {
@@ -46,5 +48,8 @@ export class RequestEmailVerifyUseCase {
     await this.emailService.sendEmailVerification(user.email, rawToken);
 
     this.logger.log(`email_verify_requested userId=${user.id}`);
+    void this.auditService
+      .log({ eventType: 'email_verify_requested', userId: user.id })
+      .catch((err) => this.logger.warn('audit_log_failed', err));
   }
 }

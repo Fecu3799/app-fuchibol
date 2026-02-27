@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,15 +18,15 @@ import { ApiError } from '../lib/api';
 type Props = NativeStackScreenProps<AuthStackParamList, 'VerifyEmail'>;
 
 export default function VerifyEmailScreen({ route, navigation }: Props) {
-  const { identifier } = route.params ?? {};
-
-  // Pre-fill email if identifier looks like an email address.
-  const [email, setEmail] = useState(identifier?.includes('@') ? identifier : '');
+  const [email, setEmail] = useState(route.params?.email ?? '');
   const [token, setToken] = useState('');
   const [sendLoading, setSendLoading] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [sendMsg, setSendMsg] = useState('');
   const [error, setError] = useState('');
+  const [verified, setVerified] = useState(false);
+
+  const busy = sendLoading || confirmLoading;
 
   const handleRequestEmail = async () => {
     if (!email.trim()) { setError('Enter your email address.'); return; }
@@ -47,13 +48,12 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
   };
 
   const handleConfirm = async () => {
-    if (!token.trim()) { setError('Paste the verification token.'); return; }
+    if (!token.trim()) { setError('Paste the verification token from the email.'); return; }
     setError('');
     setConfirmLoading(true);
     try {
       await postEmailVerifyConfirm(token.trim());
-      // Verified — go back to login so the user can sign in.
-      navigation.navigate('Login');
+      setVerified(true);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.body.detail ?? err.body.message ?? 'Invalid or expired token.');
@@ -65,21 +65,47 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     }
   };
 
+  // ── Success view ──
+  if (verified) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.successBox}>
+          <Text style={styles.successTitle}>Email verified!</Text>
+          <Text style={styles.successSubtitle}>
+            Your account is ready. Sign in to continue.
+          </Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => navigation.navigate('Login', { prefillEmail: email || undefined })}
+          >
+            <Text style={styles.buttonText}>Go to Login</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Verification form ──
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.form}>
+      <ScrollView
+        contentContainerStyle={styles.form}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Verify your email</Text>
         <Text style={styles.subtitle}>
-          You need to verify your email before logging in.
+          {email
+            ? `We sent a verification email to ${email}. Paste the token below.`
+            : 'Enter your email to receive a verification link.'}
         </Text>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-        {sendMsg ? <Text style={styles.success}>{sendMsg}</Text> : null}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {sendMsg ? <Text style={styles.successText}>{sendMsg}</Text> : null}
 
-        {/* Step 1 — Request email */}
+        {/* Step 1 — Request / resend email */}
         <Text style={styles.label}>Email address</Text>
         <TextInput
           style={styles.input}
@@ -89,17 +115,19 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
           autoCorrect={false}
           value={email}
           onChangeText={setEmail}
-          editable={!sendLoading && !confirmLoading}
+          editable={!busy}
         />
         <TouchableOpacity
-          style={[styles.button, sendLoading && styles.buttonDisabled]}
+          style={[styles.buttonSecondary, sendLoading && styles.buttonDisabled]}
           onPress={handleRequestEmail}
-          disabled={sendLoading || !email}
+          disabled={busy || !email}
         >
           {sendLoading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color="#1976d2" />
           ) : (
-            <Text style={styles.buttonText}>Send verification email</Text>
+            <Text style={styles.buttonSecondaryText}>
+              {sendMsg ? 'Resend email' : 'Send verification email'}
+            </Text>
           )}
         </TouchableOpacity>
 
@@ -114,12 +142,12 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
           autoCorrect={false}
           value={token}
           onChangeText={setToken}
-          editable={!sendLoading && !confirmLoading}
+          editable={!busy}
         />
         <TouchableOpacity
-          style={[styles.button, styles.buttonConfirm, confirmLoading && styles.buttonDisabled]}
+          style={[styles.button, confirmLoading && styles.buttonDisabled]}
           onPress={handleConfirm}
-          disabled={confirmLoading || !token}
+          disabled={busy || !token}
         >
           {confirmLoading ? (
             <ActivityIndicator color="#fff" />
@@ -128,22 +156,36 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.back} onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.backText}>Back to login</Text>
+        <TouchableOpacity
+          style={styles.link}
+          onPress={() => navigation.navigate('Login')}
+          disabled={busy}
+        >
+          <Text style={styles.linkText}>Back to login</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
-  form: { paddingHorizontal: 32 },
-  title: { fontSize: 24, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  // success view
+  successBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  successTitle: { fontSize: 24, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
+  successSubtitle: { fontSize: 15, color: '#555', textAlign: 'center', marginBottom: 32 },
+  // form view
+  form: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 32, paddingVertical: 24 },
+  title: { fontSize: 22, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
   subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 24 },
   label: { fontSize: 13, fontWeight: '600', color: '#444', marginBottom: 4 },
-  error: { color: '#d32f2f', textAlign: 'center', marginBottom: 12 },
-  success: { color: '#388e3c', textAlign: 'center', marginBottom: 12 },
+  errorText: { color: '#d32f2f', textAlign: 'center', marginBottom: 12 },
+  successText: { color: '#388e3c', textAlign: 'center', marginBottom: 12 },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
@@ -158,10 +200,17 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
   },
-  buttonConfirm: { backgroundColor: '#388e3c' },
+  buttonSecondary: {
+    borderWidth: 1,
+    borderColor: '#1976d2',
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+  },
+  buttonSecondaryText: { color: '#1976d2', fontSize: 15, fontWeight: '600' },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: '#fff', fontSize: 15, fontWeight: '600' },
   divider: { height: 1, backgroundColor: '#eee', marginVertical: 24 },
-  back: { marginTop: 20, alignItems: 'center' },
-  backText: { color: '#1976d2', fontSize: 14 },
+  link: { marginTop: 20, alignItems: 'center' },
+  linkText: { color: '#1976d2', fontSize: 14 },
 });

@@ -34,6 +34,9 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 26. [Push Notifications Step 2: triggers de dominio + dedupe](#26-push-notifications-step-2-triggers-de-dominio--dedupe)
 27. [Auth: Sessions + Refresh Rotation + Email Verification (Sprint 1)](#27-auth-sessions--refresh-rotation--email-verification-sprint-1)
 28. [Auth Mobile Sprint 2: SecureStore + Bootstrap + Single-flight Refresh + Email Verify UX](#28-auth-mobile-sprint-2-securestore--bootstrap--single-flight-refresh--email-verify-ux)
+29. [Auth Mobile Sprint 3: Register + Verify Email end-to-end](#29-auth-mobile-sprint-3-register--verify-email-end-to-end)
+30. [Auth Sprint 4: Password Reset + Change Password](#30-auth-sprint-4-password-reset--change-password)
+31. [Auth Sprint 5: Auth Audit Events + Session Management UI](#31-auth-sprint-5-auth-audit-events--session-management-ui)
 
 ---
 
@@ -882,3 +885,177 @@ fetchJson()
 - `configureAuthInterceptor` se llama al montar `AuthProvider`; `clearAuthInterceptor` al desmontar y en logout.
 - Login acepta `identifier` (email o username) + campo `device` con `deviceId`, `platform`, `deviceName`, `appVersion`.
 - `postEmailVerifyRequest` y `postEmailVerifyConfirm` son endpoints públicos (no Bearer) — el interceptor de 401 no aplica porque tienen URL `/api/v1/auth/`.
+
+---
+
+## 29. Auth Mobile Sprint 3: Register + Verify Email end-to-end
+
+### Que se hizo
+
+Flujo completo de alta de usuario en mobile: registro → verificación de email → login.
+
+### Archivos modificados/creados
+
+| Archivo | Cambio |
+|---|---|
+| `src/types/api.ts` | `RegisterResponse` nuevo tipo |
+| `src/features/auth/authClient.ts` | `postRegister(email, password, username?)` |
+| `src/screens/RegisterScreen.tsx` | Pantalla nueva: email, username (opcional), password, confirmPassword, validación cliente, mapeo errores 409/422 |
+| `src/screens/VerifyEmailScreen.tsx` | Param renombrado `identifier`→`email`, subtítulo con email, estado `verified` con vista de éxito |
+| `src/screens/LoginScreen.tsx` | Link "Create an account" → Register; soporte param `prefillEmail` |
+| `src/navigation/AppNavigator.tsx` | `Register` en `AuthStackParamList`, `Login` acepta `prefillEmail?`, `VerifyEmail` acepta `email?` |
+
+### Flujo feliz
+
+```
+Login → "Create account" → Register (email+pass+username?)
+  → éxito → VerifyEmail(email)
+  → "Send verification email" → resend OK
+  → pegar token → Confirm OK → vista éxito
+  → "Go to Login" (email prellenado) → login OK
+```
+
+### Errores mapeados (RegisterScreen)
+
+| Scenario | HTTP | Mensaje usuario |
+|---|---|---|
+| Email duplicado | 409 | "That email is already registered." |
+| Username duplicado/inválido | 409 | "That username is already taken." |
+| Validación DTO | 422 | "Check the form — some fields are invalid." |
+| Login sin verificar | 403 EMAIL_NOT_VERIFIED | Navega a VerifyEmail |
+
+### Validaciones cliente (RegisterScreen)
+
+- email: formato válido
+- password: ≥ 8 chars
+- confirmPassword: debe coincidir
+- username (si se provee): `^[a-z0-9][a-z0-9_]{2,19}$` (misma regex que backend)
+
+---
+
+## 30. Auth Sprint 4: Password Reset + Change Password
+
+### Que se hizo
+
+Password reset via email (forgot password) y change password autenticado.
+
+### Archivos modificados/creados
+
+**Backend (apps/api)**
+
+| Archivo | Cambio |
+|---|---|
+| `prisma/schema.prisma` | Nuevo modelo `PasswordResetToken` (id, userId, tokenHash, expiresAt, usedAt, requestIp, requestUserAgent) |
+| `prisma/migrations/…add_password_reset_token` | Migración aplicada |
+| `src/auth/infra/email.service.ts` | `sendPasswordReset(to, token)` abstracto + `DevEmailService` impl (logs consola) |
+| `src/auth/api/dto/request-password-reset.dto.ts` | DTO con `@IsEmail()` |
+| `src/auth/api/dto/confirm-password-reset.dto.ts` | DTO con `token`, `newPassword` |
+| `src/auth/api/dto/change-password.dto.ts` | DTO con `currentPassword`, `newPassword` |
+| `src/auth/application/request-password-reset.use-case.ts` | Anti-enumeration; invalida tokens anteriores; crea token + envía email |
+| `src/auth/application/confirm-password-reset.use-case.ts` | Valida token+expiración; `$transaction` marca usado + cambia password + revoca todas las sesiones |
+| `src/auth/application/change-password.use-case.ts` | Verifica password actual; `$transaction` cambia password + revoca otras sesiones (mantiene la actual) |
+| `src/auth/application/*.use-case.spec.ts` | Tests de los 3 use-cases (7 casos) |
+| `src/auth/api/password.controller.ts` | 3 endpoints: `POST auth/password/reset/request`, `POST auth/password/reset/confirm`, `POST auth/password/change` |
+| `src/auth/auth.module.ts` | `PasswordController` + 3 use-cases en providers |
+
+**Mobile (apps/mobile)**
+
+| Archivo | Cambio |
+|---|---|
+| `src/features/auth/authClient.ts` | `postPasswordResetRequest`, `postPasswordResetConfirm`, `postPasswordChange` |
+| `src/screens/ForgotPasswordScreen.tsx` | Ingresa email → 204 siempre (anti-enum) → link a ResetPassword |
+| `src/screens/ResetPasswordScreen.tsx` | Token + nueva contraseña; éxito → login; maneja `INVALID_OR_EXPIRED_TOKEN` |
+| `src/screens/ChangePasswordScreen.tsx` | Password actual + nueva (con eye toggle) + confirmar; éxito → goBack |
+| `src/navigation/AppNavigator.tsx` | `ForgotPassword`, `ResetPassword` en `AuthStackParamList`; `ChangePassword` en `RootStackParamList` |
+| `src/screens/LoginScreen.tsx` | Link "Forgot password?" → ForgotPassword |
+| `src/screens/SettingsScreen.tsx` | Botón "Change password" → ChangePassword en sección Account |
+
+### Endpoints
+
+| Método | Ruta | Auth | Throttle | Respuesta |
+|---|---|---|---|---|
+| POST | `/api/v1/auth/password/reset/request` | — | login | 204 |
+| POST | `/api/v1/auth/password/reset/confirm` | — | login | 204 |
+| POST | `/api/v1/auth/password/change` | JWT | mutations | 204 |
+
+### Decisiones clave
+
+- Token reset: raw hex 64 chars generado por `TokenService.generateEmailToken()`; solo el SHA256 hash se persiste en DB. TTL 30 min.
+- Anti-enumeration: `reset/request` siempre retorna 204 aunque el email no exista.
+- Revocación de sesiones en reset/confirm: **todas** las sesiones (usuario ya no debería estar logueado).
+- Revocación de sesiones en change: **todas excepto la actual** (`id: { not: sessionId }`).
+- Password validation: ≥ 8 chars + 1 uppercase + 1 number (frontend) + `@MinLength(8)` (backend DTO).
+
+---
+
+## 31. Auth Sprint 5: Auth Audit Events + Session Management UI
+
+### Que se hizo
+
+Cierre del sprint de auth de producción: trail de auditoría persistente en DB + campo `isCurrent` en sesiones + pantalla `SessionsScreen` en el móvil.
+
+### Backend
+
+**Nuevo modelo `AuthAuditEvent`** (sin relación a User; `userId` nullable para `login_failed` con identifier desconocido):
+```
+id, userId?, eventType, sessionId?, ip?, userAgent?, metadata Json, createdAt
+@@index([userId, createdAt(sort: Desc)])
+@@index([eventType, createdAt(sort: Desc)])
+```
+
+**`AuthAuditService`** (`infra/auth-audit.service.ts`): `log(data)` best-effort — callers fire-and-forget con `.catch(warn)`.
+
+**Eventos auditados:**
+
+| Use-case | Evento |
+|---|---|
+| LoginUseCase (ok) | `login_success` (userId, sessionId, ip, userAgent) |
+| LoginUseCase (fail) | `login_failed` (userId null si not_found, metadata.reason) |
+| RefreshUseCase (ok) | `refresh_success` (userId, sessionId) |
+| RefreshUseCase (reuse) | `refresh_reused_detected` (userId, sessionId) |
+| LogoutUseCase | `logout` (userId, sessionId) |
+| LogoutAllUseCase | `logout_all` (userId) |
+| RegisterUseCase | `register` (userId) |
+| RequestEmailVerifyUseCase | `email_verify_requested` (userId) |
+| ConfirmEmailVerifyUseCase | `email_verified` (userId) |
+| RequestPasswordResetUseCase | `password_reset_requested` (userId null si not found) |
+| ConfirmPasswordResetUseCase | `password_reset_confirmed` (userId) |
+| ChangePasswordUseCase | `password_changed` (userId, sessionId) |
+| RevokeSessionCommand | `session_revoked` (userId, metadata.revokedSessionId) |
+
+**`isCurrent` en sesiones**: `ListSessionsQuery.execute(userId, currentSessionId?)` añade `isCurrent: session.id === currentSessionId` en cada item. `SessionsController` pasa `actor.sessionId`.
+
+### Mobile
+
+- `SessionItem` interface en `types/api.ts`
+- `getSessions()` + `deleteSession(id)` en `authClient.ts`
+- `SessionsScreen`: FlatList con pull-to-refresh, badge "This device" para sesión actual, botón Log out (sesión propia) / Revoke (otras), footer "Log out all devices"
+- `Sessions: undefined` añadido a `RootStackParamList`; screen registrado con `title: 'Devices'`
+- Settings → "Manage devices" navega a Sessions (arriba de "Change password")
+
+### Tests
+
+Todos los spec files de use-cases actualizados con mock `AuthAuditService` pasado al constructor. Nuevo `revoke-session.command.spec.ts` con 4 tests: happy path + idempotencia + 404 + 403.
+
+### Migración
+
+`20260227064245_add_auth_audit_event` — tabla `auth_audit_event` con dos índices.
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma                               (+ AuthAuditEvent model)
+apps/api/prisma/migrations/20260227064245_add_auth_audit_event/
+apps/api/src/auth/infra/auth-audit.service.ts               (nuevo)
+apps/api/src/auth/application/{login,refresh,logout,logout-all,register,...}.use-case.ts
+apps/api/src/auth/application/revoke-session.command.ts
+apps/api/src/auth/application/list-sessions.query.ts        (isCurrent)
+apps/api/src/auth/api/sessions.controller.ts                (pasa sessionId)
+apps/api/src/auth/auth.module.ts                            (registra AuthAuditService)
+apps/api/src/auth/application/revoke-session.command.spec.ts (nuevo)
+apps/mobile/src/types/api.ts                                (+ SessionItem)
+apps/mobile/src/features/auth/authClient.ts                 (+ getSessions, deleteSession)
+apps/mobile/src/screens/SessionsScreen.tsx                  (nuevo)
+apps/mobile/src/navigation/AppNavigator.tsx                 (+ Sessions route)
+apps/mobile/src/screens/SettingsScreen.tsx                  (+ Manage devices btn)
+```

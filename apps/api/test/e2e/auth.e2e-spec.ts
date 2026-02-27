@@ -25,6 +25,12 @@ class CaptureEmailService extends EmailService {
     this.lastToken = token;
     return Promise.resolve();
   }
+
+  sendPasswordReset(to: string, token: string): Promise<void> {
+    this.lastTo = to;
+    this.lastToken = token;
+    return Promise.resolve();
+  }
 }
 
 describe('Auth (e2e)', () => {

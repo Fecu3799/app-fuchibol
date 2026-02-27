@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
+import { AuthAuditService } from '../infra/auth-audit.service';
 
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
@@ -34,6 +35,7 @@ export class LoginUseCase {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly tokenService: TokenService,
+    private readonly auditService: AuthAuditService,
   ) {}
 
   async execute(input: LoginInput) {
@@ -50,12 +52,30 @@ export class LoginUseCase {
       this.logger.log(
         `login_failed identifier=${input.identifier} reason=not_found`,
       );
+      void this.auditService
+        .log({
+          eventType: 'login_failed',
+          userId: null,
+          ip: input.ip,
+          userAgent: input.userAgent,
+          metadata: { reason: 'not_found' },
+        })
+        .catch((err) => this.logger.warn('audit_log_failed', err));
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const valid = await argon2.verify(user.passwordHash, input.password);
     if (!valid) {
       this.logger.log(`login_failed userId=${user.id} reason=wrong_password`);
+      void this.auditService
+        .log({
+          eventType: 'login_failed',
+          userId: user.id,
+          ip: input.ip,
+          userAgent: input.userAgent,
+          metadata: { reason: 'wrong_password' },
+        })
+        .catch((err) => this.logger.warn('audit_log_failed', err));
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -63,6 +83,15 @@ export class LoginUseCase {
       this.logger.log(
         `login_failed userId=${user.id} reason=email_not_verified`,
       );
+      void this.auditService
+        .log({
+          eventType: 'login_failed',
+          userId: user.id,
+          ip: input.ip,
+          userAgent: input.userAgent,
+          metadata: { reason: 'email_not_verified' },
+        })
+        .catch((err) => this.logger.warn('audit_log_failed', err));
       throw new ForbiddenException('EMAIL_NOT_VERIFIED');
     }
 
@@ -101,6 +130,15 @@ export class LoginUseCase {
     });
 
     this.logger.log(`login_success userId=${user.id} sessionId=${session.id}`);
+    void this.auditService
+      .log({
+        eventType: 'login_success',
+        userId: user.id,
+        sessionId: session.id,
+        ip: input.ip,
+        userAgent: input.userAgent,
+      })
+      .catch((err) => this.logger.warn('audit_log_failed', err));
 
     return {
       accessToken,

@@ -12,6 +12,11 @@ export interface RefreshResponse {
   refreshToken: string;
 }
 
+export interface RegisterResponse {
+  message: string;
+  user: { id: string; email: string; username: string };
+}
+
 export interface MeResponse {
   id: string;
   email: string;
@@ -157,24 +162,19 @@ export interface GetMatchAuditLogsResponse {
   pageInfo: PageInfo;
 }
 
-// ── Audit Logs ──
+// ── Sessions ──
 
-export interface AuditLogActor {
+export interface SessionItem {
   id: string;
-  username: string;
-}
-
-export interface AuditLogEntry {
-  id: string;
-  type: string;
-  metadata: Record<string, unknown>;
-  actor: AuditLogActor | null;
   createdAt: string;
-}
-
-export interface GetMatchAuditLogsResponse {
-  items: AuditLogEntry[];
-  pageInfo: PageInfo;
+  lastUsedAt: string;
+  expiresAt: string;
+  deviceId?: string;
+  deviceName?: string;
+  platform?: string;
+  appVersion?: string;
+  ip?: string;
+  isCurrent: boolean;
 }
 
 // ── Errors ──

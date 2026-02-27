@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { AuthAuditService } from '../infra/auth-audit.service';
 
 @Injectable()
 export class LogoutUseCase {
   private readonly logger = new Logger(LogoutUseCase.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuthAuditService,
+  ) {}
 
   async execute(sessionId: string, userId: string): Promise<void> {
     await this.prisma.client.authSession.updateMany({
@@ -13,5 +17,8 @@ export class LogoutUseCase {
       data: { revokedAt: new Date() },
     });
     this.logger.log(`logout userId=${userId} sessionId=${sessionId}`);
+    void this.auditService
+      .log({ eventType: 'logout', userId, sessionId })
+      .catch((err) => this.logger.warn('audit_log_failed', err));
   }
 }

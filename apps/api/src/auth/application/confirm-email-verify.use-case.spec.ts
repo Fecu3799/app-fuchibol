@@ -2,6 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfirmEmailVerifyUseCase } from './confirm-email-verify.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
+import type { AuthAuditService } from '../infra/auth-audit.service';
 
 const buildPrisma = () => {
   const $transaction = jest.fn().mockImplementation(async (ops: unknown[]) => {
@@ -28,6 +29,11 @@ const buildTokenService = () =>
     hashEmailToken: jest.fn().mockReturnValue('hashed-token'),
   }) as unknown as TokenService;
 
+const buildAuditService = () =>
+  ({
+    log: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as AuthAuditService;
+
 const validRecord = {
   id: 'token-id',
   userId: 'user-id',
@@ -45,7 +51,11 @@ describe('ConfirmEmailVerifyUseCase', () => {
       .fn()
       .mockResolvedValue(validRecord);
 
-    const useCase = new ConfirmEmailVerifyUseCase(prisma, tokenService);
+    const useCase = new ConfirmEmailVerifyUseCase(
+      prisma,
+      tokenService,
+      buildAuditService(),
+    );
     await useCase.execute('raw-token');
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -60,7 +70,11 @@ describe('ConfirmEmailVerifyUseCase', () => {
       .fn()
       .mockResolvedValue(null);
 
-    const useCase = new ConfirmEmailVerifyUseCase(prisma, tokenService);
+    const useCase = new ConfirmEmailVerifyUseCase(
+      prisma,
+      tokenService,
+      buildAuditService(),
+    );
     await expect(useCase.execute('bad-token')).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -74,7 +88,11 @@ describe('ConfirmEmailVerifyUseCase', () => {
       .fn()
       .mockResolvedValue({ ...validRecord, usedAt: new Date() });
 
-    const useCase = new ConfirmEmailVerifyUseCase(prisma, tokenService);
+    const useCase = new ConfirmEmailVerifyUseCase(
+      prisma,
+      tokenService,
+      buildAuditService(),
+    );
     await expect(useCase.execute('raw-token')).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
@@ -91,7 +109,11 @@ describe('ConfirmEmailVerifyUseCase', () => {
         expiresAt: new Date(Date.now() - 1000),
       });
 
-    const useCase = new ConfirmEmailVerifyUseCase(prisma, tokenService);
+    const useCase = new ConfirmEmailVerifyUseCase(
+      prisma,
+      tokenService,
+      buildAuditService(),
+    );
     await expect(useCase.execute('raw-token')).rejects.toBeInstanceOf(
       UnauthorizedException,
     );

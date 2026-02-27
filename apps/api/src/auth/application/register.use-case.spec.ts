@@ -4,6 +4,7 @@ import { RegisterUseCase } from './register.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
 import { EmailService } from '../infra/email.service';
+import type { AuthAuditService } from '../infra/auth-audit.service';
 
 jest.mock('argon2', () => ({
   hash: jest.fn().mockResolvedValue('hashed-password'),
@@ -30,6 +31,11 @@ const buildEmailService = () =>
     sendEmailVerification: jest.fn().mockResolvedValue(undefined),
   }) as unknown as EmailService;
 
+const buildAuditService = () =>
+  ({
+    log: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as AuthAuditService;
+
 describe('RegisterUseCase', () => {
   it('registers a new user, creates email token, does NOT return accessToken', async () => {
     const prisma = buildPrisma();
@@ -48,7 +54,12 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
+    const useCase = new RegisterUseCase(
+      prisma,
+      tokenService,
+      emailService,
+      buildAuditService(),
+    );
     const result = await useCase.execute({
       email: 'test@example.com',
       password: 'password123',
@@ -80,7 +91,12 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
+    const useCase = new RegisterUseCase(
+      prisma,
+      tokenService,
+      emailService,
+      buildAuditService(),
+    );
     const result = await useCase.execute({
       email: 'test2@example.com',
       password: 'password123',
@@ -100,7 +116,12 @@ describe('RegisterUseCase', () => {
       email: 'test@example.com',
     });
 
-    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
+    const useCase = new RegisterUseCase(
+      prisma,
+      tokenService,
+      emailService,
+      buildAuditService(),
+    );
 
     await expect(
       useCase.execute({ email: 'test@example.com', password: 'password123' }),
@@ -124,7 +145,12 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
+    const useCase = new RegisterUseCase(
+      prisma,
+      tokenService,
+      emailService,
+      buildAuditService(),
+    );
     await useCase.execute({
       email: 'facu@example.com',
       password: 'password123',
@@ -153,7 +179,12 @@ describe('RegisterUseCase', () => {
       role: 'USER',
     });
 
-    const useCase = new RegisterUseCase(prisma, tokenService, emailService);
+    const useCase = new RegisterUseCase(
+      prisma,
+      tokenService,
+      emailService,
+      buildAuditService(),
+    );
     await useCase.execute({ email: 'ab@x.com', password: 'password123' });
 
     expect(prisma.client.user.create).toHaveBeenCalledWith(

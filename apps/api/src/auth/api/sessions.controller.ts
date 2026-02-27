@@ -23,7 +23,7 @@ export class SessionsController {
 
   @Get()
   async listSessions(@Actor() actor: ActorPayload) {
-    return this.listSessionsQuery.execute(actor.userId);
+    return this.listSessionsQuery.execute(actor.userId, actor.sessionId);
   }
 
   @Delete(':id')
