@@ -133,6 +133,12 @@ export async function fetchJson<T>(url: string, options?: FetchOptions): Promise
         !_skipAuthRetry &&
         !url.includes('/api/v1/auth/')
       ) {
+        // Session permanently revoked or refresh token reused — skip refresh attempt,
+        // logout immediately so the client doesn't enter a retry/refresh loop.
+        if (body.code === 'SESSION_REVOKED' || body.code === 'REFRESH_REUSED') {
+          _onAuthFailure?.();
+          throw new ApiError(res.status, body);
+        }
         const newToken = await ensureFreshToken();
         if (newToken) {
           return fetchJson<T>(url, { ...options, _skipAuthRetry: true });

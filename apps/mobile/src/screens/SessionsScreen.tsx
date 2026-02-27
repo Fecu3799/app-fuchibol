@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -15,6 +14,7 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 import { getSessions, deleteSession, postLogoutAll, postLogout } from '../features/auth/authClient';
 import { useAuth } from '../contexts/AuthContext';
 import { useLogoutOn401 } from '../lib/use-api-query';
+import { confirmAction } from '../lib/confirm';
 import type { SessionItem } from '../types/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Sessions'>;
@@ -42,62 +42,53 @@ export default function SessionsScreen(_: Props) {
   useLogoutOn401(query);
 
   const handleRevoke = useCallback(
-    (session: SessionItem) => {
+    async (session: SessionItem) => {
       if (session.isCurrent) {
-        Alert.alert('Log out', 'Log out of this device?', [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Log out',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await postLogout();
-              } catch {
-                // ignore
-              }
-              logout();
-            },
-          },
-        ]);
+        const ok = await confirmAction({
+          title: 'Log out',
+          message: 'Log out of this device?',
+          confirmText: 'Log out',
+        });
+        if (!ok) return;
+        try {
+          await postLogout();
+        } catch {
+          // ignore
+        }
+        logout();
         return;
       }
-      Alert.alert('Revoke session', 'Remove this device from your account?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Revoke',
-          style: 'destructive',
-          onPress: async () => {
-            setError('');
-            try {
-              await deleteSession(session.id);
-              await queryClient.invalidateQueries({ queryKey: ['sessions'] });
-            } catch {
-              setError('Failed to revoke session. Please try again.');
-            }
-          },
-        },
-      ]);
+      const ok = await confirmAction({
+        title: 'Revoke session',
+        message: 'Remove this device from your account?',
+        confirmText: 'Revoke',
+      });
+      if (!ok) return;
+      setError('');
+      try {
+        await deleteSession(session.id);
+        await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      } catch {
+        setError('Failed to revoke session. Please try again.');
+      }
     },
     [logout, queryClient],
   );
 
-  const handleLogoutAll = useCallback(() => {
-    Alert.alert('Log out all devices', 'This will log you out of every device.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log out all',
-        style: 'destructive',
-        onPress: async () => {
-          setError('');
-          try {
-            await postLogoutAll();
-            logout();
-          } catch {
-            setError('Failed to log out all devices. Please try again.');
-          }
-        },
-      },
-    ]);
+  const handleLogoutAll = useCallback(async () => {
+    const ok = await confirmAction({
+      title: 'Log out all devices',
+      message: 'This will log you out of every device.',
+      confirmText: 'Log out all',
+    });
+    if (!ok) return;
+    setError('');
+    try {
+      await postLogoutAll();
+      logout();
+    } catch {
+      setError('Failed to log out all devices. Please try again.');
+    }
   }, [logout]);
 
   const renderItem = ({ item }: { item: SessionItem }) => (

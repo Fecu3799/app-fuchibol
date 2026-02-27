@@ -10,6 +10,23 @@ import { Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Device from 'expo-device';
 import * as Constants from 'expo-constants';
+
+function getWebDeviceName(): string {
+  if (typeof navigator === 'undefined') return 'Web';
+  const ua = navigator.userAgent;
+  let browser = 'Browser';
+  if (ua.includes('Edg/')) browser = 'Edge';
+  else if (ua.includes('Chrome/')) browser = 'Chrome';
+  else if (ua.includes('Firefox/')) browser = 'Firefox';
+  else if (ua.includes('Safari/')) browser = 'Safari';
+  let os = 'Unknown OS';
+  if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('Mac OS X')) os = 'macOS';
+  else if (ua.includes('Windows')) os = 'Windows';
+  else if (ua.includes('Linux')) os = 'Linux';
+  return `${browser} on ${os}`;
+}
 import {
   getMe,
   postLogin,
@@ -146,10 +163,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (identifier: string, password: string) => {
     const deviceId = await getOrCreateDeviceId().catch(() => undefined);
+    const deviceName =
+      Platform.OS === 'web' ? getWebDeviceName() : (Device.deviceName ?? undefined);
     const res = await postLogin(identifier, password, {
       deviceId,
       platform: Platform.OS,
-      deviceName: Device.deviceName ?? undefined,
+      deviceName,
       appVersion: Constants.default.expoConfig?.version,
     });
 
