@@ -1,18 +1,12 @@
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { AuthStackParamList } from '../navigation/AppNavigator';
 import { useAuth } from '../contexts/AuthContext';
 import { ApiError } from '../lib/api';
+import { AuthScaffold } from '../components/auth/AuthScaffold';
+import { AuthField } from '../components/auth/AuthField';
+import { authStyles } from '../components/auth/authStyles';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -45,88 +39,65 @@ export default function LoginScreen({ navigation, route }: Props) {
     }
   };
 
+  const canSubmit = !loading && !!identifier && !!password;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={styles.form}>
-        <Text style={styles.title}>Fuchibol</Text>
+    <AuthScaffold showLogo title="FUCHIBOL" cardTitle="INGRESA Y JUGÁ!">
+      {error ? <Text style={authStyles.error}>{error}</Text> : null}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+      <AuthField
+        placeholder="Cuenta…"
+        autoCapitalize="none"
+        autoCorrect={false}
+        value={identifier}
+        onChangeText={setIdentifier}
+        editable={!loading}
+      />
+      <AuthField
+        placeholder="Contraseña…"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+        editable={!loading}
+      />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email or username"
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={identifier}
-          onChangeText={setIdentifier}
-          editable={!loading}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-          editable={!loading}
-        />
+      <TouchableOpacity
+        onPress={() => navigation.navigate('ForgotPassword')}
+        disabled={loading}
+        style={styles.forgotLink}
+      >
+        <Text style={styles.forgotText}>¿No recordás tu contraseña?</Text>
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading || !identifier || !password}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Log In</Text>
-          )}
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={[authStyles.btnOutline, !canSubmit && authStyles.btnDisabled]}
+        onPress={handleLogin}
+        disabled={!canSubmit}
+        activeOpacity={0.75}
+      >
+        {loading ? (
+          <ActivityIndicator color="#111" />
+        ) : (
+          <Text style={authStyles.btnOutlineText}>INGRESAR</Text>
+        )}
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.link}
-          onPress={() => navigation.navigate('ForgotPassword')}
-          disabled={loading}
-        >
-          <Text style={styles.linkText}>Forgot password?</Text>
-        </TouchableOpacity>
+      <Text style={styles.noAccountLabel}>¿No tenés cuenta?</Text>
 
-        <TouchableOpacity
-          style={styles.link}
-          onPress={() => navigation.navigate('Register')}
-          disabled={loading}
-        >
-          <Text style={styles.linkText}>Create an account</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      <TouchableOpacity
+        style={authStyles.btnOutline}
+        onPress={() => navigation.navigate('Register')}
+        disabled={loading}
+        activeOpacity={0.75}
+      >
+        <Text style={authStyles.btnOutlineText}>REGISTRARSE</Text>
+      </TouchableOpacity>
+    </AuthScaffold>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
-  form: { paddingHorizontal: 32 },
-  title: { fontSize: 28, fontWeight: '700', textAlign: 'center', marginBottom: 32 },
-  error: { color: '#d32f2f', textAlign: 'center', marginBottom: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: '#1976d2',
-    borderRadius: 8,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  link: { marginTop: 20, alignItems: 'center' },
-  linkText: { color: '#1976d2', fontSize: 14 },
+  forgotLink: { alignSelf: 'flex-end', marginBottom: 18 },
+  forgotText: { color: '#1976d2', fontSize: 12 },
+  noAccountLabel: { textAlign: 'center', fontSize: 12, color: '#888', marginTop: 8, marginBottom: 4 },
 });

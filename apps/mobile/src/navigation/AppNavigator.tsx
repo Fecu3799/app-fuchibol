@@ -1,4 +1,6 @@
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, Platform, StyleSheet, View } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { Asset } from 'expo-asset';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +24,11 @@ import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import SessionsScreen from '../screens/SessionsScreen';
+
+// Preload and decode the auth background as soon as this module is imported,
+// so it's ready before the first AuthNavigator render.
+const _bg = require('../../../../docs/ui/templates/bg.jpg') as number;
+void Asset.fromModule(_bg).downloadAsync().catch(() => {});
 
 // ── Param lists ──
 
@@ -120,34 +127,42 @@ function MainTabs() {
 }
 
 // ── Auth Navigator ──
+// Background is mounted once here — never re-mounts during auth navigation,
+// eliminating the per-screen flash.  All screens use transparent contentStyle.
 
 function AuthNavigator() {
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-      <AuthStack.Screen
-        name="Register"
-        component={RegisterScreen}
-        options={{ headerShown: true, title: 'Create account' }}
-      />
-      <AuthStack.Screen
-        name="VerifyEmail"
-        component={VerifyEmailScreen}
-        options={{ headerShown: true, title: 'Verify Email' }}
-      />
-      <AuthStack.Screen
-        name="ForgotPassword"
-        component={ForgotPasswordScreen}
-        options={{ headerShown: true, title: 'Forgot Password' }}
-      />
-      <AuthStack.Screen
-        name="ResetPassword"
-        component={ResetPasswordScreen}
-        options={{ headerShown: true, title: 'Reset Password' }}
-      />
-    </AuthStack.Navigator>
+    <View style={authBgStyles.root}>
+      {/* Shared background: rendered once behind the entire auth stack */}
+      <ImageBackground source={_bg} style={StyleSheet.absoluteFill} resizeMode="cover">
+        {/* expo-blur on iOS/Android; dark overlay alone is the web fallback */}
+        {Platform.OS !== 'web' && (
+          <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFill} />
+        )}
+        <View style={authBgStyles.overlay} />
+      </ImageBackground>
+
+      <AuthStack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: 'transparent' },
+          animation: 'fade',
+        }}
+      >
+        <AuthStack.Screen name="Login" component={LoginScreen} />
+        <AuthStack.Screen name="Register" component={RegisterScreen} />
+        <AuthStack.Screen name="VerifyEmail" component={VerifyEmailScreen} />
+        <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+        <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+      </AuthStack.Navigator>
+    </View>
   );
 }
+
+const authBgStyles = StyleSheet.create({
+  root: { flex: 1 },
+  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.38)' },
+});
 
 // ── App Navigator (Root Stack wraps tabs + modal screens) ──
 
