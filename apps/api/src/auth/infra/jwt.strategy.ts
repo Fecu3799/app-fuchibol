@@ -19,13 +19,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; role: string; sid?: string }): Promise<ActorPayload> {
+  async validate(payload: {
+    sub: string;
+    role: string;
+    sid?: string;
+  }): Promise<ActorPayload> {
     if (payload.sid) {
       const session = await this.prisma.client.authSession.findUnique({
         where: { id: payload.sid },
         select: { revokedAt: true, expiresAt: true },
       });
-      if (!session || session.revokedAt !== null || session.expiresAt < new Date()) {
+      if (
+        !session ||
+        session.revokedAt !== null ||
+        session.expiresAt < new Date()
+      ) {
         throw new UnauthorizedException('SESSION_REVOKED');
       }
     }

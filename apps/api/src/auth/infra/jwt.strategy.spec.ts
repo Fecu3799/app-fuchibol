@@ -10,7 +10,9 @@ const mockConfigService = {
 const futureDate = new Date(Date.now() + 1000 * 60 * 60);
 const pastDate = new Date(Date.now() - 1000);
 
-function buildPrisma(session: { revokedAt: Date | null; expiresAt: Date } | null) {
+function buildPrisma(
+  session: { revokedAt: Date | null; expiresAt: Date } | null,
+) {
   return {
     client: {
       authSession: {
@@ -25,13 +27,24 @@ describe('JwtStrategy.validate', () => {
     const prisma = buildPrisma({ revokedAt: null, expiresAt: futureDate });
     const strategy = new JwtStrategy(mockConfigService, prisma);
 
-    const result = await strategy.validate({ sub: 'user-1', role: 'user', sid: 'session-1' });
+    const result = await strategy.validate({
+      sub: 'user-1',
+      role: 'user',
+      sid: 'session-1',
+    });
 
-    expect(result).toEqual({ userId: 'user-1', role: 'user', sessionId: 'session-1' });
+    expect(result).toEqual({
+      userId: 'user-1',
+      role: 'user',
+      sessionId: 'session-1',
+    });
   });
 
   it('throws SESSION_REVOKED when session has revokedAt set', async () => {
-    const prisma = buildPrisma({ revokedAt: new Date(), expiresAt: futureDate });
+    const prisma = buildPrisma({
+      revokedAt: new Date(),
+      expiresAt: futureDate,
+    });
     const strategy = new JwtStrategy(mockConfigService, prisma);
 
     await expect(
@@ -63,7 +76,11 @@ describe('JwtStrategy.validate', () => {
 
     const result = await strategy.validate({ sub: 'user-1', role: 'user' });
 
-    expect(result).toEqual({ userId: 'user-1', role: 'user', sessionId: undefined });
+    expect(result).toEqual({
+      userId: 'user-1',
+      role: 'user',
+      sessionId: undefined,
+    });
     // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.authSession.findUnique).not.toHaveBeenCalled();
   });
