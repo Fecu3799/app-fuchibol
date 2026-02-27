@@ -1,5 +1,6 @@
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { usePushNotifications } from '../features/push/usePushNotifications';
+import { useAuth } from '../contexts/AuthContext';
 
 const STATUS_LABEL: Record<string, string> = {
   idle: 'Enable notifications',
@@ -11,6 +12,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function SettingsScreen() {
   const { status, expoPushToken, requestAndRegister, isSupported } = usePushNotifications();
+  const { logout } = useAuth();
 
   const label = STATUS_LABEL[status] ?? 'Enable notifications';
   const isRegistered = status === 'registered';
@@ -47,6 +49,13 @@ export default function SettingsScreen() {
           </Text>
         ) : null}
       </View>
+
+      <View style={[styles.section, styles.sectionDanger]}>
+        <Text style={styles.sectionTitle}>Account</Text>
+        <TouchableOpacity style={styles.logoutButton} onPress={logout} activeOpacity={0.8}>
+          <Text style={styles.logoutButtonText}>Log Out</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -76,4 +85,13 @@ const styles = StyleSheet.create({
   buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   unsupported: { color: '#999', fontSize: 14 },
   tokenDebug: { marginTop: 10, fontSize: 11, color: '#aaa', fontFamily: 'monospace' },
+  sectionDanger: { marginTop: 24 },
+  logoutButton: {
+    backgroundColor: '#d32f2f',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  logoutButtonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
 });

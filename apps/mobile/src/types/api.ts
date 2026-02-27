@@ -2,12 +2,20 @@
 
 export interface LoginResponse {
   accessToken: string;
+  refreshToken: string;
+  sessionId: string;
   user: { id: string; email: string; role: string };
+}
+
+export interface RefreshResponse {
+  accessToken: string;
+  refreshToken: string;
 }
 
 export interface MeResponse {
   id: string;
   email: string;
+  username?: string;
   role: string;
   createdAt: string;
 }

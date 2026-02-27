@@ -9,12 +9,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { AuthStackParamList } from '../navigation/AppNavigator';
 import { useAuth } from '../contexts/AuthContext';
 import { ApiError } from '../lib/api';
 
-export default function LoginScreen() {
+type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
+
+export default function LoginScreen({ navigation }: Props) {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -23,9 +27,13 @@ export default function LoginScreen() {
     setError('');
     setLoading(true);
     try {
-      await login(email.trim(), password);
+      await login(identifier.trim(), password);
     } catch (err) {
       if (err instanceof ApiError) {
+        if (err.code === 'EMAIL_NOT_VERIFIED' || err.status === 403) {
+          navigation.navigate('VerifyEmail', { identifier: identifier.trim() });
+          return;
+        }
         setError(err.body.detail ?? err.body.message ?? 'Login failed');
       } else {
         setError('Connection error. Please try again.');
@@ -47,11 +55,11 @@ export default function LoginScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          placeholder="Email or username"
           autoCapitalize="none"
-          keyboardType="email-address"
-          value={email}
-          onChangeText={setEmail}
+          autoCorrect={false}
+          value={identifier}
+          onChangeText={setIdentifier}
           editable={!loading}
         />
         <TextInput
@@ -66,7 +74,7 @@ export default function LoginScreen() {
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
           onPress={handleLogin}
-          disabled={loading || !email || !password}
+          disabled={loading || !identifier || !password}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />

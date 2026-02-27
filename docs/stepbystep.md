@@ -33,6 +33,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 25. [Push Notifications Step 1: plumbing + prueba e2e](#25-push-notifications-step-1-plumbing--prueba-e2e)
 26. [Push Notifications Step 2: triggers de dominio + dedupe](#26-push-notifications-step-2-triggers-de-dominio--dedupe)
 27. [Auth: Sessions + Refresh Rotation + Email Verification (Sprint 1)](#27-auth-sessions--refresh-rotation--email-verification-sprint-1)
+28. [Auth Mobile Sprint 2: SecureStore + Bootstrap + Single-flight Refresh + Email Verify UX](#28-auth-mobile-sprint-2-securestore--bootstrap--single-flight-refresh--email-verify-ux)
 
 ---
 
@@ -839,3 +840,45 @@ Si `argon2.verify(hash, secret) === false` en un refresh válido: se revocan **t
 | `POST /auth/email/verify/request` | — | login |
 | `POST /auth/email/verify/confirm` | — | — |
 - **Job queue (BullMQ)**: si se necesita garantía de entrega, envolver los `void service.onX()` en jobs de Redis. El `MatchNotificationService` queda igual, solo cambia quién lo invoca (worker vs use-case).
+
+---
+
+## 28. Auth Mobile Sprint 2: SecureStore + Bootstrap + Single-flight Refresh + Email Verify UX
+
+### Que se hizo
+
+Auth production-grade en el cliente mobile. Integra con los endpoints del Sprint 1 backend.
+
+### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `src/lib/token-store.ts` | Funciones para refresh token (SecureStore) + `getOrCreateDeviceId()` |
+| `src/lib/api.ts` | In-memory access token + interceptor auth + single-flight refresh + 401 retry + 204 handling |
+| `src/features/auth/authClient.ts` | `postLogin(identifier)`, `postRefresh`, `postLogout`, `postLogoutAll`, `getMe()` (sin token explícito), `postEmailVerifyRequest`, `postEmailVerifyConfirm` |
+| `src/contexts/AuthContext.tsx` | Bootstrap via refresh token, `configureAuthInterceptor` on mount, `doRefresh` actualiza context state (para sockets), logout llama API |
+| `src/types/api.ts` | `LoginResponse` con `refreshToken + sessionId`, `RefreshResponse` nuevo tipo |
+| `src/screens/LoginScreen.tsx` | Campo `identifier` (email o username), manejo `EMAIL_NOT_VERIFIED` → navega a VerifyEmail |
+| `src/screens/VerifyEmailScreen.tsx` | Pantalla nueva: request email + confirm token |
+| `src/navigation/AppNavigator.tsx` | `VerifyEmail` en `AuthStackParamList` + `AuthNavigator` |
+| `src/screens/SettingsScreen.tsx` | Sección "Account" con botón Log Out |
+
+### Arquitectura: Auth Interceptor
+
+```
+fetchJson()
+ ├── Auto-add Bearer (from in-memory _accessToken)
+ └── On 401 (non-auth URL):
+      ├── ensureFreshToken()  ← single-flight (concurrent requests join same promise)
+      │    ├── doRefresh()    ← reads SecureStore, calls /auth/refresh, updates token
+      │    └── on fail → _onAuthFailure() → clear tokens → navigate Login
+      └── retry request once (_skipAuthRetry=true)
+```
+
+### Convenciones
+
+- Refresh token en `SecureStore` (key `auth_refresh_token`); access token solo en memoria.
+- `doRefresh` en `AuthContext` también actualiza `state.token` para que `getMatchSocket` use el token fresco al reconectar.
+- `configureAuthInterceptor` se llama al montar `AuthProvider`; `clearAuthInterceptor` al desmontar y en logout.
+- Login acepta `identifier` (email o username) + campo `device` con `deviceId`, `platform`, `deviceName`, `appVersion`.
+- `postEmailVerifyRequest` y `postEmailVerifyConfirm` son endpoints públicos (no Bearer) — el interceptor de 401 no aplica porque tienen URL `/api/v1/auth/`.

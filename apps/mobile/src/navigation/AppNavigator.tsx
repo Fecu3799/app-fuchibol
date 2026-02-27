@@ -6,6 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
+import VerifyEmailScreen from '../screens/VerifyEmailScreen';
 import HomeScreen from '../screens/HomeScreen';
 import MatchDetailScreen from '../screens/MatchDetailScreen';
 import CreateMatchScreen from '../screens/CreateMatchScreen';
@@ -21,6 +22,7 @@ import EditMatchScreen from '../screens/EditMatchScreen';
 
 export type AuthStackParamList = {
   Login: undefined;
+  VerifyEmail: { identifier?: string };
 };
 
 export type TabParamList = {
@@ -113,6 +115,11 @@ function AuthNavigator() {
   return (
     <AuthStack.Navigator screenOptions={{ headerShown: false }}>
       <AuthStack.Screen name="Login" component={LoginScreen} />
+      <AuthStack.Screen
+        name="VerifyEmail"
+        component={VerifyEmailScreen}
+        options={{ headerShown: true, title: 'Verify Email' }}
+      />
     </AuthStack.Navigator>
   );
 }
