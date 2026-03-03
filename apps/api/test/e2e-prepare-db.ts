@@ -72,6 +72,7 @@ if (shadowDatabaseUrlTest) {
 }
 
 const prepare = async () => {
+  console.log('[e2e] prepare-db: ensuring test databases exist...');
   await ensureDatabaseExists(databaseUrlTest);
   if (shadowDatabaseUrlTest) {
     await ensureDatabaseExists(shadowDatabaseUrlTest);
@@ -89,15 +90,30 @@ const prepare = async () => {
     env.SHADOW_DATABASE_URL = shadowDatabaseUrlTest;
   }
 
+  console.log('[e2e] prepare-db: running prisma migrate reset...');
+  // shell: true is required on Windows so cmd.exe resolves pnpm.CMD;
+  // it is a no-op on macOS/Linux (uses /bin/sh).
   const result = spawnSync('pnpm', ['prisma', 'migrate', 'reset', '--force'], {
     cwd: rootDir,
     stdio: 'inherit',
     env,
+    shell: true,
   });
 
+  if (result.error) {
+    console.error('[e2e] prepare-db: failed to spawn pnpm —', result.error.message);
+    console.error('[e2e]   (hint: pnpm not found in PATH inside the Node subprocess)');
+    process.exit(1);
+  }
+
   if (result.status !== 0) {
+    console.error(
+      `[e2e] prepare-db: prisma migrate reset failed — status=${result.status ?? 'null'}, signal=${result.signal ?? 'none'}`,
+    );
     process.exit(result.status ?? 1);
   }
+
+  console.log('[e2e] prepare-db: done');
 };
 
 prepare().catch((error: unknown) => {
