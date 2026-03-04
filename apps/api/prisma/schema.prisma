@@ -156,10 +156,12 @@ model NotificationDelivery {
   matchId   String?  @db.Uuid
   groupId   String?  @db.Uuid
   type      String
+  bucket    String?
   createdAt DateTime @default(now())
 
   @@index([userId, matchId, type, createdAt])
   @@index([userId, groupId, type, createdAt])
+  @@index([userId, matchId, type, bucket])
 }
 
 model IdempotencyRecord {

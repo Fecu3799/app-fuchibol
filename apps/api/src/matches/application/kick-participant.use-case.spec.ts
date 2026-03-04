@@ -40,6 +40,9 @@ const mockParticipant = {
 };
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) } as any;
+const mockNotification = {
+  onMissingPlayersAlert: jest.fn().mockResolvedValue(undefined),
+} as any;
 
 function buildTxPrisma(
   overrides: {
@@ -62,6 +65,7 @@ function buildTxPrisma(
     matchParticipant: {
       findUnique: jest.fn().mockResolvedValue(participant),
       findFirst: jest.fn().mockResolvedValue(nextWaitlisted),
+      count: jest.fn().mockResolvedValue(5),
       findMany: jest.fn().mockResolvedValue(
         participant
           ? [
@@ -80,6 +84,9 @@ function buildTxPrisma(
   const prisma = {
     client: {
       ...tx,
+      matchParticipant: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       $transaction: jest.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     },
   } as unknown as PrismaService;
@@ -94,7 +101,7 @@ describe('KickParticipantUseCase', () => {
 
   it('creator kicks an INVITED participant — row deleted, revision incremented', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await useCase.execute({
       matchId: MATCH_ID,
@@ -131,7 +138,7 @@ describe('KickParticipantUseCase', () => {
       participant: confirmedParticipant,
       nextWaitlisted,
     });
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await useCase.execute({
       matchId: MATCH_ID,
@@ -154,7 +161,7 @@ describe('KickParticipantUseCase', () => {
     const { prisma } = buildTxPrisma({
       match: { ...mockMatch, createdById: 'other-user' },
     });
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await expect(
       useCase.execute({
@@ -168,7 +175,7 @@ describe('KickParticipantUseCase', () => {
 
   it('throws UnprocessableEntityException CANNOT_KICK_SELF if target is actor', async () => {
     const { prisma } = buildTxPrisma();
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await expect(
       useCase.execute({
@@ -203,7 +210,7 @@ describe('KickParticipantUseCase', () => {
         return cb(tx);
       },
     );
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await expect(
       useCase.execute({
@@ -219,7 +226,7 @@ describe('KickParticipantUseCase', () => {
     const { prisma } = buildTxPrisma({
       match: { ...mockMatch, status: 'canceled' },
     });
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await expect(
       useCase.execute({
@@ -233,7 +240,7 @@ describe('KickParticipantUseCase', () => {
 
   it('throws ConflictException REVISION_CONFLICT on revision mismatch', async () => {
     const { prisma } = buildTxPrisma();
-    const useCase = new KickParticipantUseCase(prisma, mockAudit);
+    const useCase = new KickParticipantUseCase(prisma, mockAudit, mockNotification);
 
     await expect(
       useCase.execute({

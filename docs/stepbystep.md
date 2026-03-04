@@ -40,6 +40,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 32. [Push: Backend source of truth + deviceId + group_added notification](#32-push-backend-source-of-truth--deviceid--group_added-notification)
 33. [MatchGender computed + Reject invite (reemplaza Decline)](#33-matchgender-computed--reject-invite-reemplaza-decline)
 34. [Mobile PR 3: MatchDetail redesign (countdown, matchGender, Reject, OthersSection)](#34-mobile-pr-3-matchdetail-redesign-countdown-matchgender-reject-otherssection)
+35. [Match Lifecycle: Scheduler + Freeze Edit + Missing-Players Alerts + Notification Bucket Dedup](#35-match-lifecycle-scheduler--freeze-edit--missing-players-alerts--notification-bucket-dedup)
 
 ---
 
@@ -1157,4 +1158,53 @@ apps/api/src/matches/application/list-matches.query.spec.ts  (fix mock para dobl
 apps/mobile/src/types/api.ts                     (+ matchGender en MatchHomeItem + MatchSnapshot)
 apps/mobile/src/screens/CreateMatchScreen.tsx     (formatDate → dd-mm-yyyy)
 apps/mobile/src/screens/MatchDetailScreen.tsx     (countdown, matchGender, reject, OthersSection)
+```
+
+---
+
+## 35. Match Lifecycle: Scheduler + Freeze Edit + Missing-Players Alerts + Notification Bucket Dedup
+
+### Que se hizo
+
+**MatchLifecycleJob (scheduler):**
+- `@nestjs/schedule` activado: `ScheduleModule.forRoot()` en `app.module.ts`.
+- `MatchLifecycleJob` con `@Cron(EVERY_MINUTE)` procesa partidos en la ventana `[now-5min, now+60min]` que no sean `canceled`/`played`.
+- **Regla 1 — Auto-lock**: si `minutesToStart <= 60 && confirmedCount >= capacity && !isLocked` → actualiza `isLocked=true`, `lockedAt`, `lockedBy=null`, incrementa `revision`, registra audit `match.auto_locked`, notifica WS.
+- **Regla 2 — Reminder**: si `minutesToStart <= 60 && confirmedCount < capacity` → envía push `reminder_missing_players` a creator + admins con dedup por bucket (`b0`..`b3`, ventana de 15 min).
+- **Regla 3 — Auto-cancel**: si `minutesToStart <= 0 && confirmedCount < capacity` → cancela el match, registra audit `match.auto_canceled`, notifica WS, dispara push `onCanceled` a todos los participantes (actorId=null).
+- Reglas 1 y 3 son idempotentes por diseño (re-chequeo dentro de la transacción con `lockMatchRow`).
+
+**Freeze edit (T-60):**
+- `UpdateMatchUseCase`: nuevo check antes del check de lock — si `minutesToStart <= 60` → lanza `UnprocessableEntityException('MATCH_EDIT_FROZEN')`.
+
+**Missing-players alert en leave y kick:**
+- `LeaveMatchUseCase`: si el participante que se va era CONFIRMED + match isLocked + T-60 → `onMissingPlayersAlert` fire-and-forget a creator + admins (5-min cooldown).
+- `KickParticipantUseCase`: misma lógica post-kick para confirmed + locked + T-60.
+
+**Notification Bucket Dedup:**
+- `NotificationDelivery` gana columna `bucket TEXT` nullable con índice compuesto `(userId, matchId, type, bucket)`.
+- `MatchNotificationService`: nuevos tipos `reminder_missing_players` (dedup por bucket) y `missing_players_alert` (cooldown 5-min).
+- `shouldSend` y `recordDelivery` aceptan `bucket?` opcional. Si se pasa bucket, usa query por bucket exacto (no ventana de tiempo).
+- `onCanceled`: `actorId: string | null` — si null (system cancel), notifica a todos; si no, excluye al actor. Cuerpo del mensaje diferente para cada caso.
+
+**Nuevos audit types:**
+- `match.auto_locked`, `match.auto_canceled` en `AuditLogType`.
+
+### Archivos clave
+
+```
+apps/api/src/matches/application/match-lifecycle.job.ts          (nuevo)
+apps/api/src/matches/application/match-lifecycle.job.spec.ts     (nuevo, 5 tests)
+apps/api/prisma/migrations/20260304120000_notification_delivery_bucket/migration.sql (nuevo)
+apps/api/prisma/schema.prisma                                    (+ bucket en NotificationDelivery)
+apps/api/src/app.module.ts                                       (+ ScheduleModule.forRoot())
+apps/api/src/matches/matches.module.ts                           (+ MatchLifecycleJob)
+apps/api/src/matches/application/match-audit.service.ts          (+ MATCH_AUTO_LOCKED, MATCH_AUTO_CANCELED)
+apps/api/src/matches/application/match-notification.service.ts   (+ 2 types, bucket dedup, nullable actorId)
+apps/api/src/matches/application/match-notification.service.spec.ts (+ 4 nuevos describe blocks)
+apps/api/src/matches/application/update-match.use-case.ts        (+ MATCH_EDIT_FROZEN check)
+apps/api/src/matches/application/leave-match.use-case.ts         (+ missing-players alert)
+apps/api/src/matches/application/kick-participant.use-case.ts    (+ MatchNotificationService, alert)
+apps/api/src/matches/application/kick-participant.use-case.spec.ts (actualizado: + mockNotification)
+apps/api/src/matches/application/update-lock.use-case.spec.ts    (fix: futureStartsAt > 60min)
 ```

@@ -168,6 +168,123 @@ describe('MatchNotificationService.onCanceled', () => {
   });
 });
 
+// ── onCanceled (system cancel, actorId=null) ────────────────────────────────
+
+describe('MatchNotificationService.onCanceled — system cancel', () => {
+  it('notifies all users when actorId is null (system cancel)', async () => {
+    const { service, provider } = buildService();
+
+    await service.onCanceled({
+      matchId: 'match-1',
+      matchTitle: 'Fútbol 5',
+      userIds: ['user-1', 'user-2'],
+      actorId: null,
+    });
+
+    expect(provider.sendToUser).toHaveBeenCalledTimes(2);
+    expect(provider.sendToUser).toHaveBeenCalledWith('user-1', {
+      title: 'Partido cancelado',
+      body: '"Fútbol 5" fue cancelado automáticamente por falta de jugadores.',
+      data: { type: 'canceled', matchId: 'match-1' },
+    });
+    expect(provider.sendToUser).toHaveBeenCalledWith('user-2', {
+      title: 'Partido cancelado',
+      body: '"Fútbol 5" fue cancelado automáticamente por falta de jugadores.',
+      data: { type: 'canceled', matchId: 'match-1' },
+    });
+  });
+});
+
+// ── onReminderMissingPlayers ────────────────────────────────────────────────
+
+describe('MatchNotificationService.onReminderMissingPlayers', () => {
+  it('sends reminder with correct body and records delivery with bucket', async () => {
+    const { service, prisma, provider } = buildService();
+
+    await service.onReminderMissingPlayers({
+      matchId: 'match-1',
+      matchTitle: 'Fútbol 5',
+      userIds: ['user-1'],
+      missingCount: 3,
+      minutesToStart: 45,
+      bucket: 'b3',
+    });
+
+    expect(provider.sendToUser).toHaveBeenCalledWith('user-1', {
+      title: 'Faltan jugadores',
+      body: 'Faltan 3 jugadores para "Fútbol 5" (45 min).',
+      data: { type: 'reminder_missing_players', matchId: 'match-1' },
+    });
+    expect(
+      (prisma.client as any).notificationDelivery.create,
+    ).toHaveBeenCalledWith({
+      data: { userId: 'user-1', matchId: 'match-1', type: 'reminder_missing_players', bucket: 'b3' },
+    });
+  });
+
+  it('skips notification when bucket delivery already exists', async () => {
+    const { service, provider } = buildService({
+      notificationDelivery: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'existing' }),
+        create: jest.fn(),
+      },
+    });
+
+    await service.onReminderMissingPlayers({
+      matchId: 'match-1',
+      matchTitle: 'Fútbol 5',
+      userIds: ['user-1'],
+      missingCount: 3,
+      minutesToStart: 45,
+      bucket: 'b3',
+    });
+
+    expect(provider.sendToUser).not.toHaveBeenCalled();
+  });
+});
+
+// ── onMissingPlayersAlert ───────────────────────────────────────────────────
+
+describe('MatchNotificationService.onMissingPlayersAlert', () => {
+  it('sends alert with correct body', async () => {
+    const { service, provider } = buildService();
+
+    await service.onMissingPlayersAlert({
+      matchId: 'match-1',
+      matchTitle: 'Fútbol 5',
+      userIds: ['user-1', 'user-2'],
+      missingCount: 2,
+      minutesToStart: 30,
+    });
+
+    expect(provider.sendToUser).toHaveBeenCalledTimes(2);
+    expect(provider.sendToUser).toHaveBeenCalledWith('user-1', {
+      title: 'Se bajó un jugador',
+      body: 'Faltan 2 jugadores para "Fútbol 5" (30 min).',
+      data: { type: 'missing_players_alert', matchId: 'match-1' },
+    });
+  });
+
+  it('skips when within 5-min cooldown', async () => {
+    const { service, provider } = buildService({
+      notificationDelivery: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'existing' }),
+        create: jest.fn(),
+      },
+    });
+
+    await service.onMissingPlayersAlert({
+      matchId: 'match-1',
+      matchTitle: 'Fútbol 5',
+      userIds: ['user-1'],
+      missingCount: 2,
+      minutesToStart: 30,
+    });
+
+    expect(provider.sendToUser).not.toHaveBeenCalled();
+  });
+});
+
 // ── onReconfirmRequired ────────────────────────────────────────────────────
 
 describe('MatchNotificationService.onReconfirmRequired', () => {

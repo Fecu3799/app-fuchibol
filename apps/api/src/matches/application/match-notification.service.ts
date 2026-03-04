@@ -9,13 +9,17 @@ export type MatchNotificationType =
   | 'invited'
   | 'promoted'
   | 'reconfirm_required'
-  | 'canceled';
+  | 'canceled'
+  | 'reminder_missing_players'
+  | 'missing_players_alert';
 
-const COOLDOWN_MS: Record<MatchNotificationType, number> = {
+const COOLDOWN_MS: Partial<Record<MatchNotificationType, number>> = {
   invited: 30 * 60 * 1000,
   promoted: 5 * 60 * 1000,
   reconfirm_required: 60 * 60 * 1000,
   canceled: 60 * 60 * 1000,
+  missing_players_alert: 5 * 60 * 1000,
+  // reminder_missing_players uses bucket-based dedup (no time-window cooldown)
 };
 
 export interface OnInvitedInput {
@@ -40,7 +44,24 @@ export interface OnCanceledInput {
   matchId: string;
   matchTitle: string;
   userIds: string[];
-  actorId: string;
+  actorId: string | null;
+}
+
+export interface OnReminderMissingPlayersInput {
+  matchId: string;
+  matchTitle: string;
+  userIds: string[];
+  missingCount: number;
+  minutesToStart: number;
+  bucket: string;
+}
+
+export interface OnMissingPlayersAlertInput {
+  matchId: string;
+  matchTitle: string;
+  userIds: string[];
+  missingCount: number;
+  minutesToStart: number;
 }
 
 @Injectable()
@@ -100,8 +121,14 @@ export class MatchNotificationService {
 
   async onCanceled(input: OnCanceledInput): Promise<void> {
     const { matchId, matchTitle, userIds, actorId } = input;
-    // Don't notify the actor who executed the cancel
-    const targets = userIds.filter((id) => id !== actorId);
+    // actorId == null means system cancel → notify all; otherwise skip the actor
+    const targets =
+      actorId !== null ? userIds.filter((id) => id !== actorId) : userIds;
+
+    const body =
+      actorId !== null
+        ? `"${matchTitle}" fue cancelado por el organizador.`
+        : `"${matchTitle}" fue cancelado automáticamente por falta de jugadores.`;
 
     await Promise.allSettled(
       targets.map(async (userId) => {
@@ -109,7 +136,7 @@ export class MatchNotificationService {
 
         await this.provider.sendToUser(userId, {
           title: 'Partido cancelado',
-          body: `"${matchTitle}" fue cancelado por el organizador.`,
+          body,
           data: { type: 'canceled', matchId },
         });
 
@@ -118,12 +145,77 @@ export class MatchNotificationService {
     );
   }
 
+  async onReminderMissingPlayers(
+    input: OnReminderMissingPlayersInput,
+  ): Promise<void> {
+    const { matchId, matchTitle, userIds, missingCount, minutesToStart, bucket } =
+      input;
+
+    await Promise.allSettled(
+      userIds.map(async (userId) => {
+        if (
+          !(await this.shouldSend(
+            userId,
+            matchId,
+            'reminder_missing_players',
+            bucket,
+          ))
+        )
+          return;
+
+        await this.provider.sendToUser(userId, {
+          title: 'Faltan jugadores',
+          body: `Faltan ${missingCount} jugadores para "${matchTitle}" (${Math.round(minutesToStart)} min).`,
+          data: { type: 'reminder_missing_players', matchId },
+        });
+
+        await this.recordDelivery(
+          userId,
+          matchId,
+          'reminder_missing_players',
+          bucket,
+        );
+      }),
+    );
+  }
+
+  async onMissingPlayersAlert(input: OnMissingPlayersAlertInput): Promise<void> {
+    const { matchId, matchTitle, userIds, missingCount, minutesToStart } = input;
+
+    await Promise.allSettled(
+      userIds.map(async (userId) => {
+        if (
+          !(await this.shouldSend(userId, matchId, 'missing_players_alert'))
+        )
+          return;
+
+        await this.provider.sendToUser(userId, {
+          title: 'Se bajó un jugador',
+          body: `Faltan ${missingCount} jugadores para "${matchTitle}" (${Math.round(minutesToStart)} min).`,
+          data: { type: 'missing_players_alert', matchId },
+        });
+
+        await this.recordDelivery(userId, matchId, 'missing_players_alert');
+      }),
+    );
+  }
+
   private async shouldSend(
     userId: string,
     matchId: string,
     type: MatchNotificationType,
+    bucket?: string,
   ): Promise<boolean> {
+    if (bucket !== undefined) {
+      // Bucket-based dedup: one notification per (userId, matchId, type, bucket)
+      const existing = await this.prisma.client.notificationDelivery.findFirst({
+        where: { userId, matchId, type, bucket },
+      });
+      return existing === null;
+    }
+
     const cooldownMs = COOLDOWN_MS[type];
+    if (cooldownMs === undefined) return true;
     const since = new Date(Date.now() - cooldownMs);
 
     const existing = await this.prisma.client.notificationDelivery.findFirst({
@@ -137,9 +229,10 @@ export class MatchNotificationService {
     userId: string,
     matchId: string,
     type: MatchNotificationType,
+    bucket?: string,
   ): Promise<void> {
     await this.prisma.client.notificationDelivery.create({
-      data: { userId, matchId, type },
+      data: { userId, matchId, type, ...(bucket !== undefined ? { bucket } : {}) },
     });
   }
 }

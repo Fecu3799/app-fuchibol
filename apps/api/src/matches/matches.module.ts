@@ -23,6 +23,7 @@ import { GetMatchAuditLogsQuery } from './application/get-match-audit-logs.query
 import { MatchNotificationService } from './application/match-notification.service';
 import { GetInviteCandidatesQuery } from './application/get-invite-candidates.query';
 import { KickParticipantUseCase } from './application/kick-participant.use-case';
+import { MatchLifecycleJob } from './application/match-lifecycle.job';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule, MatchRealtimeModule, PushModule],
@@ -47,6 +48,7 @@ import { KickParticipantUseCase } from './application/kick-participant.use-case'
     MatchNotificationService,
     GetInviteCandidatesQuery,
     KickParticipantUseCase,
+    MatchLifecycleJob,
   ],
 })
 export class MatchesModule {}

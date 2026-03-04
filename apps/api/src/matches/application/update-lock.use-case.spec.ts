@@ -16,11 +16,13 @@ const mockMatchNotification = {
 } as any;
 
 const now = new Date();
+// Must be > 60 min in the future so update-match doesn't throw MATCH_EDIT_FROZEN
+const futureStartsAt = new Date(now.getTime() + 90 * 60 * 1000);
 
 const baseMockMatch = {
   id: 'match-1',
   title: 'Futbol 5',
-  startsAt: now,
+  startsAt: futureStartsAt,
   location: 'Cancha Norte',
   capacity: 10,
   status: 'scheduled',
@@ -32,6 +34,7 @@ const baseMockMatch = {
   createdAt: now,
   updatedAt: now,
 };
+
 
 function buildTxPrisma(matchOverrides: Record<string, unknown> = {}) {
   const match = { ...baseMockMatch, ...matchOverrides };
@@ -257,7 +260,7 @@ describe('UpdateMatchUseCase', () => {
       matchId: 'match-1',
       actorId: 'admin-1',
       expectedRevision: 1,
-      startsAt: now.toISOString(),
+      startsAt: futureStartsAt.toISOString(),
     });
 
     // No actual change → no update at all (early return)

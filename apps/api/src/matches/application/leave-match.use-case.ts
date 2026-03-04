@@ -21,6 +21,15 @@ export interface LeaveMatchInput {
   idempotencyKey: string;
 }
 
+interface RunResult {
+  snapshot: MatchSnapshot;
+  promotedUserId: string | null;
+  wasConfirmed: boolean;
+  isLocked: boolean;
+  minutesToStart: number;
+  confirmedCount: number;
+}
+
 @Injectable()
 export class LeaveMatchUseCase {
   private readonly logger = new Logger(LeaveMatchUseCase.name);
@@ -60,12 +69,56 @@ export class LeaveMatchUseCase {
         );
     }
 
+    if (
+      result.wasConfirmed &&
+      result.isLocked &&
+      result.minutesToStart <= 60
+    ) {
+      void this.notifyMissingPlayers(
+        input.matchId,
+        result.snapshot,
+        result.confirmedCount,
+        result.minutesToStart,
+      ).catch((err: unknown) =>
+        this.logger.warn(
+          `[MatchNotification] onMissingPlayersAlert failed: ${(err as Error)?.message}`,
+          { matchId: input.matchId },
+        ),
+      );
+    }
+
     return result.snapshot;
   }
 
-  private async run(
-    input: LeaveMatchInput,
-  ): Promise<{ snapshot: MatchSnapshot; promotedUserId: string | null }> {
+  private async notifyMissingPlayers(
+    matchId: string,
+    snapshot: MatchSnapshot,
+    confirmedCount: number,
+    minutesToStart: number,
+  ): Promise<void> {
+    const missingCount = snapshot.capacity - confirmedCount;
+    if (missingCount <= 0) return;
+
+    // Notify creator + admins (distinct)
+    const adminRows = await this.prisma.client.matchParticipant.findMany({
+      where: { matchId, isMatchAdmin: true },
+      select: { userId: true },
+    });
+    const creatorId = snapshot.createdById;
+    const recipientIds = [
+      ...new Set([creatorId, ...adminRows.map((r) => r.userId)]),
+    ];
+
+    await this.matchNotification.onMissingPlayersAlert({
+      matchId,
+      matchTitle: snapshot.title,
+      userIds: recipientIds,
+      missingCount,
+      minutesToStart,
+    });
+  }
+
+  private async run(input: LeaveMatchInput): Promise<RunResult> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -92,6 +145,7 @@ export class LeaveMatchUseCase {
       });
 
       const isCreator = match.createdById === input.actorId;
+      const minutesToStart = (match.startsAt.getTime() - Date.now()) / 60_000;
 
       // Creator transfer must happen even if creator has no participation row
       if (isCreator) {
@@ -137,6 +191,10 @@ export class LeaveMatchUseCase {
         return {
           snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
           promotedUserId: null,
+          wasConfirmed: false,
+          isLocked: match.isLocked,
+          minutesToStart,
+          confirmedCount: 0,
         };
       }
 
@@ -199,9 +257,18 @@ export class LeaveMatchUseCase {
         );
       }
 
+      // Count confirmed after deletion (promotion may have changed the count)
+      const confirmedCount = await tx.matchParticipant.count({
+        where: { matchId: input.matchId, status: 'CONFIRMED' },
+      });
+
       return {
         snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
         promotedUserId,
+        wasConfirmed,
+        isLocked: match.isLocked,
+        minutesToStart,
+        confirmedCount,
       };
     });
   }

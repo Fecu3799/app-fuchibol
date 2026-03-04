@@ -18,6 +18,8 @@ export const AuditLogType = {
   ADMIN_PROMOTED: 'admin.promoted',
   ADMIN_DEMOTED: 'admin.demoted',
   PARTICIPANT_KICKED: 'participant.kicked',
+  MATCH_AUTO_LOCKED: 'match.auto_locked',
+  MATCH_AUTO_CANCELED: 'match.auto_canceled',
 } as const;
 
 type TransactionClient = Omit<

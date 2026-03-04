@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
@@ -55,6 +56,12 @@ export class UpdateMatchUseCase {
 
       if (match.revision !== input.expectedRevision) {
         throw new ConflictException('REVISION_CONFLICT');
+      }
+
+      const minutesToStart =
+        (match.startsAt.getTime() - Date.now()) / 60_000;
+      if (minutesToStart <= 60) {
+        throw new UnprocessableEntityException('MATCH_EDIT_FROZEN');
       }
 
       if (match.isLocked) {

@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { DevAuthMiddleware } from './infra/auth/dev-auth.middleware';
 import { PrismaModule } from './infra/prisma/prisma.module';
@@ -13,6 +14,7 @@ import { PushModule } from './push/push.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AppThrottleModule,
     AuthModule,

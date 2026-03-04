@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchNotificationService } from './match-notification.service';
 
 export interface KickParticipantInput {
   matchId: string;
@@ -19,13 +21,23 @@ export interface KickParticipantInput {
 
 @Injectable()
 export class KickParticipantUseCase {
+  private readonly logger = new Logger(KickParticipantUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: MatchAuditService,
+    private readonly matchNotification: MatchNotificationService,
   ) {}
 
   async execute(input: KickParticipantInput): Promise<MatchSnapshot> {
-    return this.prisma.client.$transaction(async (tx) => {
+    let alertContext: {
+      isLocked: boolean;
+      minutesToStart: number;
+      confirmedCount: number;
+      matchTitle: string;
+    } | null = null;
+
+    const snapshot = await this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
       const match = await tx.match.findUnique({
@@ -105,7 +117,68 @@ export class KickParticipantUseCase {
         { targetUserId: input.targetUserId, wasConfirmed },
       );
 
+      const minutesToStart = (match.startsAt.getTime() - Date.now()) / 60_000;
+
+      if (wasConfirmed && match.isLocked && minutesToStart <= 60) {
+        const confirmedCount = await tx.matchParticipant.count({
+          where: { matchId: input.matchId, status: 'CONFIRMED' },
+        });
+        alertContext = {
+          isLocked: match.isLocked,
+          minutesToStart,
+          confirmedCount,
+          matchTitle: match.title,
+        };
+      }
+
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
+    });
+
+    if (alertContext) {
+      const { matchTitle, confirmedCount, minutesToStart } = alertContext;
+      void this.notifyMissingPlayers(
+        input.matchId,
+        matchTitle,
+        snapshot.createdById,
+        confirmedCount,
+        snapshot.capacity,
+        minutesToStart,
+      ).catch((err: unknown) =>
+        this.logger.warn(
+          `[MatchNotification] onMissingPlayersAlert (kick) failed: ${(err as Error)?.message}`,
+          { matchId: input.matchId },
+        ),
+      );
+    }
+
+    return snapshot;
+  }
+
+  private async notifyMissingPlayers(
+    matchId: string,
+    matchTitle: string,
+    creatorId: string,
+    confirmedCount: number,
+    capacity: number,
+    minutesToStart: number,
+  ): Promise<void> {
+    const missingCount = capacity - confirmedCount;
+    if (missingCount <= 0) return;
+
+    const adminRows = await this.prisma.client.matchParticipant.findMany({
+      where: { matchId, isMatchAdmin: true },
+      select: { userId: true },
+    });
+    const recipientIds = [
+      ...new Set([creatorId, ...adminRows.map((r) => r.userId)]),
+    ];
+
+    await this.matchNotification.onMissingPlayersAlert({
+      matchId,
+      matchTitle,
+      userIds: recipientIds,
+      missingCount,
+      minutesToStart,
     });
   }
 }
