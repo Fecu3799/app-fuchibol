@@ -484,11 +484,11 @@ describe('Confirm on locked match', () => {
     ).rejects.toThrow('MATCH_LOCKED');
   });
 
-  it('actor DECLINED on locked match -> 409 MATCH_LOCKED', async () => {
+  it('actor SPECTATOR on locked match -> 409 MATCH_LOCKED', async () => {
     const { prisma, tx } = buildTxPrisma({ isLocked: true });
     tx.matchParticipant.findUnique = jest
       .fn()
-      .mockResolvedValue({ id: 'p-1', status: 'DECLINED' });
+      .mockResolvedValue({ id: 'p-1', status: 'SPECTATOR' });
     const useCase = new ConfirmParticipationUseCase(
       prisma,
       buildIdempotency(prisma),

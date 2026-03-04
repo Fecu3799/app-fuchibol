@@ -35,6 +35,7 @@ export interface MatchHomeItem {
   capacity: number;
   status: string;
   matchStatus: 'UPCOMING' | 'PLAYED' | 'CANCELLED';
+  matchGender: 'SIN_DEFINIR' | 'MASCULINO' | 'FEMENINO' | 'MIXTO';
   revision: number;
   isLocked: boolean;
   lockedAt: string | null;
@@ -79,6 +80,7 @@ export interface MatchSnapshot {
   capacity: number;
   status: string;
   matchStatus: 'UPCOMING' | 'PLAYED' | 'CANCELLED';
+  matchGender: 'SIN_DEFINIR' | 'MASCULINO' | 'FEMENINO' | 'MIXTO';
   revision: number;
   isLocked: boolean;
   lockedAt: string | null;
@@ -140,6 +142,27 @@ export interface CreateGroupResponse {
   name: string;
   ownerId: string;
   createdAt: string;
+}
+
+// ── Invite Candidates ──
+
+export type InviteCandidateStatus =
+  | 'CONFIRMED'
+  | 'INVITED'
+  | 'WAITLISTED'
+  | 'SPECTATOR'
+  | 'NONE';
+
+export interface InviteCandidate {
+  userId: string;
+  username: string;
+  matchStatus: InviteCandidateStatus;
+  canInvite: boolean;
+  reason?: string;
+}
+
+export interface GetInviteCandidatesResponse {
+  candidates: InviteCandidate[];
 }
 
 // ── Match Audit Logs ──

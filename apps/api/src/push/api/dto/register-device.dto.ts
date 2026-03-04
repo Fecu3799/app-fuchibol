@@ -19,4 +19,8 @@ export class RegisterDeviceDto {
   @IsOptional()
   @IsString()
   appVersion?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 }

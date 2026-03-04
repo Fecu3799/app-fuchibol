@@ -1,7 +1,7 @@
 import { ActivityIndicator, ImageBackground, Platform, StyleSheet, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Asset } from 'expo-asset';
-import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -27,7 +27,7 @@ import SessionsScreen from '../screens/SessionsScreen';
 
 // Preload and decode the auth background as soon as this module is imported,
 // so it's ready before the first AuthNavigator render.
-const _bg = require('../../../../docs/ui/templates/bg.jpg') as number;
+const _bg = require('../../assets/bg.jpg') as number;
 void Asset.fromModule(_bg).downloadAsync().catch(() => {});
 
 // ── Param lists ──
@@ -232,7 +232,10 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } }}
+    >
       {isAuthenticated ? <AppNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );

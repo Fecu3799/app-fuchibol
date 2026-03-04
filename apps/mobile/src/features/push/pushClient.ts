@@ -4,6 +4,7 @@ interface RegisterDevicePayload {
   expoPushToken: string;
   platform: 'ios' | 'android';
   deviceName?: string;
+  deviceId?: string;
 }
 
 interface RegisterDeviceResponse {
@@ -25,4 +26,21 @@ export function registerPushDevice(
     },
     body: JSON.stringify(payload),
   });
+}
+
+interface PushDeviceItem {
+  id: string;
+  platform: string;
+  deviceName: string | null;
+  deviceId: string | null;
+  lastSeenAt: string;
+  disabledAt: string | null;
+}
+
+interface GetPushDevicesResponse {
+  devices: PushDeviceItem[];
+}
+
+export function getPushDevices(): Promise<GetPushDevicesResponse> {
+  return fetchJson<GetPushDevicesResponse>(buildUrl('/api/v1/push/devices'));
 }

@@ -140,7 +140,7 @@ export class ToggleSpectatorUseCase {
         auditType = AuditLogType.PARTICIPANT_SPECTATOR_ON;
         auditMeta = { fromStatus: 'CONFIRMED' };
       } else {
-        // INVITED / WAITLISTED / DECLINED → SPECTATOR
+        // INVITED / WAITLISTED → SPECTATOR
         await tx.matchParticipant.update({
           where: { id: existing.id },
           data: {

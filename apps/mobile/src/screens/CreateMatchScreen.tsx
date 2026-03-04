@@ -42,7 +42,7 @@ function pad(n: number): string {
 }
 
 function formatDate(d: Date): string {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}`;
 }
 
 function formatTime(d: Date): string {

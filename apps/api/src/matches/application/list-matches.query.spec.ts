@@ -79,11 +79,16 @@ describe('ListMatchesQuery', () => {
       .fn()
       .mockResolvedValue([{ matchId: 'match-1', _count: { _all: 3 } }]);
 
-    // myStatus: user-1 is CONFIRMED in match-1, participant in match-2 as INVITED
-    prisma.client.matchParticipant.findMany = jest.fn().mockResolvedValue([
-      { matchId: 'match-1', status: 'CONFIRMED' },
-      { matchId: 'match-2', status: 'INVITED' },
-    ]);
+    // findMany is called twice: (1) actor participations, (2) confirmed genders
+    prisma.client.matchParticipant.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { matchId: 'match-1', status: 'CONFIRMED' },
+        { matchId: 'match-2', status: 'INVITED' },
+      ])
+      .mockResolvedValueOnce([
+        { matchId: 'match-1', user: { gender: 'MALE' } },
+      ]);
 
     const query = new ListMatchesQuery(prisma);
     const result = await query.execute({

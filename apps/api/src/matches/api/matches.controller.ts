@@ -21,13 +21,15 @@ import { LockMatchUseCase } from '../application/lock-match.use-case';
 import { UnlockMatchUseCase } from '../application/unlock-match.use-case';
 import { CancelMatchUseCase } from '../application/cancel-match.use-case';
 import { ConfirmParticipationUseCase } from '../application/confirm-participation.use-case';
-import { DeclineParticipationUseCase } from '../application/decline-participation.use-case';
+import { RejectInviteUseCase } from '../application/reject-invite.use-case';
 import { ToggleSpectatorUseCase } from '../application/toggle-spectator.use-case';
 import { InviteParticipationUseCase } from '../application/invite-participation.use-case';
 import { LeaveMatchUseCase } from '../application/leave-match.use-case';
 import { PromoteAdminUseCase } from '../application/promote-admin.use-case';
 import { DemoteAdminUseCase } from '../application/demote-admin.use-case';
 import { GetMatchAuditLogsQuery } from '../application/get-match-audit-logs.query';
+import { GetInviteCandidatesQuery } from '../application/get-invite-candidates.query';
+import { KickParticipantUseCase } from '../application/kick-participant.use-case';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { CreateMatchResponseDto } from './dto/create-match-response.dto';
 import { GetMatchResponseDto } from './dto/match-snapshot.dto';
@@ -39,6 +41,8 @@ import {
 } from './dto/participation-command.dto';
 import { PromoteAdminDto, DemoteAdminDto } from './dto/admin-command.dto';
 import { AuditLogsQueryDto } from './dto/audit-logs-query.dto';
+import { InviteCandidatesQueryDto } from './dto/invite-candidates-query.dto';
+import { KickParticipantDto } from './dto/kick-participant.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
@@ -56,7 +60,7 @@ export class MatchesController {
     private readonly unlockMatchUseCase: UnlockMatchUseCase,
     private readonly cancelMatchUseCase: CancelMatchUseCase,
     private readonly confirmUseCase: ConfirmParticipationUseCase,
-    private readonly declineUseCase: DeclineParticipationUseCase,
+    private readonly rejectInviteUseCase: RejectInviteUseCase,
     private readonly toggleSpectatorUseCase: ToggleSpectatorUseCase,
     private readonly inviteUseCase: InviteParticipationUseCase,
     private readonly leaveMatchUseCase: LeaveMatchUseCase,
@@ -64,6 +68,8 @@ export class MatchesController {
     private readonly demoteAdminUseCase: DemoteAdminUseCase,
     private readonly realtimePublisher: MatchRealtimePublisher,
     private readonly getMatchAuditLogsQuery: GetMatchAuditLogsQuery,
+    private readonly getInviteCandidatesQuery: GetInviteCandidatesQuery,
+    private readonly kickParticipantUseCase: KickParticipantUseCase,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -198,20 +204,37 @@ export class MatchesController {
     return snapshot;
   }
 
+  /** @deprecated Use POST :id/reject — kept for mobile backwards compat until PR 3. */
   @UseGuards(JwtAuthGuard)
   @Throttle({ mutations: {} })
   @Post(':id/decline')
   async decline(
     @Param('id', new ParseUUIDPipe()) matchId: string,
-    @Body() body: ParticipationCommandDto,
     @Headers('idempotency-key') idempotencyKey: string,
     @Actor() actor: ActorPayload,
   ) {
     this.requireIdempotencyKey(idempotencyKey);
-    const snapshot: MatchSnapshot = await this.declineUseCase.execute({
+    const snapshot: MatchSnapshot = await this.rejectInviteUseCase.execute({
       matchId,
       actorId: actor.userId,
-      expectedRevision: body.expectedRevision,
+      idempotencyKey,
+    });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/reject')
+  async reject(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.requireIdempotencyKey(idempotencyKey);
+    const snapshot: MatchSnapshot = await this.rejectInviteUseCase.execute({
+      matchId,
+      actorId: actor.userId,
       idempotencyKey,
     });
     this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
@@ -330,6 +353,38 @@ export class MatchesController {
       page: query.page ?? 1,
       pageSize: query.pageSize ?? 20,
     });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':id/invite-candidates')
+  async getInviteCandidates(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Query() query: InviteCandidatesQueryDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.getInviteCandidatesQuery.execute({
+      matchId,
+      groupId: query.groupId,
+      actorId: actor.userId,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/kick')
+  async kick(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: KickParticipantDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    const snapshot: MatchSnapshot = await this.kickParticipantUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      targetUserId: body.userId,
+      expectedRevision: body.expectedRevision,
+    });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
   }
 
   private requireIdempotencyKey(

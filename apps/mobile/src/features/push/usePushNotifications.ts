@@ -2,13 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 import { useAuth } from '../../contexts/AuthContext';
-import { registerPushDevice } from './pushClient';
-
-const STORE_KEY_PUSH_ENABLED = 'push_enabled';
-const STORE_KEY_PUSH_TOKEN = 'push_token';
+import { registerPushDevice, getPushDevices } from './pushClient';
+import { getOrCreateDeviceId } from '../../lib/token-store';
 
 type PushStatus = 'idle' | 'requesting' | 'registered' | 'denied' | 'error';
 
@@ -18,21 +15,6 @@ interface UsePushNotificationsResult {
   /** Call this from the Settings "Enable notifications" button. */
   requestAndRegister: () => Promise<void>;
   isSupported: boolean;
-}
-
-async function storeValue(key: string, value: string) {
-  if (Platform.OS === 'web') {
-    try { localStorage.setItem(key, value); } catch {}
-  } else {
-    await SecureStore.setItemAsync(key, value);
-  }
-}
-
-async function getStoredValue(key: string): Promise<string | null> {
-  if (Platform.OS === 'web') {
-    try { return localStorage.getItem(key); } catch { return null; }
-  }
-  return SecureStore.getItemAsync(key);
 }
 
 function resolveProjectId(): string {
@@ -71,26 +53,42 @@ async function getExpoPushToken(): Promise<string> {
 }
 
 export function usePushNotifications(): UsePushNotificationsResult {
-  const { token: authToken } = useAuth();
+  const { token: authToken, user } = useAuth();
   const [status, setStatus] = useState<PushStatus>('idle');
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
 
   // Push notifications are not supported on web or simulators.
   const isSupported = Platform.OS !== 'web' && Device.isDevice;
 
-  // On mount, restore previously registered token from storage.
+  async function fetchAndSetStatus() {
+    if (!user?.id) {
+      setStatus('idle');
+      return;
+    }
+    try {
+      const localDeviceId = await getOrCreateDeviceId();
+      const { devices } = await getPushDevices();
+      const active = devices.find((d) => d.deviceId === localDeviceId && !d.disabledAt);
+      setStatus(active ? 'registered' : 'idle');
+    } catch {
+      // 401 is handled globally by the interceptor; silently stay idle
+      setStatus('idle');
+    }
+  }
+
+  // Check backend for registration status per user. Re-runs when userId changes.
   useEffect(() => {
-    if (!isSupported) return;
-    getStoredValue(STORE_KEY_PUSH_TOKEN).then((storedToken) => {
-      if (storedToken) {
-        setExpoPushToken(storedToken);
-        setStatus('registered');
-      }
-    });
-  }, [isSupported]);
+    if (!isSupported || !user?.id) {
+      setStatus('idle');
+      setExpoPushToken(null);
+      return;
+    }
+    void fetchAndSetStatus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupported, user?.id]);
 
   const requestAndRegister = useCallback(async () => {
-    if (!isSupported || !authToken) return;
+    if (!isSupported || !authToken || !user?.id) return;
 
     setStatus('requesting');
     try {
@@ -108,23 +106,23 @@ export function usePushNotifications(): UsePushNotificationsResult {
       }
 
       const pushToken = await getExpoPushToken();
+      const localDeviceId = await getOrCreateDeviceId();
 
       await registerPushDevice(authToken, {
         expoPushToken: pushToken,
         platform: Platform.OS as 'ios' | 'android',
         deviceName: Device.deviceName ?? undefined,
+        deviceId: localDeviceId,
       });
 
-      await storeValue(STORE_KEY_PUSH_ENABLED, 'true');
-      await storeValue(STORE_KEY_PUSH_TOKEN, pushToken);
-
       setExpoPushToken(pushToken);
-      setStatus('registered');
+      await fetchAndSetStatus();
     } catch (err) {
       console.error('[usePushNotifications] Error:', err);
       setStatus('error');
     }
-  }, [isSupported, authToken]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSupported, authToken, user?.id]);
 
   return { status, expoPushToken, requestAndRegister, isSupported };
 }

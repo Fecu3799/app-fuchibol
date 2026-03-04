@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
 import { computeMatchStatusView } from '../domain/compute-match-status-view';
 import type { MatchStatusView } from '../domain/compute-match-status-view';
+import { computeMatchGender } from '../domain/compute-match-gender';
+import type { MatchGender } from '../domain/compute-match-gender';
 
 type TransactionClient = Omit<
   PrismaClient,
@@ -28,6 +30,7 @@ export interface MatchSnapshot {
   capacity: number;
   status: string;
   matchStatus: MatchStatusView;
+  matchGender: MatchGender;
   revision: number;
   isLocked: boolean;
   lockedAt: Date | null;
@@ -56,7 +59,7 @@ export async function buildMatchSnapshot(
   const participants = await prisma.matchParticipant.findMany({
     where: { matchId },
     orderBy: { createdAt: 'asc' },
-    include: { user: { select: { username: true } } },
+    include: { user: { select: { username: true, gender: true } } },
   });
 
   const confirmed = participants.filter((p) => p.status === 'CONFIRMED');
@@ -76,11 +79,11 @@ export async function buildMatchSnapshot(
 
   if (!isCanceled) {
     if (!match.isLocked) {
-      if (!myStatus || myStatus === 'DECLINED') {
+      if (!myStatus) {
         actionsAllowed.push('confirm');
       }
       if (myStatus === 'INVITED') {
-        actionsAllowed.push('confirm', 'decline');
+        actionsAllowed.push('confirm', 'reject');
       }
       if (isAdmin) {
         actionsAllowed.push('invite');
@@ -88,7 +91,7 @@ export async function buildMatchSnapshot(
     } else {
       // Locked: INVITED users can still respond to their invitation
       if (myStatus === 'INVITED') {
-        actionsAllowed.push('confirm');
+        actionsAllowed.push('confirm', 'reject');
       }
     }
 
@@ -108,7 +111,7 @@ export async function buildMatchSnapshot(
 
     // Creator-only actions
     if (isCreator) {
-      actionsAllowed.push('update', 'cancel', 'manage_admins');
+      actionsAllowed.push('update', 'cancel', 'manage_admins', 'manage_kick');
     }
   }
 
@@ -144,6 +147,7 @@ export async function buildMatchSnapshot(
     capacity: match.capacity,
     status: match.status,
     matchStatus: computeMatchStatusView(match),
+    matchGender: computeMatchGender(confirmed.map((p) => p.user.gender)),
     revision: match.revision,
     isLocked: match.isLocked,
     lockedAt: match.lockedAt,

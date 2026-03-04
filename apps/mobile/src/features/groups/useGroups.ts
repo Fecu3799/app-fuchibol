@@ -9,5 +9,7 @@ export function useGroups() {
     queryKey: ['groups'],
     queryFn: () => getGroups(token!),
     enabled: !!token,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }

@@ -14,8 +14,10 @@ export const AuditLogType = {
   MATCH_CANCELED: 'match.canceled',
   MATCH_UPDATED_MAJOR: 'match.updated_major',
   INVITE_SENT: 'invite.sent',
+  INVITE_REJECTED: 'invite.rejected',
   ADMIN_PROMOTED: 'admin.promoted',
   ADMIN_DEMOTED: 'admin.demoted',
+  PARTICIPANT_KICKED: 'participant.kicked',
 } as const;
 
 type TransactionClient = Omit<

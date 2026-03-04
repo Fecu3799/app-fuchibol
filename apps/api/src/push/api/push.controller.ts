@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
 import { RegisterDeviceUseCase } from '../application/register-device.use-case';
+import { GetPushDevicesQuery } from '../application/get-push-devices.query';
 import { PushService } from '../application/push.service';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { TestPushDto } from './dto/test-push.dto';
@@ -18,9 +20,16 @@ import { TestPushDto } from './dto/test-push.dto';
 export class PushController {
   constructor(
     private readonly registerDeviceUseCase: RegisterDeviceUseCase,
+    private readonly getPushDevicesQuery: GetPushDevicesQuery,
     private readonly pushService: PushService,
     private readonly config: ConfigService,
   ) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('devices')
+  async listDevices(@Actor() actor: ActorPayload) {
+    return this.getPushDevicesQuery.execute(actor.userId);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post('devices/register')
@@ -33,6 +42,7 @@ export class PushController {
       expoPushToken: body.expoPushToken,
       platform: body.platform,
       deviceName: body.deviceName,
+      deviceId: body.deviceId,
     });
   }
 

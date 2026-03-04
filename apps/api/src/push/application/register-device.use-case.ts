@@ -6,6 +6,7 @@ interface RegisterDeviceInput {
   expoPushToken: string;
   platform: string;
   deviceName?: string;
+  deviceId?: string;
 }
 
 @Injectable()
@@ -20,6 +21,7 @@ export class RegisterDeviceUseCase {
         userId: input.userId,
         platform: input.platform,
         deviceName: input.deviceName ?? null,
+        deviceId: input.deviceId ?? null,
         lastSeenAt: now,
         disabledAt: null,
       },
@@ -28,6 +30,7 @@ export class RegisterDeviceUseCase {
         expoPushToken: input.expoPushToken,
         platform: input.platform,
         deviceName: input.deviceName ?? null,
+        deviceId: input.deviceId ?? null,
         lastSeenAt: now,
       },
       select: {

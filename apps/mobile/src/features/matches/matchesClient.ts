@@ -1,5 +1,5 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { CreateMatchResponse, GetMatchAuditLogsResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot } from '../../types/api';
+import type { CreateMatchResponse, GetInviteCandidatesResponse, GetMatchAuditLogsResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot } from '../../types/api';
 
 interface ListParams {
   page?: number;
@@ -126,5 +126,32 @@ export function demoteAdmin(
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ expectedRevision }),
+  });
+}
+
+export function getInviteCandidates(
+  token: string,
+  matchId: string,
+  groupId: string,
+): Promise<GetInviteCandidatesResponse> {
+  return fetchJson<GetInviteCandidatesResponse>(
+    buildUrl(`/api/v1/matches/${matchId}/invite-candidates`, { groupId }),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
+export function kickParticipant(
+  token: string,
+  matchId: string,
+  userId: string,
+  expectedRevision: number,
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/kick`), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ userId, expectedRevision }),
   });
 }

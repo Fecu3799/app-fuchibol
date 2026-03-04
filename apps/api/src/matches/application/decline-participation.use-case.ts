@@ -1,13 +1,5 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { Injectable, NotImplementedException } from '@nestjs/common';
+import type { MatchSnapshot } from './build-match-snapshot';
 
 export interface DeclineInput {
   matchId: string;
@@ -16,97 +8,13 @@ export interface DeclineInput {
   idempotencyKey: string;
 }
 
+/**
+ * DEPRECATED — this use-case is being replaced by the "reject" action in PR 2.
+ * The DECLINED participant status has been removed from the DB schema.
+ */
 @Injectable()
 export class DeclineParticipationUseCase {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly idempotency: IdempotencyService,
-    private readonly audit: MatchAuditService,
-  ) {}
-
-  async execute(input: DeclineInput): Promise<MatchSnapshot> {
-    return this.idempotency.run({
-      key: input.idempotencyKey,
-      actorId: input.actorId,
-      route: 'POST /matches/:id/decline',
-      matchId: input.matchId,
-      requestBody: {
-        matchId: input.matchId,
-        expectedRevision: input.expectedRevision,
-      },
-      execute: () => this.run(input),
-    });
-  }
-
-  private async run(input: DeclineInput): Promise<MatchSnapshot> {
-    return this.prisma.client.$transaction(async (tx) => {
-      await lockMatchRow(tx, input.matchId);
-
-      const match = await tx.match.findUnique({
-        where: { id: input.matchId },
-      });
-
-      if (!match) {
-        throw new NotFoundException('Match not found');
-      }
-
-      if (match.status === 'canceled') {
-        throw new ConflictException('MATCH_CANCELLED');
-      }
-
-      if (match.revision !== input.expectedRevision) {
-        throw new ConflictException('REVISION_CONFLICT');
-      }
-
-      if (match.isLocked) {
-        throw new ConflictException('MATCH_LOCKED');
-      }
-
-      const existing = await tx.matchParticipant.findUnique({
-        where: {
-          matchId_userId: { matchId: input.matchId, userId: input.actorId },
-        },
-      });
-
-      if (existing?.status === 'DECLINED') {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
-      }
-
-      if (existing?.status === 'CONFIRMED') {
-        throw new ConflictException(
-          'Cannot decline while confirmed. Use leave or spectator first.',
-        );
-      }
-
-      if (existing) {
-        await tx.matchParticipant.update({
-          where: { id: existing.id },
-          data: { status: 'DECLINED', waitlistPosition: null },
-        });
-      } else {
-        await tx.matchParticipant.create({
-          data: {
-            matchId: input.matchId,
-            userId: input.actorId,
-            status: 'DECLINED',
-          },
-        });
-      }
-
-      await tx.match.update({
-        where: { id: input.matchId },
-        data: { revision: match.revision + 1 },
-      });
-
-      await this.audit.log(
-        tx,
-        input.matchId,
-        input.actorId,
-        AuditLogType.PARTICIPANT_DECLINED,
-        {},
-      );
-
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
-    });
+  execute(_input: DeclineInput): Promise<MatchSnapshot> {
+    throw new NotImplementedException('DECLINE_REMOVED');
   }
 }

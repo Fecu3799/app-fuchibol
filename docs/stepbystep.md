@@ -37,6 +37,9 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 29. [Auth Mobile Sprint 3: Register + Verify Email end-to-end](#29-auth-mobile-sprint-3-register--verify-email-end-to-end)
 30. [Auth Sprint 4: Password Reset + Change Password](#30-auth-sprint-4-password-reset--change-password)
 31. [Auth Sprint 5: Auth Audit Events + Session Management UI](#31-auth-sprint-5-auth-audit-events--session-management-ui)
+32. [Push: Backend source of truth + deviceId + group_added notification](#32-push-backend-source-of-truth--deviceid--group_added-notification)
+33. [MatchGender computed + Reject invite (reemplaza Decline)](#33-matchgender-computed--reject-invite-reemplaza-decline)
+34. [Mobile PR 3: MatchDetail redesign (countdown, matchGender, Reject, OthersSection)](#34-mobile-pr-3-matchdetail-redesign-countdown-matchgender-reject-otherssection)
 
 ---
 
@@ -1058,4 +1061,100 @@ apps/mobile/src/features/auth/authClient.ts                 (+ getSessions, dele
 apps/mobile/src/screens/SessionsScreen.tsx                  (nuevo)
 apps/mobile/src/navigation/AppNavigator.tsx                 (+ Sessions route)
 apps/mobile/src/screens/SettingsScreen.tsx                  (+ Manage devices btn)
+```
+
+---
+
+## 32. Push: Backend source of truth + deviceId + group_added notification
+
+### Que se hizo
+
+- **Backend como fuente de verdad para push**: `GET /api/v1/push/devices` devuelve los dispositivos del usuario autenticado (sin expoPushToken). El hook `usePushNotifications` ahora consulta el backend al montar/cambiar de usuario en vez de leer SecureStore.
+- **deviceId en PushDevice**: campo `deviceId` (nullable, sin unique) persistido en la tabla `PushDevice` para identificar el dispositivo actual. El cliente lo genera y lo persiste via `getOrCreateDeviceId()` (ya existente en `token-store.ts`).
+- **Notificacion push `group_added`**: al agregar un miembro a un grupo se envía push al usuario agregado (fire-and-forget, 30 min cooldown via `NotificationDelivery`).
+- **NotificationDelivery**: `matchId` ahora nullable; campo `groupId` (nullable UUID) e índice compuesto `(userId, groupId, type, createdAt)` para dedupe de notificaciones de grupo.
+
+### Convencion
+
+El hook `usePushNotifications` ya no escribe en SecureStore para el estado push; el backend es la fuente de verdad. `pushEnabledKey`/`pushTokenKey` eliminados del hook.
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma                               (PushDevice.deviceId, NotificationDelivery.groupId nullable)
+apps/api/prisma/migrations/20260303120000_.../migration.sql (nueva migración)
+apps/api/src/push/application/get-push-devices.query.ts     (nuevo)
+apps/api/src/push/api/push.controller.ts                    (+ GET devices)
+apps/api/src/push/api/dto/register-device.dto.ts            (+ deviceId)
+apps/api/src/push/application/register-device.use-case.ts  (+ deviceId en upsert)
+apps/api/src/push/push.module.ts                            (registra GetPushDevicesQuery)
+apps/api/src/groups/application/group-notification.service.ts (nuevo)
+apps/api/src/groups/application/add-member.use-case.ts      (fire-and-forget push)
+apps/api/src/groups/groups.module.ts                        (importa PushModule, registra GroupNotificationService)
+apps/mobile/src/features/push/pushClient.ts                 (+ getPushDevices, deviceId en RegisterDevicePayload)
+apps/mobile/src/features/push/usePushNotifications.ts       (backend source of truth, usa getOrCreateDeviceId)
+```
+
+---
+
+## 33. MatchGender computed + Reject invite (reemplaza Decline)
+
+### Que se hizo
+
+**MatchGender computed (Opción A):**
+- Campo `matchGender: 'SIN_DEFINIR' | 'MASCULINO' | 'FEMENINO' | 'MIXTO'` en `MatchSnapshot` y `MatchHomeItem`.
+- Se calcula en base a los `gender` de participantes con status `CONFIRMED`. Spectators, WAITLISTED e INVITED no cuentan.
+- Lógica: 0 confirmados → SIN_DEFINIR; todos MALE → MASCULINO; todos FEMALE → FEMENINO; mezcla → MIXTO.
+- Implementado como función pura `computeMatchGender(confirmedGenders: string[])` en `domain/`.
+- En `buildMatchSnapshot`: se añade `gender: true` al include de `user` y se llama `computeMatchGender`.
+- En `listMatchesQuery`: batch extra de `matchParticipant.findMany` para genders de confirmados (query 5), sin cambiar el groupBy existente.
+
+**Reject invite (reemplaza Decline):**
+- `DeclineParticipationUseCase` eliminado. Reemplazado por `RejectInviteUseCase`.
+- Reglas: solo INVITED puede rechazar; borra la fila (hard delete); incrementa revision; registra `invite.rejected` en audit log.
+- Locked match NO bloquea reject.
+- Sin `expectedRevision` (el usuario rechaza su propia invitación sin necesitar conocer el estado del match).
+- `/decline` (deprecado) y `/reject` (nuevo) llaman al mismo use case → backward compat para mobile hasta PR 3.
+- `actionsAllowed` de snapshot incluye `'reject'` cuando `myStatus === 'INVITED'`.
+
+### Archivos clave
+
+```
+apps/api/src/matches/domain/compute-match-gender.ts          (nuevo)
+apps/api/src/matches/domain/compute-match-gender.spec.ts     (nuevo, 6 tests)
+apps/api/src/matches/application/reject-invite.use-case.ts   (nuevo)
+apps/api/src/matches/application/reject-invite.use-case.spec.ts (nuevo, 5 tests)
+apps/api/src/matches/application/build-match-snapshot.ts     (+ matchGender, + reject en actionsAllowed, + gender en user select)
+apps/api/src/matches/application/list-matches.query.ts       (+ matchGender, + query 5 gender batch)
+apps/api/src/matches/application/match-audit.service.ts      (+ INVITE_REJECTED)
+apps/api/src/matches/api/matches.controller.ts               (swap decline→reject use case, + POST :id/reject)
+apps/api/src/matches/matches.module.ts                       (swap DeclineParticipationUseCase→RejectInviteUseCase)
+apps/api/src/matches/application/list-matches.query.spec.ts  (fix mock para doble findMany)
+```
+
+---
+
+## 34. Mobile PR 3: MatchDetail redesign (countdown, matchGender, Reject, OthersSection)
+
+### Que se hizo
+
+**Tipos:**
+- `MatchHomeItem` y `MatchSnapshot` en `apps/mobile/src/types/api.ts` reciben campo `matchGender`.
+
+**CreateMatchScreen:**
+- `formatDate` cambiado de `yyyy-mm-dd` a `dd-mm-yyyy` (solo display; ISO sigue enviándose al backend).
+
+**MatchDetailScreen (rediseño):**
+- **Countdown a `startsAt`**: `computeCountdown()` calcula tiempo restante. ≥1 día → `Xd Hh Mm`; <1 día → `Hh Mm Ss`. Tick cada 1s via `setInterval`. Desaparece cuando el partido ya arrancó. Aparece como InfoRow "Starts in".
+- **matchGender display**: InfoRow "Género" con valores Masculino/Femenino/Mixto/— (SIN_DEFINIR).
+- **Reject invite**: `PLAYER_ACTIONS` cambia de `["confirm", "decline"]` a `["confirm", "reject"]`. `handleAction("reject")` llama `doReject()` que hace `POST /matches/:id/reject`, invalida cache de matches y navega `goBack()` (el partido desaparece de la lista del usuario). Loading state independiente (`rejectLoading`) para el botón Rechazar.
+- **OthersSection**: Reemplaza las secciones separadas Invited/Waitlist/Declined/Spectator por una sola sección "Others" (sin sub-headers entre grupos). Orden: WAITLISTED → INVITED → SPECTATOR. Cada item tiene un `statusChip` de color indicando su estado. `OthersParticipantRow` mantiene promote/demote buttons para admins. DECLINED eliminado del UI.
+- **formatAuditLog**: agrega case `invite.rejected`.
+
+### Archivos clave
+
+```
+apps/mobile/src/types/api.ts                     (+ matchGender en MatchHomeItem + MatchSnapshot)
+apps/mobile/src/screens/CreateMatchScreen.tsx     (formatDate → dd-mm-yyyy)
+apps/mobile/src/screens/MatchDetailScreen.tsx     (countdown, matchGender, reject, OthersSection)
 ```

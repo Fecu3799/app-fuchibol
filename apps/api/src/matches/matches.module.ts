@@ -12,7 +12,7 @@ import { LockMatchUseCase } from './application/lock-match.use-case';
 import { UnlockMatchUseCase } from './application/unlock-match.use-case';
 import { CancelMatchUseCase } from './application/cancel-match.use-case';
 import { ConfirmParticipationUseCase } from './application/confirm-participation.use-case';
-import { DeclineParticipationUseCase } from './application/decline-participation.use-case';
+import { RejectInviteUseCase } from './application/reject-invite.use-case';
 import { ToggleSpectatorUseCase } from './application/toggle-spectator.use-case';
 import { InviteParticipationUseCase } from './application/invite-participation.use-case';
 import { LeaveMatchUseCase } from './application/leave-match.use-case';
@@ -21,6 +21,8 @@ import { DemoteAdminUseCase } from './application/demote-admin.use-case';
 import { MatchAuditService } from './application/match-audit.service';
 import { GetMatchAuditLogsQuery } from './application/get-match-audit-logs.query';
 import { MatchNotificationService } from './application/match-notification.service';
+import { GetInviteCandidatesQuery } from './application/get-invite-candidates.query';
+import { KickParticipantUseCase } from './application/kick-participant.use-case';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule, MatchRealtimeModule, PushModule],
@@ -34,7 +36,7 @@ import { MatchNotificationService } from './application/match-notification.servi
     UnlockMatchUseCase,
     CancelMatchUseCase,
     ConfirmParticipationUseCase,
-    DeclineParticipationUseCase,
+    RejectInviteUseCase,
     ToggleSpectatorUseCase,
     InviteParticipationUseCase,
     LeaveMatchUseCase,
@@ -43,6 +45,8 @@ import { MatchNotificationService } from './application/match-notification.servi
     MatchAuditService,
     GetMatchAuditLogsQuery,
     MatchNotificationService,
+    GetInviteCandidatesQuery,
+    KickParticipantUseCase,
   ],
 })
 export class MatchesModule {}

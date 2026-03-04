@@ -18,8 +18,8 @@ import type {
   ParticipantView,
   SpectatorView,
   GroupSummary,
-  GroupMember,
   AuditLogEntry,
+  InviteCandidate,
 } from "../types/api";
 import { useMatch } from "../features/matches/useMatch";
 import { useMatchRealtime } from "../features/matches/useMatchRealtime";
@@ -45,13 +45,14 @@ import {
 import { useLogoutOn401 } from "../lib/use-api-query";
 import { ApiError } from "../lib/api";
 import { useGroups } from "../features/groups/useGroups";
-import { useGroup } from "../features/groups/useGroup";
 import { useBatchInviteFromGroup } from "../features/matches/useBatchInviteFromGroup";
+import { useInviteCandidates } from "../features/matches/useInviteCandidates";
 import { useMatchAuditLogs } from "../features/matches/useMatchAuditLogs";
 import {
   postMatchAction,
   promoteAdmin,
   demoteAdmin,
+  kickParticipant,
 } from "../features/matches/matchesClient";
 import { randomUUID } from "expo-crypto";
 import { useAuth } from "../contexts/AuthContext";
@@ -80,7 +81,6 @@ const STATUS_LABEL: Record<string, string> = {
   CONFIRMED: "Confirmed",
   INVITED: "Pending",
   WAITLISTED: "Waitlist",
-  DECLINED: "Declined",
   SPECTATOR: "Spectator",
 };
 
@@ -88,28 +88,47 @@ const STATUS_COLOR: Record<string, string> = {
   CONFIRMED: "#2e7d32",
   INVITED: "#1976d2",
   WAITLISTED: "#f57c00",
-  DECLINED: "#9e9e9e",
   SPECTATOR: "#6d4c41",
+};
+
+const MATCH_GENDER_LABEL: Record<string, string> = {
+  MASCULINO: "Masculino",
+  FEMENINO: "Femenino",
+  MIXTO: "Mixto",
+  SIN_DEFINIR: "—",
 };
 
 const ACTION_LABELS: Record<string, string> = {
   confirm: "Confirm",
-  decline: "Decline",
+  reject: "Rechazar",
 };
 
 const ACTION_COLORS: Record<string, string> = {
   confirm: "#2e7d32",
-  decline: "#757575",
+  reject: "#757575",
 };
 
-const PLAYER_ACTIONS = ["confirm", "decline"] as const;
+const PLAYER_ACTIONS = ["confirm", "reject"] as const;
+
+const CANDIDATE_STATUS_COLOR: Record<string, string> = {
+  CONFIRMED: "#2e7d32",
+  INVITED: "#1976d2",
+  WAITLISTED: "#f57c00",
+  SPECTATOR: "#6d4c41",
+};
+
+const CANDIDATE_STATUS_LABEL: Record<string, string> = {
+  CONFIRMED: "Confirmado",
+  INVITED: "Invitado",
+  WAITLISTED: "En espera",
+  SPECTATOR: "Espectador",
+};
 
 // ── Derived counts from snapshot ──
 
 function deriveParticipantGroups(match: MatchSnapshot) {
   const confirmed: ParticipantView[] = [];
   const invited: ParticipantView[] = [];
-  const declined: ParticipantView[] = [];
 
   for (const p of match.participants) {
     switch (p.status) {
@@ -119,9 +138,6 @@ function deriveParticipantGroups(match: MatchSnapshot) {
       case "INVITED":
         invited.push(p);
         break;
-      case "DECLINED":
-        declined.push(p);
-        break;
       // WAITLISTED is in match.waitlist; SPECTATOR is in match.spectators
     }
   }
@@ -129,7 +145,6 @@ function deriveParticipantGroups(match: MatchSnapshot) {
   return {
     confirmed,
     invited,
-    declined,
     waitlist: match.waitlist,
     spectators: match.spectators ?? [],
   };
@@ -169,6 +184,8 @@ function formatAuditLog(entry: AuditLogEntry): string {
       return `${time} — ${who} promovió a alguien de la lista de espera`;
     case "invite.sent":
       return `${time} — ${who} invitó a un jugador`;
+    case "invite.rejected":
+      return `${time} — ${who} rechazó la invitación`;
     case "admin.promoted":
       return `${time} — ${who} promovió a un admin`;
     case "admin.demoted":
@@ -200,6 +217,21 @@ function useDevMatchLogger() {
   return { devStats, devLog };
 }
 
+// ── Countdown helper ──
+
+function computeCountdown(isoString: string): string {
+  const diff = new Date(isoString).getTime() - Date.now();
+  if (diff <= 0) return "";
+  const totalSec = Math.floor(diff / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const p = (n: number) => String(n).padStart(2, "0");
+  if (days > 0) return `${days}d ${p(hrs)}h ${p(mins)}m`;
+  return `${p(hrs)}h ${p(mins)}m ${p(secs)}s`;
+}
+
 // ── Component ──
 
 export default function MatchDetailScreen({ route, navigation }: Props) {
@@ -229,7 +261,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     new Set(),
   );
   const groupsQuery = useGroups();
-  const groupDetailQuery = useGroup(selectedGroupId);
+  const candidatesQuery = useInviteCandidates(matchId, selectedGroupId || null);
   const batchInviteMutation = useBatchInviteFromGroup(matchId, {
     onQueryInvalidated: () => devLog("afterMutation"),
   });
@@ -279,8 +311,21 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     console.log(`[MatchDetail] isFetching=${isFetching} count=${devStats.count}`);
   }, [isFetching, devStats.count]);
 
+  const startsAtStr = displayMatch?.startsAt ?? null;
+  useEffect(() => {
+    if (!startsAtStr) { setCountdown(""); return; }
+    const update = () => setCountdown(computeCountdown(startsAtStr));
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [startsAtStr]);
+
   const handleAction = (action: string) => {
     if (!displayMatch) return;
+    if (action === "reject") {
+      void doReject();
+      return;
+    }
     setActionError("");
     mutation.mutate(
       { action, revision: displayMatch.revision },
@@ -348,8 +393,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     );
   };
 
+  const [kickLoading, setKickLoading] = useState(false);
   const [leaveError, setLeaveError] = useState("");
   const [leaveLoading, setLeaveLoading] = useState(false);
+  const [rejectLoading, setRejectLoading] = useState(false);
+  const [countdown, setCountdown] = useState("");
   const [spectatorLoading, setSpectatorLoading] = useState(false);
   const [spectatorError, setSpectatorError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
@@ -430,6 +478,25 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     }
   };
 
+  const doReject = async () => {
+    if (!displayMatch || !token) return;
+    setActionError("");
+    setRejectLoading(true);
+    try {
+      await postMatchAction(token, matchId, "reject", displayMatch.revision, randomUUID());
+      qc.invalidateQueries({ queryKey: ["matches"] });
+      navigation.goBack();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setActionError(formatActionError(err));
+    } finally {
+      setRejectLoading(false);
+    }
+  };
+
   const handlePromote = async (targetUserId: string, username: string) => {
     if (!displayMatch || !token) return;
     setAdminActionLoading(true);
@@ -466,6 +533,48 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     }
   };
 
+  const handleKick = (targetUserId: string, username: string) => {
+    if (!displayMatch || !token) return;
+    const doKick = async () => {
+      setKickLoading(true);
+      try {
+        const snapshot = await kickParticipant(
+          token,
+          matchId,
+          targetUserId,
+          displayMatch.revision,
+        );
+        qc.setQueryData(["match", matchId], { match: snapshot });
+        qc.invalidateQueries({ queryKey: ["matches"] });
+        if (selectedGroupId) {
+          qc.invalidateQueries({
+            queryKey: ["invite-candidates", matchId, selectedGroupId],
+          });
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          logout();
+          return;
+        }
+        Alert.alert("Error", formatActionError(err));
+      } finally {
+        setKickLoading(false);
+      }
+    };
+    if (Platform.OS === "web") {
+      if (window.confirm(`¿Expulsar a @${username}?`)) void doKick();
+    } else {
+      Alert.alert(
+        "Expulsar",
+        `¿Expulsar a @${username}?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Expulsar", style: "destructive", onPress: doKick },
+        ],
+      );
+    }
+  };
+
   // ── Loading (first load only, no data at all) ──
   if (!displayMatch && isFetching) {
     return (
@@ -498,7 +607,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   if (!displayMatch) return null;
 
   const isSpectator = displayMatch.myStatus === "SPECTATOR";
-  // When SPECTATOR: hide confirm/decline (not a real participant)
+  // When SPECTATOR: hide confirm/reject (not a real participant)
   const visibleActions = PLAYER_ACTIONS.filter(
     (a) => displayMatch.actionsAllowed.includes(a) && !isSpectator,
   );
@@ -513,6 +622,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const canManageAdmins = displayMatch.actionsAllowed.includes("manage_admins");
   const lockTogglePending = lockMutation.isPending || unlockMutation.isPending;
   const isCanceled = displayMatch.status === "canceled";
+  const canKick = !isCanceled && displayMatch.actionsAllowed.includes("manage_kick");
   const groups = deriveParticipantGroups(displayMatch);
 
   return (
@@ -610,6 +720,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
       {/* Match info */}
       <View style={styles.infoBlock}>
+        {countdown ? <InfoRow label="Starts in" value={countdown} /> : null}
         <InfoRow label="Date" value={formatDate(displayMatch.startsAt)} />
         <InfoRow label="Time" value={formatTime(displayMatch.startsAt)} />
         {displayMatch.location && (
@@ -618,6 +729,10 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         <InfoRow
           label="Players"
           value={`${displayMatch.confirmedCount} / ${displayMatch.capacity}`}
+        />
+        <InfoRow
+          label="Género"
+          value={MATCH_GENDER_LABEL[displayMatch.matchGender] ?? "—"}
         />
       </View>
 
@@ -656,44 +771,24 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           adminActionLoading={adminActionLoading}
           onPromote={handlePromote}
           onDemote={handleDemote}
+          canKick={canKick}
+          kickLoading={kickLoading}
+          onKick={handleKick}
         />
       )}
-      {groups.invited.length > 0 && (
-        <ParticipantSection
-          title="Invited"
-          color="#1976d2"
-          items={groups.invited}
-          creatorId={displayMatch.createdById}
-          canManageAdmins={canManageAdmins}
-          adminActionLoading={adminActionLoading}
-          onPromote={handlePromote}
-          onDemote={handleDemote}
-        />
-      )}
-      {groups.waitlist.length > 0 && (
-        <ParticipantSection
-          title="Waitlist"
-          color="#f57c00"
-          items={groups.waitlist}
-          showPosition
-          creatorId={displayMatch.createdById}
-          canManageAdmins={canManageAdmins}
-          adminActionLoading={adminActionLoading}
-          onPromote={handlePromote}
-          onDemote={handleDemote}
-        />
-      )}
-      {groups.declined.length > 0 && (
-        <ParticipantSection
-          title="Declined"
-          color="#9e9e9e"
-          items={groups.declined}
-          creatorId={displayMatch.createdById}
-        />
-      )}
-      {groups.spectators.length > 0 && (
-        <SpectatorSection spectators={groups.spectators} />
-      )}
+      <OthersSection
+        waitlist={groups.waitlist}
+        invited={groups.invited}
+        spectators={groups.spectators}
+        creatorId={displayMatch.createdById}
+        canManageAdmins={canManageAdmins}
+        adminActionLoading={adminActionLoading}
+        onPromote={handlePromote}
+        onDemote={handleDemote}
+        canKick={canKick}
+        kickLoading={kickLoading}
+        onKick={handleKick}
+      />
 
       {/* Locked banner (hidden when canceled) */}
       {!isCanceled && displayMatch.isLocked && (
@@ -709,28 +804,30 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
             <Text style={styles.actionError}>{actionError}</Text>
           ) : null}
           <View style={styles.actionRow}>
-            {visibleActions.map((action) => (
-              <Pressable
-                key={action}
-                style={[
-                  styles.actionBtn,
-                  {
-                    backgroundColor: ACTION_COLORS[action] ?? "#1976d2",
-                  },
-                  mutation.isPending && styles.btnDisabled,
-                ]}
-                onPress={() => handleAction(action)}
-                disabled={mutation.isPending}
-              >
-                {mutation.isPending ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.actionBtnText}>
-                    {ACTION_LABELS[action] ?? action}
-                  </Text>
-                )}
-              </Pressable>
-            ))}
+            {visibleActions.map((action) => {
+              const isThisLoading = action === "reject" ? rejectLoading : mutation.isPending;
+              const isAnyLoading = mutation.isPending || rejectLoading;
+              return (
+                <Pressable
+                  key={action}
+                  style={[
+                    styles.actionBtn,
+                    { backgroundColor: ACTION_COLORS[action] ?? "#1976d2" },
+                    isAnyLoading && styles.btnDisabled,
+                  ]}
+                  onPress={() => handleAction(action)}
+                  disabled={isAnyLoading}
+                >
+                  {isThisLoading ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.actionBtnText}>
+                      {ACTION_LABELS[action] ?? action}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
         </View>
       )}
@@ -828,25 +925,33 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
               </View>
               {groupsQuery.isLoading ? (
                 <ActivityIndicator size="small" style={{ marginTop: 12 }} />
-              ) : (groupsQuery.data?.owned ?? []).length === 0 ? (
-                <Text style={styles.groupEmptyText}>No owned groups</Text>
-              ) : (
-                (groupsQuery.data?.owned ?? []).map((g) => (
-                  <Pressable
-                    key={g.id}
-                    style={styles.groupOption}
-                    onPress={() => {
-                      setSelectedGroupId(g.id);
-                      setSelectedMembers(new Set());
-                    }}
-                  >
-                    <Text style={styles.groupOptionName}>{g.name}</Text>
-                    <Text style={styles.groupOptionCount}>
-                      {g.memberCount} members
-                    </Text>
-                  </Pressable>
-                ))
-              )}
+              ) : (() => {
+                const allGroups = [
+                  ...(groupsQuery.data?.owned ?? []),
+                  ...(groupsQuery.data?.memberOf ?? []),
+                ].filter(
+                  (g, i, arr) => arr.findIndex((x) => x.id === g.id) === i,
+                );
+                return allGroups.length === 0 ? (
+                  <Text style={styles.groupEmptyText}>No groups</Text>
+                ) : (
+                  allGroups.map((g) => (
+                    <Pressable
+                      key={g.id}
+                      style={styles.groupOption}
+                      onPress={() => {
+                        setSelectedGroupId(g.id);
+                        setSelectedMembers(new Set());
+                      }}
+                    >
+                      <Text style={styles.groupOptionName}>{g.name}</Text>
+                      <Text style={styles.groupOptionCount}>
+                        {g.memberCount} members
+                      </Text>
+                    </Pressable>
+                  ))
+                );
+              })()}
             </View>
           ) : (
             <View>
@@ -861,41 +966,66 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.groupCancelText}>Back</Text>
                 </Pressable>
               </View>
-              {groupDetailQuery.isLoading ? (
+              {candidatesQuery.isLoading ? (
                 <ActivityIndicator size="small" style={{ marginTop: 12 }} />
               ) : (
                 <>
-                  {(groupDetailQuery.data?.members ?? []).map((m) => {
-                    const isSelected = selectedMembers.has(m.username);
-                    return (
-                      <Pressable
-                        key={m.userId}
-                        style={styles.memberCheckRow}
-                        onPress={() => {
-                          setSelectedMembers((prev) => {
-                            const next = new Set(prev);
-                            if (isSelected) next.delete(m.username);
-                            else next.add(m.username);
-                            return next;
-                          });
-                        }}
-                      >
-                        <View
+                  {(candidatesQuery.data?.candidates ?? []).map(
+                    (c: InviteCandidate) => {
+                      const isSelected = selectedMembers.has(c.username);
+                      const isDisabled =
+                        !c.canInvite || batchInviteMutation.isPending;
+                      return (
+                        <Pressable
+                          key={c.userId}
                           style={[
-                            styles.checkbox,
-                            isSelected && styles.checkboxChecked,
+                            styles.memberCheckRow,
+                            isDisabled && { opacity: 0.5 },
                           ]}
+                          onPress={() => {
+                            if (!c.canInvite) return;
+                            setSelectedMembers((prev) => {
+                              const next = new Set(prev);
+                              if (isSelected) next.delete(c.username);
+                              else next.add(c.username);
+                              return next;
+                            });
+                          }}
                         >
-                          {isSelected && (
-                            <Text style={styles.checkmark}>✓</Text>
+                          <View
+                            style={[
+                              styles.checkbox,
+                              isSelected && styles.checkboxChecked,
+                            ]}
+                          >
+                            {isSelected && (
+                              <Text style={styles.checkmark}>✓</Text>
+                            )}
+                          </View>
+                          <Text style={styles.memberCheckName}>
+                            @{c.username}
+                          </Text>
+                          {c.matchStatus !== "NONE" && (
+                            <View
+                              style={[
+                                styles.statusChip,
+                                {
+                                  backgroundColor:
+                                    CANDIDATE_STATUS_COLOR[c.matchStatus] ??
+                                    "#999",
+                                },
+                              ]}
+                            >
+                              <Text style={styles.statusChipText}>
+                                {CANDIDATE_STATUS_LABEL[c.matchStatus] ??
+                                  c.matchStatus}
+                              </Text>
+                            </View>
                           )}
-                        </View>
-                        <Text style={styles.memberCheckName}>
-                          @{m.username}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                        </Pressable>
+                      );
+                    },
+                  )}
                   <Pressable
                     style={[
                       styles.batchInviteBtn,
@@ -1069,6 +1199,9 @@ function ParticipantSection({
   adminActionLoading,
   onPromote,
   onDemote,
+  canKick,
+  kickLoading,
+  onKick,
 }: {
   title: string;
   color: string;
@@ -1079,6 +1212,9 @@ function ParticipantSection({
   adminActionLoading?: boolean;
   onPromote?: (userId: string, username: string) => void;
   onDemote?: (userId: string, username: string) => void;
+  canKick?: boolean;
+  kickLoading?: boolean;
+  onKick?: (userId: string, username: string) => void;
 }) {
   return (
     <View style={styles.section}>
@@ -1131,6 +1267,15 @@ function ParticipantSection({
                 </Text>
               </Pressable>
             )}
+            {canKick && !isCreator && (
+              <Pressable
+                style={[styles.kickBtn, kickLoading && styles.btnDisabled]}
+                onPress={() => onKick?.(p.userId, p.username)}
+                disabled={kickLoading}
+              >
+                <Text style={styles.kickBtnText}>Expulsar</Text>
+              </Pressable>
+            )}
           </View>
         );
       })}
@@ -1138,20 +1283,169 @@ function ParticipantSection({
   );
 }
 
-function SpectatorSection({ spectators }: { spectators: SpectatorView[] }) {
+function OthersSection({
+  waitlist,
+  invited,
+  spectators,
+  creatorId,
+  canManageAdmins,
+  adminActionLoading,
+  onPromote,
+  onDemote,
+  canKick,
+  kickLoading,
+  onKick,
+}: {
+  waitlist: ParticipantView[];
+  invited: ParticipantView[];
+  spectators: SpectatorView[];
+  creatorId?: string;
+  canManageAdmins?: boolean;
+  adminActionLoading?: boolean;
+  onPromote?: (userId: string, username: string) => void;
+  onDemote?: (userId: string, username: string) => void;
+  canKick?: boolean;
+  kickLoading?: boolean;
+  onKick?: (userId: string, username: string) => void;
+}) {
+  const total = waitlist.length + invited.length + spectators.length;
+  if (total === 0) return null;
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: "#6d4c41" }]} />
-        <Text style={styles.sectionTitle}>
-          Spectators ({spectators.length})
-        </Text>
+        <View style={[styles.sectionDot, { backgroundColor: "#757575" }]} />
+        <Text style={styles.sectionTitle}>Others ({total})</Text>
       </View>
+      {waitlist.map((p) => (
+        <OthersParticipantRow
+          key={p.userId}
+          participant={p}
+          badgeLabel="Waitlist"
+          badgeColor="#f57c00"
+          creatorId={creatorId}
+          canManageAdmins={canManageAdmins}
+          adminActionLoading={adminActionLoading}
+          onPromote={onPromote}
+          onDemote={onDemote}
+          canKick={canKick}
+          kickLoading={kickLoading}
+          onKick={onKick}
+        />
+      ))}
+      {invited.map((p) => (
+        <OthersParticipantRow
+          key={p.userId}
+          participant={p}
+          badgeLabel="Invited"
+          badgeColor="#1976d2"
+          creatorId={creatorId}
+          canManageAdmins={canManageAdmins}
+          adminActionLoading={adminActionLoading}
+          onPromote={onPromote}
+          onDemote={onDemote}
+          canKick={canKick}
+          kickLoading={kickLoading}
+          onKick={onKick}
+        />
+      ))}
       {spectators.map((s) => (
         <View key={s.userId} style={styles.participantRow}>
-          <Text style={styles.participantId}>@{s.username}</Text>
+          <View style={styles.participantInfo}>
+            <Text style={styles.participantId}>@{s.username}</Text>
+            <View style={[styles.statusChip, { backgroundColor: "#6d4c41" }]}>
+              <Text style={styles.statusChipText}>Spectator</Text>
+            </View>
+          </View>
+          {canKick && s.userId !== creatorId && (
+            <Pressable
+              style={[styles.kickBtn, kickLoading && styles.btnDisabled]}
+              onPress={() => onKick?.(s.userId, s.username)}
+              disabled={kickLoading}
+            >
+              <Text style={styles.kickBtnText}>Expulsar</Text>
+            </Pressable>
+          )}
         </View>
       ))}
+    </View>
+  );
+}
+
+function OthersParticipantRow({
+  participant: p,
+  badgeLabel,
+  badgeColor,
+  creatorId,
+  canManageAdmins,
+  adminActionLoading,
+  onPromote,
+  onDemote,
+  canKick,
+  kickLoading,
+  onKick,
+}: {
+  participant: ParticipantView;
+  badgeLabel: string;
+  badgeColor: string;
+  creatorId?: string;
+  canManageAdmins?: boolean;
+  adminActionLoading?: boolean;
+  onPromote?: (userId: string, username: string) => void;
+  onDemote?: (userId: string, username: string) => void;
+  canKick?: boolean;
+  kickLoading?: boolean;
+  onKick?: (userId: string, username: string) => void;
+}) {
+  const isCreator = p.userId === creatorId;
+  return (
+    <View style={styles.participantRow}>
+      <View style={styles.participantInfo}>
+        <Text style={styles.participantId}>
+          {p.waitlistPosition != null ? `#${p.waitlistPosition}  ` : ""}
+          @{p.username}
+        </Text>
+        <View style={[styles.statusChip, { backgroundColor: badgeColor }]}>
+          <Text style={styles.statusChipText}>{badgeLabel}</Text>
+        </View>
+        {isCreator && (
+          <View style={[styles.roleBadge, styles.roleBadgeCreator]}>
+            <Text style={styles.roleBadgeText}>Creator</Text>
+          </View>
+        )}
+        {!isCreator && p.isMatchAdmin && (
+          <View style={[styles.roleBadge, styles.roleBadgeAdmin]}>
+            <Text style={styles.roleBadgeText}>Admin</Text>
+          </View>
+        )}
+      </View>
+      {canManageAdmins && !isCreator && (
+        <Pressable
+          style={[
+            styles.adminToggleBtn,
+            p.isMatchAdmin ? styles.adminToggleDemote : styles.adminTogglePromote,
+            adminActionLoading && styles.btnDisabled,
+          ]}
+          onPress={() =>
+            p.isMatchAdmin
+              ? onDemote?.(p.userId, p.username)
+              : onPromote?.(p.userId, p.username)
+          }
+          disabled={adminActionLoading}
+        >
+          <Text style={styles.adminToggleText}>
+            {p.isMatchAdmin ? "Remove admin" : "Make admin"}
+          </Text>
+        </Pressable>
+      )}
+      {canKick && !isCreator && (
+        <Pressable
+          style={[styles.kickBtn, kickLoading && styles.btnDisabled]}
+          onPress={() => onKick?.(p.userId, p.username)}
+          disabled={kickLoading}
+        >
+          <Text style={styles.kickBtnText}>Expulsar</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -1332,6 +1626,22 @@ const styles = StyleSheet.create({
   adminTogglePromote: { backgroundColor: "#e8f5e9" },
   adminToggleDemote: { backgroundColor: "#fce4ec" },
   adminToggleText: { fontSize: 11, fontWeight: "600" as const, color: "#333" },
+  kickBtn: {
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#fce4ec",
+    marginLeft: 4,
+  },
+  kickBtnText: { fontSize: 11, fontWeight: "600" as const, color: "#d32f2f" },
+
+  // Status chip (in Others section)
+  statusChip: {
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  statusChipText: { fontSize: 10, fontWeight: "700" as const, color: "#fff" },
 
   // Actions
   actions: { marginTop: 8, marginBottom: 4 },

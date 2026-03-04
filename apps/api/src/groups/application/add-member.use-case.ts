@@ -2,12 +2,14 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { resolveUser } from '../../common/helpers/resolve-user.helper';
 import { GetGroupQuery } from './get-group.query';
 import type { GroupDetail } from './get-group.query';
+import { GroupNotificationService } from './group-notification.service';
 
 export interface AddMemberInput {
   groupId: string;
@@ -17,9 +19,12 @@ export interface AddMemberInput {
 
 @Injectable()
 export class AddMemberUseCase {
+  private readonly logger = new Logger(AddMemberUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly getGroupQuery: GetGroupQuery,
+    private readonly groupNotification: GroupNotificationService,
   ) {}
 
   async execute(input: AddMemberInput): Promise<GroupDetail> {
@@ -59,6 +64,21 @@ export class AddMemberUseCase {
       },
     });
 
-    return this.getGroupQuery.execute(input.groupId, input.actorId);
+    const result = await this.getGroupQuery.execute(
+      input.groupId,
+      input.actorId,
+    );
+
+    void this.groupNotification
+      .onMemberAdded({
+        groupId: input.groupId,
+        groupName: group.name,
+        addedUserId: targetUserId,
+      })
+      .catch((err: unknown) =>
+        this.logger.warn('[GroupNotification] onMemberAdded failed', { err }),
+      );
+
+    return result;
   }
 }

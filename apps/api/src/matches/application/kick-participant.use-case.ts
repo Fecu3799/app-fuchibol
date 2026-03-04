@@ -10,7 +10,7 @@ import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
 
-export interface PromoteAdminInput {
+export interface KickParticipantInput {
   matchId: string;
   actorId: string;
   targetUserId: string;
@@ -18,13 +18,13 @@ export interface PromoteAdminInput {
 }
 
 @Injectable()
-export class PromoteAdminUseCase {
+export class KickParticipantUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: MatchAuditService,
   ) {}
 
-  async execute(input: PromoteAdminInput): Promise<MatchSnapshot> {
+  async execute(input: KickParticipantInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -32,16 +32,18 @@ export class PromoteAdminUseCase {
         where: { id: input.matchId },
       });
 
-      if (!match) {
-        throw new NotFoundException('Match not found');
-      }
-
-      if (match.createdById !== input.actorId) {
-        throw new ForbiddenException('Only creator can manage admins');
-      }
+      if (!match) throw new NotFoundException('Match not found');
 
       if (match.status === 'canceled') {
         throw new ConflictException('MATCH_CANCELLED');
+      }
+
+      if (match.createdById !== input.actorId) {
+        throw new ForbiddenException('ONLY_CREATOR_CAN_KICK');
+      }
+
+      if (input.targetUserId === input.actorId) {
+        throw new UnprocessableEntityException('CANNOT_KICK_SELF');
       }
 
       if (match.revision !== input.expectedRevision) {
@@ -57,22 +59,38 @@ export class PromoteAdminUseCase {
         },
       });
 
-      if (!participant || participant.status === 'SPECTATOR') {
-        throw new UnprocessableEntityException('NOT_PARTICIPANT');
-      }
+      if (!participant) throw new NotFoundException('NOT_A_PARTICIPANT');
 
-      // Idempotent: already admin → return snapshot
-      if (participant.isMatchAdmin) {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
-      }
+      const wasConfirmed = participant.status === 'CONFIRMED';
 
-      await tx.matchParticipant.update({
+      await tx.matchParticipant.delete({
         where: { id: participant.id },
-        data: {
-          isMatchAdmin: true,
-          adminGrantedAt: new Date(),
-        },
       });
+
+      // Promote FIFO from waitlist if a confirmed participant was kicked
+      if (wasConfirmed) {
+        const next = await tx.matchParticipant.findFirst({
+          where: { matchId: input.matchId, status: 'WAITLISTED' },
+          orderBy: { waitlistPosition: 'asc' },
+        });
+        if (next) {
+          await tx.matchParticipant.update({
+            where: { id: next.id },
+            data: {
+              status: 'CONFIRMED',
+              waitlistPosition: null,
+              confirmedAt: new Date(),
+            },
+          });
+          await this.audit.log(
+            tx,
+            input.matchId,
+            input.actorId,
+            AuditLogType.WAITLIST_PROMOTED,
+            { promotedUserId: next.userId },
+          );
+        }
+      }
 
       await tx.match.update({
         where: { id: input.matchId },
@@ -83,8 +101,8 @@ export class PromoteAdminUseCase {
         tx,
         input.matchId,
         input.actorId,
-        AuditLogType.ADMIN_PROMOTED,
-        { targetUserId: input.targetUserId },
+        AuditLogType.PARTICIPANT_KICKED,
+        { targetUserId: input.targetUserId, wasConfirmed },
       );
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);

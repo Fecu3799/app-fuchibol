@@ -3,6 +3,8 @@ import { MatchStatus } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { computeMatchStatusView } from '../domain/compute-match-status-view';
 import type { MatchStatusView } from '../domain/compute-match-status-view';
+import { computeMatchGender } from '../domain/compute-match-gender';
+import type { MatchGender } from '../domain/compute-match-gender';
 
 export interface ListMatchesInput {
   actorId: string;
@@ -21,6 +23,7 @@ export interface MatchHomeItem {
   capacity: number;
   status: string;
   matchStatus: MatchStatusView;
+  matchGender: MatchGender;
   revision: number;
   isLocked: boolean;
   lockedAt: Date | null;
@@ -149,7 +152,21 @@ export class ListMatchesQuery {
       myParticipations.map((p) => [p.matchId, p.status]),
     );
 
-    // 5) Map to MatchHomeItem
+    // 5) Batch: gender of confirmed participants for matchGender computation
+    const confirmedWithGender =
+      await this.prisma.client.matchParticipant.findMany({
+        where: { matchId: { in: matchIds }, status: 'CONFIRMED' },
+        select: { matchId: true, user: { select: { gender: true } } },
+      });
+
+    const gendersByMatch = new Map<string, string[]>();
+    for (const row of confirmedWithGender) {
+      const list = gendersByMatch.get(row.matchId) ?? [];
+      list.push(row.user.gender);
+      gendersByMatch.set(row.matchId, list);
+    }
+
+    // 6) Map to MatchHomeItem
     const items: MatchHomeItem[] = matches.map((m) => ({
       id: m.id,
       title: m.title,
@@ -158,6 +175,7 @@ export class ListMatchesQuery {
       capacity: m.capacity,
       status: m.status,
       matchStatus: computeMatchStatusView(m, now),
+      matchGender: computeMatchGender(gendersByMatch.get(m.id) ?? []),
       revision: m.revision,
       isLocked: m.isLocked,
       lockedAt: m.lockedAt,

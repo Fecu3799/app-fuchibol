@@ -1,10 +1,21 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AppState, Platform } from 'react-native';
+import type { AppStateStatus } from 'react-native';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import * as Notifications from 'expo-notifications';
 import type { Notification, NotificationResponse } from 'expo-notifications';
 import { AuthProvider } from './src/contexts/AuthContext';
 import RootNavigator, { navigationRef } from './src/navigation/AppNavigator';
+
+// Wire React Query's focusManager to AppState so refetchOnWindowFocus works on native.
+if (Platform.OS !== 'web') {
+  focusManager.setEventListener((setFocused) => {
+    const subscription = AppState.addEventListener('change', (status: AppStateStatus) => {
+      setFocused(status === 'active');
+    });
+    return () => subscription.remove();
+  });
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {

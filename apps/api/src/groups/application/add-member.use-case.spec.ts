@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AddMemberUseCase } from './add-member.use-case';
 import { GetGroupQuery } from './get-group.query';
+import { GroupNotificationService } from './group-notification.service';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 
 const mockGroup = {
@@ -52,12 +53,22 @@ function buildGetGroupQuery() {
   } as unknown as GetGroupQuery;
 }
 
+function buildGroupNotification() {
+  return {
+    onMemberAdded: jest.fn().mockResolvedValue(undefined),
+  } as unknown as GroupNotificationService;
+}
+
 describe('AddMemberUseCase', () => {
   it('throws 404 when group not found', async () => {
     const { prisma, mocks } = buildMocks();
     mocks.groupFindUnique.mockResolvedValue(null);
     const getGroupQuery = buildGetGroupQuery();
-    const useCase = new AddMemberUseCase(prisma, getGroupQuery);
+    const useCase = new AddMemberUseCase(
+      prisma,
+      getGroupQuery,
+      buildGroupNotification(),
+    );
 
     await expect(
       useCase.execute({
@@ -71,7 +82,11 @@ describe('AddMemberUseCase', () => {
   it('throws 403 when actor is not owner', async () => {
     const { prisma } = buildMocks();
     const getGroupQuery = buildGetGroupQuery();
-    const useCase = new AddMemberUseCase(prisma, getGroupQuery);
+    const useCase = new AddMemberUseCase(
+      prisma,
+      getGroupQuery,
+      buildGroupNotification(),
+    );
 
     await expect(
       useCase.execute({
@@ -89,7 +104,11 @@ describe('AddMemberUseCase', () => {
       userId: 'user-2',
     });
     const getGroupQuery = buildGetGroupQuery();
-    const useCase = new AddMemberUseCase(prisma, getGroupQuery);
+    const useCase = new AddMemberUseCase(
+      prisma,
+      getGroupQuery,
+      buildGroupNotification(),
+    );
 
     await expect(
       useCase.execute({
@@ -103,7 +122,11 @@ describe('AddMemberUseCase', () => {
   it('adds member successfully', async () => {
     const { prisma, mocks } = buildMocks();
     const getGroupQuery = buildGetGroupQuery();
-    const useCase = new AddMemberUseCase(prisma, getGroupQuery);
+    const useCase = new AddMemberUseCase(
+      prisma,
+      getGroupQuery,
+      buildGroupNotification(),
+    );
 
     const result = await useCase.execute({
       groupId: 'group-1',

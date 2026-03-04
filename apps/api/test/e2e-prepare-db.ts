@@ -101,8 +101,13 @@ const prepare = async () => {
   });
 
   if (result.error) {
-    console.error('[e2e] prepare-db: failed to spawn pnpm —', result.error.message);
-    console.error('[e2e]   (hint: pnpm not found in PATH inside the Node subprocess)');
+    console.error(
+      '[e2e] prepare-db: failed to spawn pnpm —',
+      result.error.message,
+    );
+    console.error(
+      '[e2e]   (hint: pnpm not found in PATH inside the Node subprocess)',
+    );
     process.exit(1);
   }
 

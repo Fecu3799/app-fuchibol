@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 const STATUS_LABEL: Record<string, string> = {
   idle: 'Enable notifications',
   requesting: 'Requesting…',
-  registered: 'Notifications enabled ✓',
+  registered: 'Notifications enabled ✓ — tap to re-register',
   denied: 'Permission denied — check Settings',
   error: 'Error — try again',
 };
@@ -39,7 +39,7 @@ export default function SettingsScreen() {
           <TouchableOpacity
             style={[styles.button, isRegistered && styles.buttonSuccess]}
             onPress={requestAndRegister}
-            disabled={isLoading || isRegistered}
+            disabled={isLoading}
             activeOpacity={0.8}
           >
             <Text style={styles.buttonText}>{label}</Text>

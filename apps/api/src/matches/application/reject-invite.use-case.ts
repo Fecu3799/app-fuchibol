@@ -1,30 +1,41 @@
 import {
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
 
-export interface PromoteAdminInput {
+export interface RejectInviteInput {
   matchId: string;
   actorId: string;
-  targetUserId: string;
-  expectedRevision: number;
+  idempotencyKey: string;
 }
 
 @Injectable()
-export class PromoteAdminUseCase {
+export class RejectInviteUseCase {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
   ) {}
 
-  async execute(input: PromoteAdminInput): Promise<MatchSnapshot> {
+  async execute(input: RejectInviteInput): Promise<MatchSnapshot> {
+    return this.idempotency.run({
+      key: input.idempotencyKey,
+      actorId: input.actorId,
+      route: 'POST /matches/:id/reject',
+      matchId: input.matchId,
+      requestBody: { matchId: input.matchId },
+      execute: () => this.run(input),
+    });
+  }
+
+  private async run(input: RejectInviteInput): Promise<MatchSnapshot> {
     return this.prisma.client.$transaction(async (tx) => {
       await lockMatchRow(tx, input.matchId);
 
@@ -36,42 +47,22 @@ export class PromoteAdminUseCase {
         throw new NotFoundException('Match not found');
       }
 
-      if (match.createdById !== input.actorId) {
-        throw new ForbiddenException('Only creator can manage admins');
-      }
-
       if (match.status === 'canceled') {
         throw new ConflictException('MATCH_CANCELLED');
       }
 
-      if (match.revision !== input.expectedRevision) {
-        throw new ConflictException('REVISION_CONFLICT');
-      }
-
-      const participant = await tx.matchParticipant.findUnique({
+      const existing = await tx.matchParticipant.findUnique({
         where: {
-          matchId_userId: {
-            matchId: input.matchId,
-            userId: input.targetUserId,
-          },
+          matchId_userId: { matchId: input.matchId, userId: input.actorId },
         },
       });
 
-      if (!participant || participant.status === 'SPECTATOR') {
-        throw new UnprocessableEntityException('NOT_PARTICIPANT');
+      if (!existing || existing.status !== 'INVITED') {
+        throw new UnprocessableEntityException('NOT_INVITED');
       }
 
-      // Idempotent: already admin → return snapshot
-      if (participant.isMatchAdmin) {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
-      }
-
-      await tx.matchParticipant.update({
-        where: { id: participant.id },
-        data: {
-          isMatchAdmin: true,
-          adminGrantedAt: new Date(),
-        },
+      await tx.matchParticipant.delete({
+        where: { id: existing.id },
       });
 
       await tx.match.update({
@@ -83,8 +74,8 @@ export class PromoteAdminUseCase {
         tx,
         input.matchId,
         input.actorId,
-        AuditLogType.ADMIN_PROMOTED,
-        { targetUserId: input.targetUserId },
+        AuditLogType.INVITE_REJECTED,
+        {},
       );
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
