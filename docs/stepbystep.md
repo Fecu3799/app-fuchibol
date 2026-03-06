@@ -42,6 +42,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 34. [Mobile PR 3: MatchDetail redesign (countdown, matchGender, Reject, OthersSection)](#34-mobile-pr-3-matchdetail-redesign-countdown-matchgender-reject-otherssection)
 35. [Match Lifecycle: Scheduler + Freeze Edit + Missing-Players Alerts + Notification Bucket Dedup](#35-match-lifecycle-scheduler--freeze-edit--missing-players-alerts--notification-bucket-dedup)
 36. [User Profile Fields + termsAcceptedAt](#36-user-profile-fields--termsacceptedat)
+37. [Reliability Score + Suspension (Sprint 1)](#37-reliability-score--suspension-sprint-1)
 
 ---
 
@@ -1233,4 +1234,105 @@ apps/api/src/auth/application/register.use-case.ts
 apps/api/src/auth/application/get-me.use-case.ts
 apps/api/src/common/filters/api-exception.filter.ts
 apps/api/src/auth/application/register.use-case.spec.ts
+```
+
+---
+
+## 37. Reliability Score + Suspension (Sprint 1)
+
+### Que se hizo
+
+Implementacion del score de confiabilidad (0-100) basado en late-leaves, con suspension de 2 semanas si llega a 0 dentro de una ventana de 30 dias.
+
+**Reglas:**
+- Penalizacion por late-leave: -10 (minimo 0)
+- `reliabilityWindowStartedAt`: se setea en la primera penalizacion; se resetea si pasan > 30 dias
+- Si el score llega a 0 dentro de la ventana de 30 dias → `suspendedUntil = now + 14 dias`
+- Si el usuario ya esta suspendido, la penalizacion es no-op
+- Label derivado al vuelo: 85-100 Cumplidor, 70-84 Confiable, 50-69 Medio loro, 0-49 Poco confiable
+
+**Bloqueo de sesion:**
+- Login y refresh verifican `suspendedUntil > now` → 403 `account_suspended` con `suspendedUntil` en la respuesta
+
+### Migracion
+
+`20260306120000_reliability_score`: agrega `reliabilityScore SMALLINT DEFAULT 100`, `reliabilityWindowStartedAt TIMESTAMP?`, `suspendedUntil TIMESTAMP?` al modelo `User`.
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma (User: 3 campos nuevos)
+apps/api/prisma/migrations/20260306120000_reliability_score/migration.sql
+apps/api/src/matches/application/user-reliability.service.ts (nuevo)
+apps/api/src/matches/application/user-reliability.service.spec.ts (nuevo)
+apps/api/src/matches/application/leave-match.use-case.ts (llama UserReliabilityService en late-leave)
+apps/api/src/matches/matches.module.ts (registra UserReliabilityService)
+apps/api/src/auth/application/login.use-case.ts (bloqueo por suspension)
+apps/api/src/auth/application/refresh.use-case.ts (bloqueo por suspension)
+apps/api/src/auth/application/get-me.use-case.ts (expone reliabilityScore, reliabilityLabel, suspendedUntil)
+apps/api/src/common/filters/api-exception.filter.ts (account_suspended code + suspendedUntil en body)
+apps/mobile/src/types/api.ts (MeResponse + ApiErrorBody actualizados)
+apps/mobile/src/screens/ProfileScreen.tsx (card de confiabilidad + banner de suspension)
+apps/mobile/src/screens/LoginScreen.tsx (manejo de account_suspended)
+```
+
+---
+
+## 38. Avatar Upload (Sprint 2) — Presigned URLs + MinIO/S3 + UI mobile
+
+### Que se hizo
+
+Subida de avatar via presigned PUT URL (S3-compatible). Storage en MinIO (dev) / S3 (prod). Sin guardar binario en DB.
+
+**Flujo:**
+1. Mobile llama `POST /api/v1/me/avatar/prepare` → recibe `uploadUrl` + `key`
+2. Mobile hace PUT directo al storage con el binario del archivo
+3. Mobile llama `POST /api/v1/me/avatar/confirm` → upsert en `UserAvatar`
+4. Mobile llama `refreshUser()` → `/me` devuelve `avatarUrl`
+
+**Validaciones:**
+- contentType: image/jpeg o image/png
+- size: > 0 y <= AVATAR_MAX_BYTES (3MB default)
+- key en confirm debe empezar con `avatars/{userId}/` (ownership check)
+
+**Env vars nuevas (apps/api):**
+```
+STORAGE_BUCKET=fuchibol-avatars
+STORAGE_REGION=us-east-1
+STORAGE_ACCESS_KEY_ID=minioadmin
+STORAGE_SECRET_ACCESS_KEY=minioadmin
+STORAGE_ENDPOINT=http://localhost:9000
+STORAGE_FORCE_PATH_STYLE=true
+STORAGE_PUBLIC_BASE_URL=http://localhost:9000/fuchibol-avatars
+AVATAR_MAX_BYTES=3145728
+```
+
+**MinIO (dev):** `docker compose -f infra/docker-compose.yml up minio -d`
+Consola web en http://localhost:9001. Crear bucket `fuchibol-avatars` manualmente o via mc.
+
+### Migracion
+
+`20260306130000_user_avatar`: tabla `UserAvatar` (userId PK, key, contentType, size).
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma (UserAvatar model + User.avatar relation)
+apps/api/prisma/migrations/20260306130000_user_avatar/migration.sql
+apps/api/src/infra/storage/storage.service.ts (nuevo — S3Client + presigned PUT)
+apps/api/src/infra/storage/storage.module.ts (nuevo)
+apps/api/src/auth/application/prepare-avatar.use-case.ts (nuevo)
+apps/api/src/auth/application/confirm-avatar.use-case.ts (nuevo)
+apps/api/src/auth/application/prepare-avatar.use-case.spec.ts (nuevo)
+apps/api/src/auth/application/confirm-avatar.use-case.spec.ts (nuevo)
+apps/api/src/auth/api/me.controller.ts (endpoints prepare + confirm)
+apps/api/src/auth/api/dto/prepare-avatar.dto.ts (nuevo)
+apps/api/src/auth/api/dto/confirm-avatar.dto.ts (nuevo)
+apps/api/src/auth/application/get-me.use-case.ts (avatarUrl derivado)
+apps/api/src/auth/auth.module.ts (StorageModule + nuevos use cases)
+apps/api/src/common/filters/api-exception.filter.ts (3 nuevos error codes)
+infra/docker-compose.yml (servicio minio)
+apps/mobile/src/types/api.ts (avatarUrl en MeResponse + nuevos tipos)
+apps/mobile/src/features/auth/authClient.ts (postAvatarPrepare, postAvatarConfirm)
+apps/mobile/src/screens/ProfileScreen.tsx (avatar UI + flujo de upload)
 ```

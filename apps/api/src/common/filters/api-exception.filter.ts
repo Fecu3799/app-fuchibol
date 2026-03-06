@@ -16,6 +16,7 @@ interface ProblemDetails {
   detail?: string;
   errors?: unknown;
   requestId: string;
+  suspendedUntil?: string;
 }
 
 const STATUS_CODE_MAP: Record<number, string> = {
@@ -45,10 +46,13 @@ const DOMAIN_UNPROCESSABLE_CODES = new Set([
   'CANNOT_DEMOTE_CREATOR',
   'NOT_PARTICIPANT',
   'TERMS_NOT_ACCEPTED',
+  'invalid_content_type',
+  'file_too_large',
+  'invalid_avatar_key',
 ]);
 
 /** Known domain error codes sent as ForbiddenException message strings. */
-const DOMAIN_FORBIDDEN_CODES = new Set(['EMAIL_NOT_VERIFIED']);
+const DOMAIN_FORBIDDEN_CODES = new Set(['EMAIL_NOT_VERIFIED', 'account_suspended']);
 
 /** Known domain error codes sent as UnauthorizedException message strings. */
 const DOMAIN_UNAUTHORIZED_CODES = new Set([
@@ -98,6 +102,14 @@ function resolveErrors(status: number, response: unknown): unknown {
   return undefined;
 }
 
+function resolveSuspendedUntil(response: unknown): string | undefined {
+  if (typeof response === 'object' && response !== null) {
+    const val = (response as Record<string, unknown>).suspendedUntil;
+    if (typeof val === 'string') return val;
+  }
+  return undefined;
+}
+
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
@@ -126,6 +138,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const code = resolveCode(status, response);
     const detail = resolveDetail(response);
     const errors = resolveErrors(status, response);
+    const suspendedUntil = resolveSuspendedUntil(response);
 
     const body: ProblemDetails = {
       type: 'about:blank',
@@ -136,6 +149,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     };
     if (detail) body.detail = detail;
     if (errors) body.errors = errors;
+    if (suspendedUntil) body.suspendedUntil = suspendedUntil;
 
     const ms =
       Date.now() -

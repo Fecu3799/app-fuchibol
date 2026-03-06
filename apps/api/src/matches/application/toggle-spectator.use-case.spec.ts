@@ -5,6 +5,9 @@ import { LeaveMatchUseCase } from './leave-match.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockUserReliability = {
+  applyLateLeavePenalty: jest.fn().mockResolvedValue(undefined),
+} as any;
 const mockMatchNotification = {
   onInvited: jest.fn().mockResolvedValue(undefined),
   onPromoted: jest.fn().mockResolvedValue(undefined),
@@ -54,6 +57,11 @@ function buildTxPrisma() {
     },
     user: {
       update: jest.fn().mockResolvedValue({ id: 'user-1', lateLeaveCount: 1 }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        reliabilityScore: 100,
+        reliabilityWindowStartedAt: null,
+        suspendedUntil: null,
+      }),
     },
   };
 
@@ -90,6 +98,7 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -118,6 +127,7 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -150,6 +160,7 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -185,6 +196,7 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -210,6 +222,7 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await expect(
@@ -233,6 +246,7 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await expect(
@@ -266,6 +280,7 @@ describe('LeaveMatchUseCase — creator without participation row', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -303,6 +318,7 @@ describe('LeaveMatchUseCase — creator without participation row', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await expect(
@@ -336,6 +352,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -373,6 +390,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({
@@ -405,6 +423,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
+      mockUserReliability,
     );
 
     await useCase.execute({

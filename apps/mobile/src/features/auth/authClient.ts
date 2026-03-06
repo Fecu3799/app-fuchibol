@@ -1,8 +1,10 @@
 import { buildUrl, fetchJson } from '../../lib/api';
 import type {
+  ConfirmAvatarResponse,
   LoginResponse,
   MeResponse,
   PreferredPosition,
+  PrepareAvatarResponse,
   RefreshResponse,
   RegisterResponse,
   SessionItem,
@@ -144,5 +146,30 @@ export function getSessions(): Promise<SessionItem[]> {
 export function deleteSession(sessionId: string): Promise<void> {
   return fetchJson<void>(buildUrl(`/api/v1/auth/sessions/${sessionId}`), {
     method: 'DELETE',
+  });
+}
+
+/** Request a presigned PUT URL to upload an avatar. Bearer auto-added. */
+export function postAvatarPrepare(payload: {
+  contentType: string;
+  size: number;
+}): Promise<PrepareAvatarResponse> {
+  return fetchJson<PrepareAvatarResponse>(buildUrl('/api/v1/me/avatar/prepare'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Confirm avatar upload after the PUT to S3 succeeded. Bearer auto-added. */
+export function postAvatarConfirm(payload: {
+  key: string;
+  contentType: string;
+  size: number;
+}): Promise<ConfirmAvatarResponse> {
+  return fetchJson<ConfirmAvatarResponse>(buildUrl('/api/v1/me/avatar/confirm'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
 }

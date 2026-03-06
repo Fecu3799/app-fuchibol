@@ -95,6 +95,24 @@ export class LoginUseCase {
       throw new ForbiddenException('EMAIL_NOT_VERIFIED');
     }
 
+    const now = new Date();
+    if (user.suspendedUntil && user.suspendedUntil > now) {
+      this.logger.log(`login_failed userId=${user.id} reason=account_suspended`);
+      void this.auditService
+        .log({
+          eventType: 'login_failed',
+          userId: user.id,
+          ip: input.ip,
+          userAgent: input.userAgent,
+          metadata: { reason: 'account_suspended' },
+        })
+        .catch((err) => this.logger.warn('audit_log_failed', err));
+      throw new ForbiddenException({
+        message: 'account_suspended',
+        suspendedUntil: user.suspendedUntil.toISOString(),
+      });
+    }
+
     const expiresAt = new Date(
       Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
     );

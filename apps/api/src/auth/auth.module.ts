@@ -4,6 +4,9 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import type { StringValue } from 'ms';
 import { PrismaModule } from '../infra/prisma/prisma.module';
+import { StorageModule } from '../infra/storage/storage.module';
+import { PrepareAvatarUseCase } from './application/prepare-avatar.use-case';
+import { ConfirmAvatarUseCase } from './application/confirm-avatar.use-case';
 import { AuthController } from './api/auth.controller';
 import { MeController } from './api/me.controller';
 import { SessionsController } from './api/sessions.controller';
@@ -31,6 +34,7 @@ import { AuthAuditService } from './infra/auth-audit.service';
 @Module({
   imports: [
     PrismaModule,
+    StorageModule,
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -64,6 +68,8 @@ import { AuthAuditService } from './infra/auth-audit.service';
     RequestPasswordResetUseCase,
     ConfirmPasswordResetUseCase,
     ChangePasswordUseCase,
+    PrepareAvatarUseCase,
+    ConfirmAvatarUseCase,
     JwtStrategy,
     TokenService,
     AuthAuditService,

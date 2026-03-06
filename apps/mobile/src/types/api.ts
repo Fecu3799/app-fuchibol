@@ -33,7 +33,21 @@ export interface MeResponse {
   preferredPosition?: PreferredPosition | null;
   skillLevel?: SkillLevel | null;
   termsAcceptedAt?: string;
+  reliabilityScore: number;
+  reliabilityLabel: string;
+  suspendedUntil?: string | null;
+  avatarUrl?: string | null;
   createdAt: string;
+}
+
+export interface PrepareAvatarResponse {
+  uploadUrl: string;
+  key: string;
+  publicUrl: string;
+}
+
+export interface ConfirmAvatarResponse {
+  avatarUrl: string;
 }
 
 // ── Matches ──
@@ -221,6 +235,7 @@ export interface ApiErrorBody {
   detail?: string;
   errors?: unknown;
   requestId?: string;
+  suspendedUntil?: string;
   // Legacy compat (NestJS default shape)
   statusCode?: number;
   message?: string;

@@ -324,13 +324,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     };
   }, [isFetching, isLoading, displayMatch]);
 
-  useEffect(() => {
-    if (!__DEV__) return;
-    console.log(`[MatchDetail] isFetching=${isFetching} count=${devStats.count}`);
-  }, [isFetching, devStats.count]);
-
   const startsAtStr = displayMatch?.startsAt ?? null;
-  const prevCountdownModeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!startsAtStr) { setCountdown(""); return; }
 
@@ -339,24 +333,6 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     function tick() {
       const now = Date.now();
       const result = formatMatchCountdown(startsAtStr!, now);
-
-      if (__DEV__) {
-        const newMode = result?.mode ?? "PAST";
-        if (newMode !== prevCountdownModeRef.current) {
-          prevCountdownModeRef.current = newMode;
-          const parsedMs = new Date(startsAtStr!).getTime();
-          const diffMs = parsedMs - now;
-          console.log("[CountdownDebug] file=MatchDetailScreen", {
-            startsAtRaw: startsAtStr,
-            startsAtISO: isNaN(parsedMs) ? "INVALID_DATE" : new Date(parsedMs).toISOString(),
-            nowISO: new Date(now).toISOString(),
-            diffMs,
-            diffHoursTotal: Math.floor(diffMs / 3_600_000),
-            modeSelected: newMode,
-            formattedOutput: result?.display ?? "null (past)",
-          });
-        }
-      }
 
       if (!result) { setCountdown(""); return; }
       setCountdown(result.display);
@@ -681,16 +657,6 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     displayMatch.matchStatus === "PLAYED" || displayMatch.matchStatus === "CANCELLED";
   const canKick = !isReadOnly && displayMatch.actionsAllowed.includes("manage_kick");
   const groups = deriveParticipantGroups(displayMatch);
-
-  if (__DEV__) {
-    console.log("[ReadOnlyDebug] file=MatchDetailScreen", {
-      status: displayMatch.status,
-      matchStatus: displayMatch.matchStatus,
-      startsAtRaw: displayMatch.startsAt,
-      isReadOnlyFinal: isReadOnly,
-      actionsAllowed: displayMatch.actionsAllowed,
-    });
-  }
 
   return (
     <View style={styles.screenWrap}>

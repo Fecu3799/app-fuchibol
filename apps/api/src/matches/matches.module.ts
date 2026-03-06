@@ -24,6 +24,7 @@ import { MatchNotificationService } from './application/match-notification.servi
 import { GetInviteCandidatesQuery } from './application/get-invite-candidates.query';
 import { KickParticipantUseCase } from './application/kick-participant.use-case';
 import { MatchLifecycleJob } from './application/match-lifecycle.job';
+import { UserReliabilityService } from './application/user-reliability.service';
 
 @Module({
   imports: [PrismaModule, IdempotencyModule, MatchRealtimeModule, PushModule],
@@ -49,6 +50,7 @@ import { MatchLifecycleJob } from './application/match-lifecycle.job';
     GetInviteCandidatesQuery,
     KickParticipantUseCase,
     MatchLifecycleJob,
+    UserReliabilityService,
   ],
 })
 export class MatchesModule {}

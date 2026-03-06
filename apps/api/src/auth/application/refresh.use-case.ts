@@ -49,6 +49,17 @@ export class RefreshUseCase {
       throw new ForbiddenException('EMAIL_NOT_VERIFIED');
     }
 
+    const now = new Date();
+    if (session.user.suspendedUntil && session.user.suspendedUntil > now) {
+      this.logger.warn(
+        `refresh_blocked userId=${session.userId} reason=account_suspended`,
+      );
+      throw new ForbiddenException({
+        message: 'account_suspended',
+        suspendedUntil: session.user.suspendedUntil.toISOString(),
+      });
+    }
+
     const isValid = await this.tokenService.verifySecret(
       session.refreshTokenHash,
       secret,

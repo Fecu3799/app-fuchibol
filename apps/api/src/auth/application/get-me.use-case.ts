@@ -1,9 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { StorageService } from '../../infra/storage/storage.service';
+import { computeReliabilityLabel } from '../../matches/application/user-reliability.service';
 
 @Injectable()
 export class GetMeUseCase {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   async execute(userId: string) {
     const user = await this.prisma.client.user.findUnique({
@@ -20,7 +25,10 @@ export class GetMeUseCase {
         preferredPosition: true,
         skillLevel: true,
         termsAcceptedAt: true,
+        reliabilityScore: true,
+        suspendedUntil: true,
         createdAt: true,
+        avatar: { select: { key: true } },
       },
     });
 
@@ -28,6 +36,11 @@ export class GetMeUseCase {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    const { avatar, ...rest } = user;
+    return {
+      ...rest,
+      avatarUrl: avatar ? this.storage.buildPublicUrl(avatar.key) : null,
+      reliabilityLabel: computeReliabilityLabel(user.reliabilityScore),
+    };
   }
 }

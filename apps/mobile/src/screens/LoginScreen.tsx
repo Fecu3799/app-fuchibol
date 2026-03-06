@@ -24,6 +24,19 @@ export default function LoginScreen({ navigation, route }: Props) {
       await login(identifier.trim(), password);
     } catch (err) {
       if (err instanceof ApiError) {
+        if (err.code === 'account_suspended') {
+          const until = err.body.suspendedUntil
+            ? new Date(err.body.suspendedUntil).toLocaleDateString('es-AR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : 'fecha desconocida';
+          setError(`Tu cuenta está suspendida hasta ${until}.`);
+          return;
+        }
         if (err.code === 'EMAIL_NOT_VERIFIED' || err.status === 403) {
           navigation.navigate('VerifyEmail', {
             email: identifier.trim().includes('@') ? identifier.trim() : undefined,

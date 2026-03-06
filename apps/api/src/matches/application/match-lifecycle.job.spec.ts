@@ -183,7 +183,7 @@ describe('MatchLifecycleJob — Reminder rule', () => {
 
   it('sends reminder with bucket b3 when match starts in ~45min, not full, no prior delivery', async () => {
     const match = makeMatch({
-      startsAt: new Date(Date.now() + 45 * 60 * 1000),
+      startsAt: new Date(Date.now() + 46 * 60 * 1000),
       capacity: 10,
       participants: [
         { userId: CREATOR_ID, status: 'CONFIRMED', isMatchAdmin: false },
