@@ -35,7 +35,6 @@ const baseMockMatch = {
   updatedAt: now,
 };
 
-
 function buildTxPrisma(matchOverrides: Record<string, unknown> = {}) {
   const match = { ...baseMockMatch, ...matchOverrides };
   const tx = {

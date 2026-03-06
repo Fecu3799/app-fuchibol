@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/unbound-method */
-import { ConflictException } from '@nestjs/common';
+import {
+  ConflictException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { RegisterUseCase } from './register.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
@@ -63,6 +66,7 @@ describe('RegisterUseCase', () => {
     const result = await useCase.execute({
       email: 'test@example.com',
       password: 'password123',
+      acceptTerms: true,
     });
 
     expect(result).not.toHaveProperty('accessToken');
@@ -101,6 +105,7 @@ describe('RegisterUseCase', () => {
       email: 'test2@example.com',
       password: 'password123',
       username: 'MyUser',
+      acceptTerms: true,
     });
 
     expect(result.user.username).toBe('myuser');
@@ -124,7 +129,11 @@ describe('RegisterUseCase', () => {
     );
 
     await expect(
-      useCase.execute({ email: 'test@example.com', password: 'password123' }),
+      useCase.execute({
+        email: 'test@example.com',
+        password: 'password123',
+        acceptTerms: true,
+      }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -154,6 +163,7 @@ describe('RegisterUseCase', () => {
     await useCase.execute({
       email: 'facu@example.com',
       password: 'password123',
+      acceptTerms: true,
     });
 
     expect(prisma.client.user.create).toHaveBeenCalledWith(
@@ -185,11 +195,112 @@ describe('RegisterUseCase', () => {
       emailService,
       buildAuditService(),
     );
-    await useCase.execute({ email: 'ab@x.com', password: 'password123' });
+    await useCase.execute({
+      email: 'ab@x.com',
+      password: 'password123',
+      acceptTerms: true,
+    });
 
     expect(prisma.client.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ username: 'ab0' }),
+      }),
+    );
+  });
+
+  it('throws 422 TERMS_NOT_ACCEPTED when acceptTerms is false', async () => {
+    const prisma = buildPrisma();
+    const useCase = new RegisterUseCase(
+      prisma,
+      buildTokenService(),
+      buildEmailService(),
+      buildAuditService(),
+    );
+
+    await expect(
+      useCase.execute({
+        email: 'test@example.com',
+        password: 'password123',
+        acceptTerms: false,
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('sets termsAcceptedAt on user create when acceptTerms is true', async () => {
+    const prisma = buildPrisma();
+
+    (prisma.client.user.findUnique as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    prisma.client.user.create = jest.fn().mockResolvedValue({
+      id: 'uuid-5',
+      email: 'terms@example.com',
+      username: 'terms',
+      role: 'USER',
+    });
+
+    const useCase = new RegisterUseCase(
+      prisma,
+      buildTokenService(),
+      buildEmailService(),
+      buildAuditService(),
+    );
+    await useCase.execute({
+      email: 'terms@example.com',
+      password: 'password123',
+      acceptTerms: true,
+    });
+
+    expect(prisma.client.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          termsAcceptedAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+
+  it('passes optional profile fields to user create', async () => {
+    const prisma = buildPrisma();
+
+    (prisma.client.user.findUnique as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    prisma.client.user.create = jest.fn().mockResolvedValue({
+      id: 'uuid-6',
+      email: 'profile@example.com',
+      username: 'profile',
+      role: 'USER',
+    });
+
+    const useCase = new RegisterUseCase(
+      prisma,
+      buildTokenService(),
+      buildEmailService(),
+      buildAuditService(),
+    );
+    await useCase.execute({
+      email: 'profile@example.com',
+      password: 'password123',
+      acceptTerms: true,
+      firstName: 'Juan',
+      lastName: 'Pérez',
+      gender: 'MALE' as any,
+      preferredPosition: 'MIDFIELDER' as any,
+      skillLevel: 'AMATEUR' as any,
+    });
+
+    expect(prisma.client.user.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          firstName: 'Juan',
+          lastName: 'Pérez',
+          gender: 'MALE',
+          preferredPosition: 'MIDFIELDER',
+          skillLevel: 'AMATEUR',
+        }),
       }),
     );
   });

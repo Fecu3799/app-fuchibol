@@ -1,5 +1,11 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import * as argon2 from 'argon2';
+import type { PreferredPosition, SkillLevel, UserGender } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { TokenService } from '../infra/token.service';
 import { EmailService } from '../infra/email.service';
@@ -12,6 +18,13 @@ export interface RegisterInput {
   email: string;
   password: string;
   username?: string;
+  acceptTerms: boolean;
+  firstName?: string;
+  lastName?: string;
+  birthDate?: string;
+  gender?: UserGender;
+  preferredPosition?: PreferredPosition;
+  skillLevel?: SkillLevel;
 }
 
 @Injectable()
@@ -26,6 +39,10 @@ export class RegisterUseCase {
   ) {}
 
   async execute(input: RegisterInput) {
+    if (!input.acceptTerms) {
+      throw new UnprocessableEntityException('TERMS_NOT_ACCEPTED');
+    }
+
     const existing = await this.prisma.client.user.findUnique({
       where: { email: input.email },
     });
@@ -44,12 +61,23 @@ export class RegisterUseCase {
     const tokenHash = this.tokenService.hashEmailToken(rawToken);
     const expiresAt = new Date(Date.now() + EMAIL_TOKEN_TTL_MS);
 
+    const birthDate = input.birthDate ? new Date(input.birthDate) : undefined;
+
     const user = await this.prisma.client.user.create({
       data: {
         email: input.email,
         username,
         passwordHash,
         emailVerifiedAt: null,
+        termsAcceptedAt: new Date(),
+        ...(input.firstName !== undefined && { firstName: input.firstName }),
+        ...(input.lastName !== undefined && { lastName: input.lastName }),
+        ...(birthDate !== undefined && { birthDate }),
+        ...(input.gender !== undefined && { gender: input.gender }),
+        ...(input.preferredPosition !== undefined && {
+          preferredPosition: input.preferredPosition,
+        }),
+        ...(input.skillLevel !== undefined && { skillLevel: input.skillLevel }),
         emailTokens: {
           create: { tokenHash, expiresAt },
         },

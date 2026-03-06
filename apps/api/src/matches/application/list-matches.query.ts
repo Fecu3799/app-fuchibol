@@ -162,7 +162,7 @@ export class ListMatchesQuery {
     const gendersByMatch = new Map<string, string[]>();
     for (const row of confirmedWithGender) {
       const list = gendersByMatch.get(row.matchId) ?? [];
-      list.push(row.user.gender);
+      if (row.user.gender !== null) list.push(row.user.gender);
       gendersByMatch.set(row.matchId, list);
     }
 

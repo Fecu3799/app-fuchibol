@@ -124,6 +124,18 @@ const CANDIDATE_STATUS_LABEL: Record<string, string> = {
   SPECTATOR: "Espectador",
 };
 
+// ── Design tokens ──
+const DARK_BG = "#0d0d0d";
+const CARD_BG = "#e0e0e0";
+const PILL_TEXT_COLOR = "#1b5e20";
+const PILL_BORDER_COLOR = "#2e7d32";
+const ROW_LABEL_COLOR = "#1b5e20";
+const VALUE_PILL_BG = "#f8f8f8";
+const VALUE_PILL_BORDER = "#b8b8b8";
+const CONFIRMED_DOT_COLOR = "#2e7d32";
+const OTHER_DOT_COLOR = "#e65100";
+const SPECTATOR_DOT_COLOR = "#6d4c41";
+
 // ── Derived counts from snapshot ──
 
 function deriveParticipantGroups(match: MatchSnapshot) {
@@ -228,8 +240,8 @@ function computeCountdown(isoString: string): string {
   const mins = Math.floor((totalSec % 3600) / 60);
   const secs = totalSec % 60;
   const p = (n: number) => String(n).padStart(2, "0");
-  if (days > 0) return `${days}d ${p(hrs)}h ${p(mins)}m`;
-  return `${p(hrs)}h ${p(mins)}m ${p(secs)}s`;
+  if (days > 0) return `${days}:${p(hrs)}:${p(mins)}`;
+  return `${p(hrs)}:${p(mins)}:${p(secs)} HS`;
 }
 
 // ── Component ──
@@ -316,7 +328,9 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     if (!startsAtStr) { setCountdown(""); return; }
     const update = () => setCountdown(computeCountdown(startsAtStr));
     update();
-    const id = setInterval(update, 1000);
+    const diff = new Date(startsAtStr).getTime() - Date.now();
+    const tick = diff > 24 * 3600 * 1000 ? 60_000 : 1_000;
+    const id = setInterval(update, tick);
     return () => clearInterval(id);
   }, [startsAtStr]);
 
@@ -401,6 +415,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const [spectatorLoading, setSpectatorLoading] = useState(false);
   const [spectatorError, setSpectatorError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
+  const [showInviteBlock, setShowInviteBlock] = useState(false);
 
   const handleSpectatorToggle = async () => {
     if (!displayMatch || !token) return;
@@ -579,7 +594,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   if (!displayMatch && isFetching) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#fff" />
       </View>
     );
   }
@@ -627,7 +642,8 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.screenWrap}>
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContent}>
+
       {/* DEV-only GET counter badge */}
       {__DEV__ && (
         <View style={styles.devBadge}>
@@ -653,9 +669,8 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         />
       )}
 
-      {/* Header */}
-      <Text style={styles.title}>{displayMatch.title}</Text>
-
+      {/* Title + status badges */}
+      <Text style={styles.matchTitle}>{displayMatch.title}</Text>
       <View style={styles.badgeRow}>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{displayMatch.status}</Text>
@@ -682,183 +697,64 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         )}
       </View>
 
-      {/* Edit Match button (creator only, hidden when canceled) */}
-      {!isCanceled && canEdit && (
-        <Pressable
-          style={styles.editBtn}
-          onPress={() => navigation.navigate("EditMatch", { matchId })}
-        >
-          <Text style={styles.editBtnText}>Edit Match</Text>
-        </Pressable>
-      )}
+      {/* 1. Countdown */}
+      {countdown ? <MatchCountdownPanel countdown={countdown} /> : null}
 
-      {/* Lock/Unlock button (admin only, hidden when canceled) */}
-      {!isCanceled && canToggleLock && (
-        <View style={styles.lockBlock}>
-          {lockError ? (
-            <Text style={styles.actionError}>{lockError}</Text>
-          ) : null}
-          <Pressable
-            style={[
-              styles.lockBtn,
-              displayMatch.isLocked ? styles.lockBtnUnlock : styles.lockBtnLock,
-              lockTogglePending && styles.btnDisabled,
-            ]}
-            onPress={handleLockToggle}
-            disabled={lockTogglePending}
-          >
-            {lockTogglePending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.lockBtnText}>
-                {displayMatch.isLocked ? "Unlock Match" : "Lock Match"}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      )}
+      {/* 2. Match info */}
+      <MatchInfoCard match={displayMatch} />
 
-      {/* Match info */}
-      <View style={styles.infoBlock}>
-        {countdown ? <InfoRow label="Starts in" value={countdown} /> : null}
-        <InfoRow label="Date" value={formatDate(displayMatch.startsAt)} />
-        <InfoRow label="Time" value={formatTime(displayMatch.startsAt)} />
-        {displayMatch.location && (
-          <InfoRow label="Location" value={displayMatch.location} />
-        )}
-        <InfoRow
-          label="Players"
-          value={`${displayMatch.confirmedCount} / ${displayMatch.capacity}`}
-        />
-        <InfoRow
-          label="Género"
-          value={MATCH_GENDER_LABEL[displayMatch.matchGender] ?? "—"}
-        />
-      </View>
-
-      {/* Counts summary */}
-      <View style={styles.countsRow}>
-        <CountBadge
-          label="Confirmed"
-          count={groups.confirmed.length}
-          color="#2e7d32"
-        />
-        <CountBadge
-          label="Invited"
-          count={groups.invited.length}
-          color="#1976d2"
-        />
-        <CountBadge
-          label="Waitlist"
-          count={groups.waitlist.length}
-          color="#f57c00"
-        />
-        <CountBadge
-          label="Spectators"
-          count={displayMatch.spectatorCount ?? 0}
-          color="#6d4c41"
-        />
-      </View>
-
-      {/* Participant sections */}
-      {groups.confirmed.length > 0 && (
-        <ParticipantSection
-          title="Confirmed"
-          color="#2e7d32"
-          items={groups.confirmed}
-          creatorId={displayMatch.createdById}
-          canManageAdmins={canManageAdmins}
-          adminActionLoading={adminActionLoading}
-          onPromote={handlePromote}
-          onDemote={handleDemote}
-          canKick={canKick}
-          kickLoading={kickLoading}
-          onKick={handleKick}
-        />
-      )}
-      <OthersSection
-        waitlist={groups.waitlist}
-        invited={groups.invited}
+      {/* 3. Confirmed list + Others accordion */}
+      <ConfirmedListCard
+        confirmed={groups.confirmed}
+        others={[...groups.waitlist, ...groups.invited]}
         spectators={groups.spectators}
         creatorId={displayMatch.createdById}
         canManageAdmins={canManageAdmins}
+        canKick={canKick}
         adminActionLoading={adminActionLoading}
+        kickLoading={kickLoading}
         onPromote={handlePromote}
         onDemote={handleDemote}
-        canKick={canKick}
-        kickLoading={kickLoading}
         onKick={handleKick}
       />
 
-      {/* Locked banner (hidden when canceled) */}
-      {!isCanceled && displayMatch.isLocked && (
-        <View style={styles.lockedBanner}>
-          <Text style={styles.lockedBannerText}>Match is locked</Text>
-        </View>
+      {/* 4. Actions bar */}
+      {!isCanceled && (
+        <MatchActionsBar
+          visibleActions={visibleActions as string[]}
+          canSpectator={canSpectator}
+          isSpectator={isSpectator}
+          canInvite={canInvite}
+          canEdit={canEdit}
+          canToggleLock={canToggleLock}
+          isLocked={displayMatch.isLocked}
+          canLeave={canLeave}
+          canCancel={canCancel}
+          mutation={mutation}
+          lockTogglePending={lockTogglePending}
+          spectatorLoading={spectatorLoading}
+          leaveLoading={leaveLoading}
+          cancelPending={cancelMutation.isPending}
+          rejectLoading={rejectLoading}
+          onAction={handleAction}
+          onSpectator={handleSpectatorToggle}
+          onInvite={() => setShowInviteBlock((b) => !b)}
+          onEdit={() => navigation.navigate("EditMatch", { matchId })}
+          onLockToggle={handleLockToggle}
+          onLeave={handleLeave}
+          onCancel={handleCancel}
+        />
       )}
 
-      {/* Actions: Confirm / Decline (hidden when canceled or spectator; confirm still shown for INVITED when locked) */}
-      {!isCanceled && visibleActions.length > 0 && (
-        <View style={styles.actions}>
-          {actionError ? (
-            <Text style={styles.actionError}>{actionError}</Text>
-          ) : null}
-          <View style={styles.actionRow}>
-            {visibleActions.map((action) => {
-              const isThisLoading = action === "reject" ? rejectLoading : mutation.isPending;
-              const isAnyLoading = mutation.isPending || rejectLoading;
-              return (
-                <Pressable
-                  key={action}
-                  style={[
-                    styles.actionBtn,
-                    { backgroundColor: ACTION_COLORS[action] ?? "#1976d2" },
-                    isAnyLoading && styles.btnDisabled,
-                  ]}
-                  onPress={() => handleAction(action)}
-                  disabled={isAnyLoading}
-                >
-                  {isThisLoading ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.actionBtnText}>
-                      {ACTION_LABELS[action] ?? action}
-                    </Text>
-                  )}
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      )}
+      {/* Error messages */}
+      {actionError ? <Text style={styles.errorText}>{actionError}</Text> : null}
+      {lockError ? <Text style={styles.errorText}>{lockError}</Text> : null}
+      {leaveError ? <Text style={styles.errorText}>{leaveError}</Text> : null}
+      {cancelError ? <Text style={styles.errorText}>{cancelError}</Text> : null}
+      {spectatorError ? <Text style={styles.errorText}>{spectatorError}</Text> : null}
 
-      {/* Spectator toggle button (hidden when canceled) */}
-      {!isCanceled && canSpectator && (
-        <View style={styles.spectatorBlock}>
-          {spectatorError ? (
-            <Text style={styles.actionError}>{spectatorError}</Text>
-          ) : null}
-          <Pressable
-            style={[
-              styles.spectatorBtn,
-              spectatorLoading && styles.btnDisabled,
-            ]}
-            onPress={handleSpectatorToggle}
-            disabled={spectatorLoading}
-          >
-            {spectatorLoading ? (
-              <ActivityIndicator color="#6d4c41" size="small" />
-            ) : (
-              <Text style={styles.spectatorBtnText}>
-                {isSpectator ? "Participate" : "Spectator"}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      )}
-
-      {/* Invite block (admin only, hidden when locked or canceled) */}
-      {!isCanceled && !displayMatch.isLocked && canInvite && (
+      {/* 5. Invite block (toggled by INVITAR button in actions bar) */}
+      {showInviteBlock && canInvite && !isCanceled && (
         <View style={styles.inviteBlock}>
           <Text style={styles.sectionTitle}>Invite Player</Text>
           <View style={styles.inviteRow}>
@@ -905,7 +801,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Invite from Group (admin only, hidden when locked or canceled) */}
+      {/* 6. Group invite block — keep unchanged */}
       {!isCanceled && !displayMatch.isLocked && canInvite && (
         <View style={styles.groupInviteBlock}>
           {!showGroupInvite ? (
@@ -1073,7 +969,8 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           )}
         </View>
       )}
-      {/* Actividad section */}
+
+      {/* 7. Actividad section */}
       <View style={styles.actividadBlock}>
         <Pressable
           style={styles.actividadHeader}
@@ -1113,49 +1010,6 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         )}
       </View>
 
-      {/* Leave match button */}
-      {!isCanceled && canLeave && (
-        <View style={styles.leaveBlock}>
-          {leaveError ? (
-            <Text style={styles.actionError}>{leaveError}</Text>
-          ) : null}
-          <Pressable
-            style={[styles.leaveBtn, leaveLoading && styles.btnDisabled]}
-            onPress={handleLeave}
-            disabled={leaveLoading}
-          >
-            {leaveLoading ? (
-              <ActivityIndicator color="#d32f2f" size="small" />
-            ) : (
-              <Text style={styles.leaveBtnText}>Leave Match</Text>
-            )}
-          </Pressable>
-        </View>
-      )}
-
-      {/* Cancel match button (admin only, not already canceled) */}
-      {canCancel && (
-        <View style={styles.cancelBlock}>
-          {cancelError ? (
-            <Text style={styles.actionError}>{cancelError}</Text>
-          ) : null}
-          <Pressable
-            style={[
-              styles.cancelBtn,
-              cancelMutation.isPending && styles.btnDisabled,
-            ]}
-            onPress={handleCancel}
-            disabled={cancelMutation.isPending}
-          >
-            {cancelMutation.isPending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.cancelBtnText}>Cancel Match</Text>
-            )}
-          </Pressable>
-        </View>
-      )}
-
     </ScrollView>
     </View>
   );
@@ -1163,289 +1017,452 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
 // ── Subcomponents ──
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function SectionPill({ label }: { label: string }) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
-    </View>
-  );
-}
-
-function CountBadge({
-  label,
-  count,
-  color,
-}: {
-  label: string;
-  count: number;
-  color: string;
-}) {
-  return (
-    <View style={styles.countBadge}>
-      <Text style={[styles.countNum, { color }]}>{count}</Text>
-      <Text style={styles.countLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function ParticipantSection({
-  title,
-  color,
-  items,
-  showPosition,
-  creatorId,
-  canManageAdmins,
-  adminActionLoading,
-  onPromote,
-  onDemote,
-  canKick,
-  kickLoading,
-  onKick,
-}: {
-  title: string;
-  color: string;
-  items: ParticipantView[];
-  showPosition?: boolean;
-  creatorId?: string;
-  canManageAdmins?: boolean;
-  adminActionLoading?: boolean;
-  onPromote?: (userId: string, username: string) => void;
-  onDemote?: (userId: string, username: string) => void;
-  canKick?: boolean;
-  kickLoading?: boolean;
-  onKick?: (userId: string, username: string) => void;
-}) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: color }]} />
-        <Text style={styles.sectionTitle}>
-          {title} ({items.length})
-        </Text>
+    <View style={{ alignItems: "center", marginBottom: 12 }}>
+      <View style={styles.sectionPill}>
+        <Text style={styles.sectionPillText}>{label}</Text>
       </View>
-      {items.map((p) => {
-        const isCreator = p.userId === creatorId;
-        return (
-          <View key={p.userId} style={styles.participantRow}>
-            <View style={styles.participantInfo}>
-              <Text style={styles.participantId} numberOfLines={1}>
-                {showPosition && p.waitlistPosition != null
-                  ? `#${p.waitlistPosition}  `
-                  : ""}
-                @{p.username}
-              </Text>
-              {isCreator && (
-                <View style={[styles.roleBadge, styles.roleBadgeCreator]}>
-                  <Text style={styles.roleBadgeText}>Creator</Text>
-                </View>
-              )}
-              {!isCreator && p.isMatchAdmin && (
-                <View style={[styles.roleBadge, styles.roleBadgeAdmin]}>
-                  <Text style={styles.roleBadgeText}>Admin</Text>
-                </View>
-              )}
-            </View>
-            {canManageAdmins && !isCreator && (
-              <Pressable
-                style={[
-                  styles.adminToggleBtn,
-                  p.isMatchAdmin
-                    ? styles.adminToggleDemote
-                    : styles.adminTogglePromote,
-                  adminActionLoading && styles.btnDisabled,
-                ]}
-                onPress={() =>
-                  p.isMatchAdmin
-                    ? onDemote?.(p.userId, p.username)
-                    : onPromote?.(p.userId, p.username)
-                }
-                disabled={adminActionLoading}
-              >
-                <Text style={styles.adminToggleText}>
-                  {p.isMatchAdmin ? "Remove admin" : "Make admin"}
-                </Text>
-              </Pressable>
-            )}
-            {canKick && !isCreator && (
-              <Pressable
-                style={[styles.kickBtn, kickLoading && styles.btnDisabled]}
-                onPress={() => onKick?.(p.userId, p.username)}
-                disabled={kickLoading}
-              >
-                <Text style={styles.kickBtnText}>Expulsar</Text>
-              </Pressable>
-            )}
-          </View>
-        );
-      })}
     </View>
   );
 }
 
-function OthersSection({
-  waitlist,
-  invited,
-  spectators,
-  creatorId,
-  canManageAdmins,
-  adminActionLoading,
-  onPromote,
-  onDemote,
-  canKick,
-  kickLoading,
-  onKick,
-}: {
-  waitlist: ParticipantView[];
-  invited: ParticipantView[];
-  spectators: SpectatorView[];
-  creatorId?: string;
-  canManageAdmins?: boolean;
-  adminActionLoading?: boolean;
-  onPromote?: (userId: string, username: string) => void;
-  onDemote?: (userId: string, username: string) => void;
-  canKick?: boolean;
-  kickLoading?: boolean;
-  onKick?: (userId: string, username: string) => void;
-}) {
-  const total = waitlist.length + invited.length + spectators.length;
-  if (total === 0) return null;
+function MatchCountdownPanel({ countdown }: { countdown: string }) {
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <View style={[styles.sectionDot, { backgroundColor: "#757575" }]} />
-        <Text style={styles.sectionTitle}>Others ({total})</Text>
+    <View style={styles.countdownCard}>
+      <Text style={styles.countdownLabel}>PARTIDO COMIENZA EN:</Text>
+      <View style={styles.countdownPill}>
+        <Text style={styles.countdownValue}>{countdown}</Text>
       </View>
-      {waitlist.map((p) => (
-        <OthersParticipantRow
-          key={p.userId}
-          participant={p}
-          badgeLabel="Waitlist"
-          badgeColor="#f57c00"
-          creatorId={creatorId}
-          canManageAdmins={canManageAdmins}
-          adminActionLoading={adminActionLoading}
-          onPromote={onPromote}
-          onDemote={onDemote}
-          canKick={canKick}
-          kickLoading={kickLoading}
-          onKick={onKick}
-        />
-      ))}
-      {invited.map((p) => (
-        <OthersParticipantRow
-          key={p.userId}
-          participant={p}
-          badgeLabel="Invited"
-          badgeColor="#1976d2"
-          creatorId={creatorId}
-          canManageAdmins={canManageAdmins}
-          adminActionLoading={adminActionLoading}
-          onPromote={onPromote}
-          onDemote={onDemote}
-          canKick={canKick}
-          kickLoading={kickLoading}
-          onKick={onKick}
-        />
-      ))}
-      {spectators.map((s) => (
-        <View key={s.userId} style={styles.participantRow}>
-          <View style={styles.participantInfo}>
-            <Text style={styles.participantId}>@{s.username}</Text>
-            <View style={[styles.statusChip, { backgroundColor: "#6d4c41" }]}>
-              <Text style={styles.statusChipText}>Spectator</Text>
-            </View>
-          </View>
-          {canKick && s.userId !== creatorId && (
-            <Pressable
-              style={[styles.kickBtn, kickLoading && styles.btnDisabled]}
-              onPress={() => onKick?.(s.userId, s.username)}
-              disabled={kickLoading}
-            >
-              <Text style={styles.kickBtnText}>Expulsar</Text>
-            </Pressable>
-          )}
+    </View>
+  );
+}
+
+function MatchInfoCard({ match }: { match: MatchSnapshot }) {
+  return (
+    <View style={styles.card}>
+      <SectionPill label="INFORMACIÓN" />
+      <View style={styles.infoRow}>
+        <Text style={styles.infoLabel}>UBICACIÓN</Text>
+        <View style={styles.infoValuePill}>
+          <Text style={styles.infoValueText}>{match.location || "—"}</Text>
         </View>
-      ))}
+      </View>
+      <View style={styles.infoRow}>
+        <Text style={styles.infoLabel}>DÍA - HORA</Text>
+        <View style={{ flexDirection: "row", gap: 6 }}>
+          <View style={styles.infoValuePill}>
+            <Text style={styles.infoValueText}>{formatDate(match.startsAt)}</Text>
+          </View>
+          <View style={styles.infoValuePill}>
+            <Text style={styles.infoValueText}>{formatTime(match.startsAt)}</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.infoRow}>
+        <Text style={styles.infoLabel}>CANTIDAD</Text>
+        <View style={styles.infoValuePill}>
+          <Text style={styles.infoValueText}>
+            Fútbol {Math.round(match.capacity / 2)} ({match.capacity} JG)
+          </Text>
+        </View>
+      </View>
+      <View style={styles.infoRow}>
+        <Text style={styles.infoLabel}>TIPO DE PARTIDO</Text>
+        <View style={styles.infoValuePill}>
+          <Text style={styles.infoValueText}>
+            {MATCH_GENDER_LABEL[match.matchGender] ?? "—"}
+          </Text>
+        </View>
+      </View>
+      <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+        <Text style={styles.infoLabel}>PRECIOS</Text>
+        <View style={styles.infoValuePill}>
+          <Text style={styles.infoValueText}>—</Text>
+        </View>
+      </View>
     </View>
   );
 }
 
-function OthersParticipantRow({
+function PlayerRow({
   participant: p,
-  badgeLabel,
-  badgeColor,
+  isConfirmed,
   creatorId,
   canManageAdmins,
+  canKick,
   adminActionLoading,
+  kickLoading,
   onPromote,
   onDemote,
-  canKick,
-  kickLoading,
   onKick,
 }: {
   participant: ParticipantView;
-  badgeLabel: string;
-  badgeColor: string;
-  creatorId?: string;
-  canManageAdmins?: boolean;
-  adminActionLoading?: boolean;
-  onPromote?: (userId: string, username: string) => void;
-  onDemote?: (userId: string, username: string) => void;
-  canKick?: boolean;
-  kickLoading?: boolean;
-  onKick?: (userId: string, username: string) => void;
+  isConfirmed: boolean;
+  creatorId: string;
+  canManageAdmins: boolean;
+  canKick: boolean;
+  adminActionLoading: boolean;
+  kickLoading: boolean;
+  onPromote: (userId: string, username: string) => void;
+  onDemote: (userId: string, username: string) => void;
+  onKick: (userId: string, username: string) => void;
 }) {
   const isCreator = p.userId === creatorId;
+  const dotColor = isConfirmed ? CONFIRMED_DOT_COLOR : OTHER_DOT_COLOR;
   return (
-    <View style={styles.participantRow}>
-      <View style={styles.participantInfo}>
-        <Text style={styles.participantId}>
-          {p.waitlistPosition != null ? `#${p.waitlistPosition}  ` : ""}
-          @{p.username}
-        </Text>
-        <View style={[styles.statusChip, { backgroundColor: badgeColor }]}>
-          <Text style={styles.statusChipText}>{badgeLabel}</Text>
-        </View>
-        {isCreator && (
-          <View style={[styles.roleBadge, styles.roleBadgeCreator]}>
-            <Text style={styles.roleBadgeText}>Creator</Text>
-          </View>
+    <View style={styles.playerRow}>
+      <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+      <Text style={styles.playerName} numberOfLines={1}>
+        {isCreator ? "★ " : ""}{p.username}
+        {!isCreator && p.isMatchAdmin ? " [A]" : ""}
+        {p.waitlistPosition != null ? ` #${p.waitlistPosition}` : ""}
+      </Text>
+      <View style={styles.playerActions}>
+        {canManageAdmins && !isCreator && (
+          <Pressable
+            style={[
+              styles.adminBtn,
+              p.isMatchAdmin ? styles.adminBtnDemote : styles.adminBtnPromote,
+              adminActionLoading && styles.btnDisabled,
+            ]}
+            onPress={() =>
+              p.isMatchAdmin
+                ? onDemote(p.userId, p.username)
+                : onPromote(p.userId, p.username)
+            }
+            disabled={adminActionLoading}
+          >
+            <Text style={styles.adminBtnText}>
+              {p.isMatchAdmin ? "Admin ✕" : "+Admin"}
+            </Text>
+          </Pressable>
         )}
-        {!isCreator && p.isMatchAdmin && (
-          <View style={[styles.roleBadge, styles.roleBadgeAdmin]}>
-            <Text style={styles.roleBadgeText}>Admin</Text>
-          </View>
+        {canKick && !isCreator && (
+          <Pressable
+            style={[styles.kickChipBtn, kickLoading && styles.btnDisabled]}
+            onPress={() => onKick(p.userId, p.username)}
+            disabled={kickLoading}
+          >
+            <Text style={styles.kickChipBtnText}>Expulsar</Text>
+          </Pressable>
         )}
       </View>
-      {canManageAdmins && !isCreator && (
-        <Pressable
-          style={[
-            styles.adminToggleBtn,
-            p.isMatchAdmin ? styles.adminToggleDemote : styles.adminTogglePromote,
-            adminActionLoading && styles.btnDisabled,
-          ]}
-          onPress={() =>
-            p.isMatchAdmin
-              ? onDemote?.(p.userId, p.username)
-              : onPromote?.(p.userId, p.username)
-          }
-          disabled={adminActionLoading}
-        >
-          <Text style={styles.adminToggleText}>
-            {p.isMatchAdmin ? "Remove admin" : "Make admin"}
-          </Text>
-        </Pressable>
+    </View>
+  );
+}
+
+function OthersAccordion({
+  others,
+  spectators,
+  creatorId,
+  canManageAdmins,
+  canKick,
+  adminActionLoading,
+  kickLoading,
+  onPromote,
+  onDemote,
+  onKick,
+}: {
+  others: ParticipantView[];
+  spectators: SpectatorView[];
+  creatorId: string;
+  canManageAdmins: boolean;
+  canKick: boolean;
+  adminActionLoading: boolean;
+  kickLoading: boolean;
+  onPromote: (userId: string, username: string) => void;
+  onDemote: (userId: string, username: string) => void;
+  onKick: (userId: string, username: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const total = others.length + spectators.length;
+  return (
+    <View>
+      <Pressable onPress={() => setExpanded((e) => !e)} style={styles.othersToggle}>
+        <Text style={styles.othersToggleText}>
+          {expanded ? "▲ Ocultar otros" : `▼ Ver otros (${total})`}
+        </Text>
+      </Pressable>
+      {expanded && (
+        <>
+          {others.map((p) => (
+            <PlayerRow
+              key={p.userId}
+              participant={p}
+              isConfirmed={false}
+              creatorId={creatorId}
+              canManageAdmins={canManageAdmins}
+              canKick={canKick}
+              adminActionLoading={adminActionLoading}
+              kickLoading={kickLoading}
+              onPromote={onPromote}
+              onDemote={onDemote}
+              onKick={onKick}
+            />
+          ))}
+          {spectators.map((s) => (
+            <View key={s.userId} style={styles.playerRow}>
+              <View style={[styles.statusDot, { backgroundColor: SPECTATOR_DOT_COLOR }]} />
+              <Text style={styles.playerName}>-{s.username}</Text>
+              {canKick && s.userId !== creatorId && (
+                <View style={styles.playerActions}>
+                  <Pressable
+                    style={[styles.kickChipBtn, kickLoading && styles.btnDisabled]}
+                    onPress={() => onKick(s.userId, s.username)}
+                    disabled={kickLoading}
+                  >
+                    <Text style={styles.kickChipBtnText}>Expulsar</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          ))}
+        </>
       )}
-      {canKick && !isCreator && (
-        <Pressable
-          style={[styles.kickBtn, kickLoading && styles.btnDisabled]}
-          onPress={() => onKick?.(p.userId, p.username)}
-          disabled={kickLoading}
-        >
-          <Text style={styles.kickBtnText}>Expulsar</Text>
-        </Pressable>
+    </View>
+  );
+}
+
+function ConfirmedListCard({
+  confirmed,
+  others,
+  spectators,
+  creatorId,
+  canManageAdmins,
+  canKick,
+  adminActionLoading,
+  kickLoading,
+  onPromote,
+  onDemote,
+  onKick,
+}: {
+  confirmed: ParticipantView[];
+  others: ParticipantView[];
+  spectators: SpectatorView[];
+  creatorId: string;
+  canManageAdmins: boolean;
+  canKick: boolean;
+  adminActionLoading: boolean;
+  kickLoading: boolean;
+  onPromote: (userId: string, username: string) => void;
+  onDemote: (userId: string, username: string) => void;
+  onKick: (userId: string, username: string) => void;
+}) {
+  return (
+    <View style={styles.card}>
+      <SectionPill label="CONFIRMADOS" />
+      <Text style={styles.confirmedSubtitle}>JUGADORES CONFIRMADOS</Text>
+      {confirmed.map((p) => (
+        <PlayerRow
+          key={p.userId}
+          participant={p}
+          isConfirmed={true}
+          creatorId={creatorId}
+          canManageAdmins={canManageAdmins}
+          canKick={canKick}
+          adminActionLoading={adminActionLoading}
+          kickLoading={kickLoading}
+          onPromote={onPromote}
+          onDemote={onDemote}
+          onKick={onKick}
+        />
+      ))}
+      {confirmed.length === 0 && (
+        <Text style={styles.emptyListText}>Sin confirmados aún</Text>
       )}
+      {(others.length > 0 || spectators.length > 0) && (
+        <OthersAccordion
+          others={others}
+          spectators={spectators}
+          creatorId={creatorId}
+          canManageAdmins={canManageAdmins}
+          canKick={canKick}
+          adminActionLoading={adminActionLoading}
+          kickLoading={kickLoading}
+          onPromote={onPromote}
+          onDemote={onDemote}
+          onKick={onKick}
+        />
+      )}
+    </View>
+  );
+}
+
+function MatchActionsBar({
+  visibleActions,
+  canSpectator,
+  isSpectator,
+  canInvite,
+  canEdit,
+  canToggleLock,
+  isLocked,
+  canLeave,
+  canCancel,
+  mutation,
+  lockTogglePending,
+  spectatorLoading,
+  leaveLoading,
+  cancelPending,
+  rejectLoading,
+  onAction,
+  onSpectator,
+  onInvite,
+  onEdit,
+  onLockToggle,
+  onLeave,
+  onCancel,
+}: {
+  visibleActions: string[];
+  canSpectator: boolean;
+  isSpectator: boolean;
+  canInvite: boolean;
+  canEdit: boolean;
+  canToggleLock: boolean;
+  isLocked: boolean;
+  canLeave: boolean;
+  canCancel: boolean;
+  mutation: { isPending: boolean };
+  lockTogglePending: boolean;
+  spectatorLoading: boolean;
+  leaveLoading: boolean;
+  cancelPending: boolean;
+  rejectLoading: boolean;
+  onAction: (action: string) => void;
+  onSpectator: () => void;
+  onInvite: () => void;
+  onEdit: () => void;
+  onLockToggle: () => void;
+  onLeave: () => void;
+  onCancel: () => void;
+}) {
+  const anyLoading = mutation.isPending || rejectLoading;
+  return (
+    <View style={styles.actionsBar}>
+      <View style={styles.actionsGrid}>
+        {visibleActions.includes("confirm") && (
+          <Pressable
+            style={[
+              styles.actionChip,
+              { backgroundColor: "#2e7d32" },
+              anyLoading && styles.btnDisabled,
+            ]}
+            onPress={() => onAction("confirm")}
+            disabled={anyLoading}
+          >
+            {mutation.isPending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionChipText}>CONFIRMAR</Text>
+            )}
+          </Pressable>
+        )}
+        {visibleActions.includes("reject") && (
+          <Pressable
+            style={[
+              styles.actionChip,
+              { backgroundColor: "#757575" },
+              anyLoading && styles.btnDisabled,
+            ]}
+            onPress={() => onAction("reject")}
+            disabled={anyLoading}
+          >
+            {rejectLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionChipText}>RECHAZAR</Text>
+            )}
+          </Pressable>
+        )}
+        {canSpectator && (
+          <Pressable
+            style={[
+              styles.actionChip,
+              { backgroundColor: "#5d4037" },
+              spectatorLoading && styles.btnDisabled,
+            ]}
+            onPress={onSpectator}
+            disabled={spectatorLoading}
+          >
+            {spectatorLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionChipText}>
+                {isSpectator ? "PARTICIPAR" : "ESPECTADOR"}
+              </Text>
+            )}
+          </Pressable>
+        )}
+        {canInvite && (
+          <Pressable
+            style={[styles.actionChip, { backgroundColor: "#1565c0" }]}
+            onPress={onInvite}
+          >
+            <Text style={styles.actionChipText}>INVITAR</Text>
+          </Pressable>
+        )}
+        {canEdit && (
+          <Pressable
+            style={[styles.actionChip, { backgroundColor: "#0277bd" }]}
+            onPress={onEdit}
+          >
+            <Text style={styles.actionChipText}>EDITAR</Text>
+          </Pressable>
+        )}
+        {canToggleLock && (
+          <Pressable
+            style={[
+              styles.actionChip,
+              { backgroundColor: isLocked ? "#388e3c" : "#c62828" },
+              lockTogglePending && styles.btnDisabled,
+            ]}
+            onPress={onLockToggle}
+            disabled={lockTogglePending}
+          >
+            {lockTogglePending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionChipText}>
+                {isLocked ? "DESBLOQUEAR" : "BLOQUEAR"}
+              </Text>
+            )}
+          </Pressable>
+        )}
+        {canLeave && (
+          <Pressable
+            style={[
+              styles.actionChip,
+              { backgroundColor: "#d32f2f" },
+              leaveLoading && styles.btnDisabled,
+            ]}
+            onPress={onLeave}
+            disabled={leaveLoading}
+          >
+            {leaveLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionChipText}>ABANDONAR</Text>
+            )}
+          </Pressable>
+        )}
+        {canCancel && (
+          <Pressable
+            style={[
+              styles.actionChip,
+              { backgroundColor: "#b71c1c" },
+              cancelPending && styles.btnDisabled,
+            ]}
+            onPress={onCancel}
+            disabled={cancelPending}
+          >
+            {cancelPending ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.actionChipText}>CANCELAR</Text>
+            )}
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -1453,9 +1470,8 @@ function OthersParticipantRow({
 // ── Styles ──
 
 const styles = StyleSheet.create({
-  screenWrap: { flex: 1 },
-  container: { flex: 1, backgroundColor: "#fff" },
-  content: { padding: 20, paddingTop: 16, paddingBottom: 40 },
+  screenWrap: { flex: 1, backgroundColor: DARK_BG },
+  scrollContent: { padding: 16, paddingBottom: 48 },
   refreshBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -1463,17 +1479,18 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 6,
     marginBottom: 8,
-    backgroundColor: "#e3f2fd",
+    backgroundColor: "#1a2a3a",
     borderRadius: 8,
   },
-  refreshText: { fontSize: 12, color: "#1976d2" },
+  refreshText: { fontSize: 12, color: "#90caf9" },
   center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
+    backgroundColor: DARK_BG,
   },
-  title: { fontSize: 24, fontWeight: "700", marginBottom: 8 },
+  matchTitle: { fontSize: 22, fontWeight: "700", color: "#ffffff", marginBottom: 8 },
 
   // Badges
   badgeRow: {
@@ -1483,7 +1500,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   badge: {
-    backgroundColor: "#e0e0e0",
+    backgroundColor: "#444",
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -1491,188 +1508,149 @@ const styles = StyleSheet.create({
   badgeLocked: { backgroundColor: "#d32f2f" },
   badgeText: { fontSize: 12, fontWeight: "600", color: "#fff" },
 
-  // Lock/Unlock
-  lockBlock: { marginBottom: 12 },
-  lockBtn: {
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center" as const,
-  },
-  lockBtnLock: { backgroundColor: "#d32f2f" },
-  lockBtnUnlock: { backgroundColor: "#2e7d32" },
-  lockBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" as const },
-
-  // Locked banner
-  lockedBanner: {
-    backgroundColor: "#fce4ec",
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-    alignItems: "center" as const,
-  },
-  lockedBannerText: {
-    color: "#c62828",
-    fontSize: 13,
-    fontWeight: "600" as const,
-  },
-
-  // Cancel button
-  cancelBlock: { marginTop: 20 },
-  cancelBtn: {
-    backgroundColor: "#b71c1c",
-    borderRadius: 8,
-    padding: 14,
-    alignItems: "center" as const,
-  },
-  cancelBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" as const },
-
-  // Info block
-  infoBlock: {
-    backgroundColor: "#f9f9f9",
-    borderRadius: 10,
-    padding: 14,
+  // Card common
+  card: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
   },
-  infoRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+
+  // Section pill
+  sectionPill: {
+    borderWidth: 2,
+    borderColor: PILL_BORDER_COLOR,
+    borderRadius: 20,
+    paddingHorizontal: 24,
     paddingVertical: 6,
   },
-  infoLabel: { fontSize: 14, color: "#555" },
-  infoValue: { fontSize: 14, fontWeight: "600" },
+  sectionPillText: {
+    color: PILL_TEXT_COLOR,
+    fontWeight: "800",
+    fontSize: 16,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
 
-  // Counts
-  countsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+  // Countdown
+  countdownCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
+    alignItems: "center",
   },
-  countBadge: { alignItems: "center" },
-  countNum: { fontSize: 22, fontWeight: "700" },
-  countLabel: { fontSize: 11, color: "#888", marginTop: 2 },
+  countdownLabel: {
+    color: PILL_TEXT_COLOR,
+    fontWeight: "700",
+    fontSize: 13,
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  countdownPill: {
+    borderWidth: 1.5,
+    borderColor: "#aaa",
+    borderRadius: 28,
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    backgroundColor: VALUE_PILL_BG,
+  },
+  countdownValue: { fontSize: 36, fontWeight: "700", color: "#111", letterSpacing: 2 },
 
-  // Edit button
-  editBtn: {
-    backgroundColor: "#1976d2",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center" as const,
-    marginBottom: 12,
-  },
-  editBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" as const },
-
-  // Spectator toggle button
-  spectatorBlock: { marginTop: 8, marginBottom: 4 },
-  spectatorBtn: {
-    borderWidth: 1,
-    borderColor: "#6d4c41",
-    borderRadius: 8,
-    padding: 12,
-    alignItems: "center" as const,
-  },
-  spectatorBtnText: {
-    color: "#6d4c41",
-    fontSize: 14,
-    fontWeight: "600" as const,
-  },
-
-  // Leave button
-  leaveBlock: { marginTop: 16 },
-  leaveBtn: {
-    borderWidth: 1,
-    borderColor: "#d32f2f",
-    borderRadius: 8,
-    padding: 14,
-    alignItems: "center" as const,
-  },
-  leaveBtnText: { color: "#d32f2f", fontSize: 15, fontWeight: "600" as const },
-
-  // Participant sections
-  section: { marginBottom: 14 },
-  sectionHeader: {
+  // Info rows
+  infoRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#c8c8c8",
   },
-  sectionDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  sectionTitle: { fontSize: 15, fontWeight: "600" },
-  participantRow: {
-    paddingVertical: 5,
-    paddingHorizontal: 18,
-    flexDirection: "row" as const,
-    justifyContent: "space-between" as const,
-    alignItems: "center" as const,
-  },
-  participantInfo: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
+  infoLabel: {
     flex: 1,
-    gap: 6,
+    color: ROW_LABEL_COLOR,
+    fontWeight: "700",
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
-  participantId: { fontSize: 13, color: "#555" },
-  roleBadge: {
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+  infoValuePill: {
+    borderWidth: 1,
+    borderColor: VALUE_PILL_BORDER,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: VALUE_PILL_BG,
   },
-  roleBadgeCreator: { backgroundColor: "#ff9800" },
-  roleBadgeAdmin: { backgroundColor: "#7b1fa2" },
-  roleBadgeText: { fontSize: 10, fontWeight: "700" as const, color: "#fff" },
-  adminToggleBtn: {
+  infoValueText: { color: "#1a1a1a", fontWeight: "600", fontSize: 13 },
+
+  // Confirmed list
+  confirmedSubtitle: {
+    color: ROW_LABEL_COLOR,
+    fontWeight: "800",
+    fontSize: 14,
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  emptyListText: { color: "#666", fontSize: 13, textAlign: "center", paddingVertical: 8 },
+
+  // Player rows
+  playerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 7,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#c8c8c8",
+  },
+  playerName: { flex: 1, fontWeight: "600", color: "#1a1a1a", fontSize: 14, marginLeft: 8 },
+  playerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  adminBtn: {
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  adminTogglePromote: { backgroundColor: "#e8f5e9" },
-  adminToggleDemote: { backgroundColor: "#fce4ec" },
-  adminToggleText: { fontSize: 11, fontWeight: "600" as const, color: "#333" },
-  kickBtn: {
+  adminBtnPromote: { backgroundColor: "#e8f5e9" },
+  adminBtnDemote: { backgroundColor: "#fce4ec" },
+  adminBtnText: { fontSize: 11, fontWeight: "600", color: "#333" },
+  kickChipBtn: {
     borderRadius: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
     backgroundColor: "#fce4ec",
-    marginLeft: 4,
   },
-  kickBtnText: { fontSize: 11, fontWeight: "600" as const, color: "#d32f2f" },
+  kickChipBtnText: { fontSize: 11, fontWeight: "600", color: "#d32f2f" },
+  othersToggle: { paddingVertical: 10, alignItems: "center" },
+  othersToggleText: { color: "#1976d2", fontWeight: "600", fontSize: 13 },
 
-  // Status chip (in Others section)
-  statusChip: {
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  statusChipText: { fontSize: 10, fontWeight: "700" as const, color: "#fff" },
-
-  // Actions
-  actions: { marginTop: 8, marginBottom: 4 },
-  actionError: {
-    color: "#d32f2f",
-    fontSize: 13,
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  actionRow: { flexDirection: "row", gap: 10 },
-  actionBtn: {
-    flex: 1,
-    borderRadius: 8,
-    padding: 14,
+  // Actions bar
+  actionsBar: { marginBottom: 16 },
+  actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  actionChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    minWidth: 100,
     alignItems: "center",
   },
+  actionChipText: { fontWeight: "700", fontSize: 13, color: "#fff" },
+
+  // Common
   btnDisabled: { opacity: 0.5 },
-  actionBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 
   // Invite
   inviteBlock: {
-    marginTop: 20,
-    backgroundColor: "#f0f4ff",
+    marginTop: 4,
+    backgroundColor: "#1a2a1a",
     borderRadius: 10,
     padding: 14,
+    marginBottom: 16,
   },
+  sectionTitle: { fontSize: 15, fontWeight: "600", color: "#ccc" },
   inviteRow: { flexDirection: "row", gap: 10, marginTop: 8 },
   inviteInput: {
     flex: 1,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#555",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -1688,14 +1666,14 @@ const styles = StyleSheet.create({
   },
   inviteBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   inviteMsg: { marginTop: 8, fontSize: 13, textAlign: "center" },
-  inviteMsgSuccess: { color: "#2e7d32" },
-  inviteMsgError: { color: "#d32f2f" },
+  inviteMsgSuccess: { color: "#81c784" },
+  inviteMsgError: { color: "#ef9a9a" },
 
   // Error states
   errorText: {
-    fontSize: 15,
-    color: "#d32f2f",
-    marginBottom: 12,
+    fontSize: 13,
+    color: "#ef9a9a",
+    marginBottom: 8,
     textAlign: "center",
   },
   retryBtn: {
@@ -1708,16 +1686,17 @@ const styles = StyleSheet.create({
   requestIdText: {
     fontSize: 11,
     fontFamily: "monospace",
-    color: "#999",
+    color: "#888",
     marginBottom: 8,
   },
 
   // Group invite
   groupInviteBlock: {
-    marginTop: 12,
-    backgroundColor: "#f5f0ff",
+    marginTop: 4,
+    backgroundColor: "#1e1528",
     borderRadius: 10,
     padding: 14,
+    marginBottom: 16,
   },
   groupInviteBtn: {
     backgroundColor: "#7b1fa2",
@@ -1737,24 +1716,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   groupCancelText: {
-    color: "#7b1fa2",
+    color: "#ce93d8",
     fontSize: 14,
     fontWeight: "600" as const,
   },
   groupEmptyText: {
-    color: "#999",
+    color: "#888",
     fontSize: 14,
     textAlign: "center" as const,
     marginTop: 8,
   },
   groupOption: {
-    backgroundColor: "#fff",
+    backgroundColor: "#2a1f35",
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
   },
-  groupOptionName: { fontSize: 15, fontWeight: "600" as const },
-  groupOptionCount: { fontSize: 12, color: "#888", marginTop: 2 },
+  groupOptionName: { fontSize: 15, fontWeight: "600" as const, color: "#fff" },
+  groupOptionCount: { fontSize: 12, color: "#aaa", marginTop: 2 },
   memberCheckRow: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
@@ -1772,7 +1751,7 @@ const styles = StyleSheet.create({
   },
   checkboxChecked: { backgroundColor: "#7b1fa2" },
   checkmark: { color: "#fff", fontSize: 14, fontWeight: "700" as const },
-  memberCheckName: { fontSize: 14 },
+  memberCheckName: { fontSize: 14, color: "#eee" },
   batchInviteBtn: {
     backgroundColor: "#7b1fa2",
     borderRadius: 8,
@@ -1786,9 +1765,17 @@ const styles = StyleSheet.create({
     fontWeight: "600" as const,
   },
 
+  // Status chip (kept for group invite candidates)
+  statusChip: {
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  statusChipText: { fontSize: 10, fontWeight: "700" as const, color: "#fff" },
+
   // DEV badge
   devBadge: {
-    backgroundColor: "#e8e8e8",
+    backgroundColor: "#1a1a1a",
     borderRadius: 4,
     padding: 6,
     marginBottom: 6,
@@ -1796,15 +1783,16 @@ const styles = StyleSheet.create({
   devBadgeText: {
     fontFamily: "monospace",
     fontSize: 11,
-    color: "#444",
+    color: "#aaa",
   },
 
   // Actividad section
   actividadBlock: {
-    marginTop: 20,
-    backgroundColor: "#f9f9f9",
+    marginTop: 8,
+    backgroundColor: "#1a1a1a",
     borderRadius: 10,
     padding: 12,
+    marginBottom: 16,
   },
   actividadHeader: {
     paddingVertical: 4,
@@ -1812,16 +1800,16 @@ const styles = StyleSheet.create({
   actividadTitle: {
     fontSize: 15,
     fontWeight: "700" as const,
-    color: "#333",
+    color: "#aaa",
   },
   actividadEmpty: {
     fontSize: 13,
-    color: "#999",
+    color: "#666",
     marginTop: 8,
   },
   actividadEntry: {
     fontSize: 12,
-    color: "#555",
+    color: "#888",
     marginTop: 6,
     lineHeight: 18,
   },
@@ -1834,5 +1822,4 @@ const styles = StyleSheet.create({
     color: "#1976d2",
     fontWeight: "600" as const,
   },
-
 });

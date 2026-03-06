@@ -69,11 +69,7 @@ export class LeaveMatchUseCase {
         );
     }
 
-    if (
-      result.wasConfirmed &&
-      result.isLocked &&
-      result.minutesToStart <= 60
-    ) {
+    if (result.wasConfirmed && result.isLocked && result.minutesToStart <= 60) {
       void this.notifyMissingPlayers(
         input.matchId,
         result.snapshot,

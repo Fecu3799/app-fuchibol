@@ -1,12 +1,36 @@
 import {
+  IsBoolean,
+  IsDateString,
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
   Matches,
-  MinLength,
   MaxLength,
+  MinLength,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+
+export enum GenderDto {
+  MALE = 'MALE',
+  FEMALE = 'FEMALE',
+  OTHER = 'OTHER',
+}
+
+export enum PreferredPositionDto {
+  GOALKEEPER = 'GOALKEEPER',
+  DEFENDER = 'DEFENDER',
+  MIDFIELDER = 'MIDFIELDER',
+  FORWARD = 'FORWARD',
+}
+
+export enum SkillLevelDto {
+  BEGINNER = 'BEGINNER',
+  AMATEUR = 'AMATEUR',
+  REGULAR = 'REGULAR',
+  SEMIPRO = 'SEMIPRO',
+  PRO = 'PRO',
+}
 
 export class RegisterDto {
   @IsEmail()
@@ -27,4 +51,37 @@ export class RegisterDto {
   })
   @Transform(({ value }) => (value as string)?.toLowerCase().trim())
   username?: string;
+
+  @IsBoolean()
+  acceptTerms: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  @Transform(({ value }) => (value as string)?.trim())
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  @Transform(({ value }) => (value as string)?.trim())
+  lastName?: string;
+
+  @IsOptional()
+  @IsDateString()
+  birthDate?: string;
+
+  @IsOptional()
+  @IsEnum(GenderDto)
+  gender?: GenderDto;
+
+  @IsOptional()
+  @IsEnum(PreferredPositionDto)
+  preferredPosition?: PreferredPositionDto;
+
+  @IsOptional()
+  @IsEnum(SkillLevelDto)
+  skillLevel?: SkillLevelDto;
 }

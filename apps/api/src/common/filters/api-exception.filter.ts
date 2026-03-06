@@ -44,6 +44,7 @@ const DOMAIN_UNPROCESSABLE_CODES = new Set([
   'CREATOR_TRANSFER_REQUIRED',
   'CANNOT_DEMOTE_CREATOR',
   'NOT_PARTICIPANT',
+  'TERMS_NOT_ACCEPTED',
 ]);
 
 /** Known domain error codes sent as ForbiddenException message strings. */

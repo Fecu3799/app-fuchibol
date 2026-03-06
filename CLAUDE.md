@@ -19,19 +19,20 @@ Arquitectura: monolito modular, DDD pragmático, Light CQRS. Match es el agregad
 6. **Constraints primero**: unique keys, FKs, índices donde aporten invariantes/perf.
 7. **Migrations + seeds** siempre que se agregue una entidad o regla.
 8. **Mínimo de archivos tocados**: identificar archivos exactos antes de implementar; no crear carpetas nuevas si hay lugar lógico.
+9. **Al final de cada trabajo**: Al finalizar cada tarea, validar build, lint y tests (unit & e2e) pasando.
 
 ---
 
 ## 1) Stack
 
-| Capa | Tecnología |
-|---|---|
-| API | NestJS (TypeScript), Prisma, pg pool |
-| DB | PostgreSQL 16 |
-| Cache/Presence | Redis 7 (rate limit + presence; BullMQ futuro) |
-| Mobile | Expo React Native (TypeScript), target iPhone; web solo debug |
-| Shared | `packages/shared` — enums/schemas Zod |
-| Push | Expo Push (proveedor actual); abstracción `NotificationProvider` lista para FCM/APNs |
+| Capa           | Tecnología                                                                           |
+| -------------- | ------------------------------------------------------------------------------------ |
+| API            | NestJS (TypeScript), Prisma, pg pool                                                 |
+| DB             | PostgreSQL 16                                                                        |
+| Cache/Presence | Redis 7 (rate limit + presence; BullMQ futuro)                                       |
+| Mobile         | Expo React Native (TypeScript), target iPhone; web solo debug                        |
+| Shared         | `packages/shared` — enums/schemas Zod                                                |
+| Push           | Expo Push (proveedor actual); abstracción `NotificationProvider` lista para FCM/APNs |
 
 ### Convenciones de código
 
@@ -89,19 +90,19 @@ scheduled → locked → played
 
 ### Transiciones clave
 
-| Acción | Resultado |
-|---|---|
-| Confirm (invited) | → `confirmed` si hay cupo; si no → `waitlist` |
-| Confirm (invited, match locked) | Permitido — lock NO bloquea a ya-invitados |
-| Toggle spectator (sin row / cualquier status) | → `spectator` |
-| Toggle spectator (spectator) | → `invited` |
-| Toggle spectator (confirmed) | → `spectator` + promueve primer `waitlisted` |
-| Leave match | Hard delete de la fila (no cambia status). Si <1h antes del inicio → `user.lateLeaveCount += 1` |
-| Leave (creator) | Requiere admin activo; transfiere `createdById` al primer admin (`adminGrantedAt ASC`). 422 `CREATOR_TRANSFER_REQUIRED` si no hay. |
-| Decline | → `declined`. Solo admin puede reinvite (declined → invited). NO puede confirmar directo. |
-| Cambio mayor (fecha/hora/lugar/capacidad) | Match → `scheduled`; confirmed → `invited` (excepto creator que queda `confirmed`); waitlist se mantiene |
-| Baja de cupo | Últimos confirmados → waitlist (por `confirmedAt DESC`) |
-| Invite a spectator | Setea a `invited` (no 409) |
+| Acción                                        | Resultado                                                                                                                          |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Confirm (invited)                             | → `confirmed` si hay cupo; si no → `waitlist`                                                                                      |
+| Confirm (invited, match locked)               | Permitido — lock NO bloquea a ya-invitados                                                                                         |
+| Toggle spectator (sin row / cualquier status) | → `spectator`                                                                                                                      |
+| Toggle spectator (spectator)                  | → `invited`                                                                                                                        |
+| Toggle spectator (confirmed)                  | → `spectator` + promueve primer `waitlisted`                                                                                       |
+| Leave match                                   | Hard delete de la fila (no cambia status). Si <1h antes del inicio → `user.lateLeaveCount += 1`                                    |
+| Leave (creator)                               | Requiere admin activo; transfiere `createdById` al primer admin (`adminGrantedAt ASC`). 422 `CREATOR_TRANSFER_REQUIRED` si no hay. |
+| Decline                                       | → `declined`. Solo admin puede reinvite (declined → invited). NO puede confirmar directo.                                          |
+| Cambio mayor (fecha/hora/lugar/capacidad)     | Match → `scheduled`; confirmed → `invited` (excepto creator que queda `confirmed`); waitlist se mantiene                           |
+| Baja de cupo                                  | Últimos confirmados → waitlist (por `confirmedAt DESC`)                                                                            |
+| Invite a spectator                            | Setea a `invited` (no 409)                                                                                                         |
 
 ### Spectator
 
@@ -131,13 +132,13 @@ scheduled → locked → played
 
 ### Errores (Problem Details + X-Request-Id)
 
-| Código HTTP | Cuándo |
-|---|---|
-| 401 | No autenticado / token inválido / `REFRESH_REUSED` / `SESSION_REVOKED` |
-| 403 | Sin permisos / `EMAIL_NOT_VERIFIED` |
-| 404 | Recurso no encontrado |
-| 409 | Conflicto de estado (`REVISION_CONFLICT`, `MATCH_CANCELLED`, etc.) |
-| 422 | Validación de dominio (`DOMAIN_UNPROCESSABLE_CODES`) |
+| Código HTTP | Cuándo                                                                 |
+| ----------- | ---------------------------------------------------------------------- |
+| 401         | No autenticado / token inválido / `REFRESH_REUSED` / `SESSION_REVOKED` |
+| 403         | Sin permisos / `EMAIL_NOT_VERIFIED`                                    |
+| 404         | Recurso no encontrado                                                  |
+| 409         | Conflicto de estado (`REVISION_CONFLICT`, `MATCH_CANCELLED`, etc.)     |
+| 422         | Validación de dominio (`DOMAIN_UNPROCESSABLE_CODES`)                   |
 
 Todos los errores incluyen `errorCode` string. Header `X-Request-Id` en toda respuesta.
 
@@ -168,6 +169,7 @@ Throttle guards activos. Login tracker por `identifier`. Helmet + CORS + body li
 - El cliente siempre refetcha el snapshot via HTTP si `revision > localRevision`.
 
 **Flujo de entrada a sala:**
+
 1. HTTP GET snapshot (incluye `revision`)
 2. WS emit `match.subscribe { matchId }`
 3. On `match.updated { matchId, revision }`: si `revision > local` → `invalidateQueries` → refetch

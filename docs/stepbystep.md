@@ -41,6 +41,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 33. [MatchGender computed + Reject invite (reemplaza Decline)](#33-matchgender-computed--reject-invite-reemplaza-decline)
 34. [Mobile PR 3: MatchDetail redesign (countdown, matchGender, Reject, OthersSection)](#34-mobile-pr-3-matchdetail-redesign-countdown-matchgender-reject-otherssection)
 35. [Match Lifecycle: Scheduler + Freeze Edit + Missing-Players Alerts + Notification Bucket Dedup](#35-match-lifecycle-scheduler--freeze-edit--missing-players-alerts--notification-bucket-dedup)
+36. [User Profile Fields + termsAcceptedAt](#36-user-profile-fields--termsacceptedat)
 
 ---
 
@@ -1207,4 +1208,29 @@ apps/api/src/matches/application/leave-match.use-case.ts         (+ missing-play
 apps/api/src/matches/application/kick-participant.use-case.ts    (+ MatchNotificationService, alert)
 apps/api/src/matches/application/kick-participant.use-case.spec.ts (actualizado: + mockNotification)
 apps/api/src/matches/application/update-lock.use-case.spec.ts    (fix: futureStartsAt > 60min)
+```
+
+---
+
+## 36. User Profile Fields + termsAcceptedAt
+
+### Que se hizo
+
+- Extendidos enums de Prisma: `UserGender` +`OTHER`; nuevos `PreferredPosition` (GOALKEEPER/DEFENDER/MIDFIELDER/FORWARD) y `SkillLevel` (BEGINNER/AMATEUR/REGULAR/SEMIPRO/PRO).
+- Agregados campos opcionales a `User`: `firstName`, `lastName`, `birthDate` (`@db.Date`), `preferredPosition`, `skillLevel`; `gender` ahora nullable (sin default).
+- Agregado `termsAcceptedAt DateTime @default(now())` — obligatorio en register (aceptación de T&C), con default DB para usuarios existentes.
+- `POST /api/v1/auth/register` acepta `acceptTerms: boolean` (requerido); si `false` → 422 `TERMS_NOT_ACCEPTED`. Acepta campos de perfil opcionales.
+- `GET /api/v1/me` devuelve los nuevos campos.
+- `TERMS_NOT_ACCEPTED` agregado a `DOMAIN_UNPROCESSABLE_CODES` en el exception filter.
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma
+apps/api/prisma/migrations/20260305000000_user_profile_fields/migration.sql
+apps/api/src/auth/api/dto/register.dto.ts
+apps/api/src/auth/application/register.use-case.ts
+apps/api/src/auth/application/get-me.use-case.ts
+apps/api/src/common/filters/api-exception.filter.ts
+apps/api/src/auth/application/register.use-case.spec.ts
 ```

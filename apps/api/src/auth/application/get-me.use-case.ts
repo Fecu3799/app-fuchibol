@@ -13,6 +13,13 @@ export class GetMeUseCase {
         email: true,
         username: true,
         role: true,
+        gender: true,
+        firstName: true,
+        lastName: true,
+        birthDate: true,
+        preferredPosition: true,
+        skillLevel: true,
+        termsAcceptedAt: true,
         createdAt: true,
       },
     });

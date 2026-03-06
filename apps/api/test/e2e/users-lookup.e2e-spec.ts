@@ -22,9 +22,11 @@ describe('Users Lookup (e2e)', () => {
   });
 
   it('register auto-generates username from email', async () => {
-    const res = await request(server)
-      .post('/api/v1/auth/register')
-      .send({ email: 'facu@test.com', password: 'Test1234!' });
+    const res = await request(server).post('/api/v1/auth/register').send({
+      email: 'facu@test.com',
+      password: 'Test1234!',
+      acceptTerms: true,
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.user.username).toBe('facu');
@@ -34,6 +36,7 @@ describe('Users Lookup (e2e)', () => {
     const res = await request(server).post('/api/v1/auth/register').send({
       email: 'x@test.com',
       password: 'Test1234!',
+      acceptTerms: true,
       username: 'custom_user',
     });
 
@@ -43,14 +46,18 @@ describe('Users Lookup (e2e)', () => {
 
   it('register auto-generates unique username on collision', async () => {
     // First user takes "player"
-    await request(server)
-      .post('/api/v1/auth/register')
-      .send({ email: 'player@a.com', password: 'Test1234!' });
+    await request(server).post('/api/v1/auth/register').send({
+      email: 'player@a.com',
+      password: 'Test1234!',
+      acceptTerms: true,
+    });
 
     // Second user with same local part gets "player2"
-    const res = await request(server)
-      .post('/api/v1/auth/register')
-      .send({ email: 'player@b.com', password: 'Test1234!' });
+    const res = await request(server).post('/api/v1/auth/register').send({
+      email: 'player@b.com',
+      password: 'Test1234!',
+      acceptTerms: true,
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.user.username).toBe('player2');
@@ -62,7 +69,7 @@ describe('Users Lookup (e2e)', () => {
 
     const regRes = await request(server)
       .post('/api/v1/auth/register')
-      .send({ email, password });
+      .send({ email, password, acceptTerms: true });
     expect(regRes.status).toBe(201);
 
     const username = regRes.body.user.username as string;

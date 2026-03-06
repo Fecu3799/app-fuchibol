@@ -148,8 +148,14 @@ export class MatchNotificationService {
   async onReminderMissingPlayers(
     input: OnReminderMissingPlayersInput,
   ): Promise<void> {
-    const { matchId, matchTitle, userIds, missingCount, minutesToStart, bucket } =
-      input;
+    const {
+      matchId,
+      matchTitle,
+      userIds,
+      missingCount,
+      minutesToStart,
+      bucket,
+    } = input;
 
     await Promise.allSettled(
       userIds.map(async (userId) => {
@@ -179,14 +185,15 @@ export class MatchNotificationService {
     );
   }
 
-  async onMissingPlayersAlert(input: OnMissingPlayersAlertInput): Promise<void> {
-    const { matchId, matchTitle, userIds, missingCount, minutesToStart } = input;
+  async onMissingPlayersAlert(
+    input: OnMissingPlayersAlertInput,
+  ): Promise<void> {
+    const { matchId, matchTitle, userIds, missingCount, minutesToStart } =
+      input;
 
     await Promise.allSettled(
       userIds.map(async (userId) => {
-        if (
-          !(await this.shouldSend(userId, matchId, 'missing_players_alert'))
-        )
+        if (!(await this.shouldSend(userId, matchId, 'missing_players_alert')))
           return;
 
         await this.provider.sendToUser(userId, {
@@ -232,7 +239,12 @@ export class MatchNotificationService {
     bucket?: string,
   ): Promise<void> {
     await this.prisma.client.notificationDelivery.create({
-      data: { userId, matchId, type, ...(bucket !== undefined ? { bucket } : {}) },
+      data: {
+        userId,
+        matchId,
+        type,
+        ...(bucket !== undefined ? { bucket } : {}),
+      },
     });
   }
 }

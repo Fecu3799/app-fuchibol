@@ -106,6 +106,22 @@ describe('Auth (e2e)', () => {
     expectError(res, { status: 409, code: 'CONFLICT' });
   });
 
+  it('POST /auth/register → 422 TERMS_NOT_ACCEPTED when acceptTerms is false', async () => {
+    const res = await request(server)
+      .post('/api/v1/auth/register')
+      .send({ email, password, acceptTerms: false });
+
+    expectError(res, { status: 422, code: 'TERMS_NOT_ACCEPTED' });
+  });
+
+  it('POST /auth/register → 422 when acceptTerms is missing', async () => {
+    const res = await request(server)
+      .post('/api/v1/auth/register')
+      .send({ email, password });
+
+    expect(res.status).toBe(422);
+  });
+
   // --- Email verification ---
 
   it('POST /auth/email/verify/confirm → 204 with valid token', async () => {

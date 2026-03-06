@@ -218,7 +218,12 @@ describe('MatchNotificationService.onReminderMissingPlayers', () => {
     expect(
       (prisma.client as any).notificationDelivery.create,
     ).toHaveBeenCalledWith({
-      data: { userId: 'user-1', matchId: 'match-1', type: 'reminder_missing_players', bucket: 'b3' },
+      data: {
+        userId: 'user-1',
+        matchId: 'match-1',
+        type: 'reminder_missing_players',
+        bucket: 'b3',
+      },
     });
   });
 

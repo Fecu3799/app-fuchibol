@@ -147,7 +147,11 @@ export async function buildMatchSnapshot(
     capacity: match.capacity,
     status: match.status,
     matchStatus: computeMatchStatusView(match),
-    matchGender: computeMatchGender(confirmed.map((p) => p.user.gender)),
+    matchGender: computeMatchGender(
+      confirmed
+        .map((p) => p.user.gender)
+        .filter((g): g is NonNullable<typeof g> => g !== null),
+    ),
     revision: match.revision,
     isLocked: match.isLocked,
     lockedAt: match.lockedAt,

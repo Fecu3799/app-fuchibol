@@ -21,6 +21,22 @@ enum Role {
 enum UserGender {
   MALE
   FEMALE
+  OTHER
+}
+
+enum PreferredPosition {
+  GOALKEEPER
+  DEFENDER
+  MIDFIELDER
+  FORWARD
+}
+
+enum SkillLevel {
+  BEGINNER
+  AMATEUR
+  REGULAR
+  SEMIPRO
+  PRO
 }
 
 model User {
@@ -28,12 +44,18 @@ model User {
   email            String             @unique
   username         String             @unique
   passwordHash     String
-  role             Role               @default(USER)
-  gender           UserGender         @default(MALE)
-  lateLeaveCount   Int                @default(0)
-  emailVerifiedAt  DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  role              Role               @default(USER)
+  gender            UserGender?
+  firstName         String?
+  lastName          String?
+  birthDate         DateTime?          @db.Date
+  preferredPosition PreferredPosition?
+  skillLevel        SkillLevel?
+  termsAcceptedAt   DateTime           @default(now())
+  lateLeaveCount    Int                @default(0)
+  emailVerifiedAt   DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
   matches          Match[]
   participations   MatchParticipant[]
   ownedGroups      Group[]            @relation("GroupOwner")

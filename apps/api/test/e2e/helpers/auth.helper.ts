@@ -10,7 +10,12 @@ export function registerUser(
 ) {
   return request(server)
     .post('/api/v1/auth/register')
-    .send({ email, password, ...(username ? { username } : {}) });
+    .send({
+      email,
+      password,
+      acceptTerms: true,
+      ...(username ? { username } : {}),
+    });
 }
 
 export function loginUser(

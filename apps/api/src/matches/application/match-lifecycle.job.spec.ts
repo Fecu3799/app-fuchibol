@@ -18,17 +18,23 @@ function buildMockNotification() {
   } as any;
 }
 
-function makeMatch(overrides: Partial<{
-  id: string;
-  title: string;
-  startsAt: Date;
-  capacity: number;
-  status: string;
-  revision: number;
-  isLocked: boolean;
-  createdById: string;
-  participants: Array<{ userId: string; status: string; isMatchAdmin: boolean }>;
-}> = {}) {
+function makeMatch(
+  overrides: Partial<{
+    id: string;
+    title: string;
+    startsAt: Date;
+    capacity: number;
+    status: string;
+    revision: number;
+    isLocked: boolean;
+    createdById: string;
+    participants: Array<{
+      userId: string;
+      status: string;
+      isMatchAdmin: boolean;
+    }>;
+  }> = {},
+) {
   return {
     id: MATCH_ID,
     title: 'Test Match',
@@ -49,9 +55,11 @@ function buildJob(prismaOverrides: Record<string, unknown> = {}) {
     match: {
       findUnique: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
-      update: jest.fn().mockImplementation((args: any) =>
-        Promise.resolve({ revision: (args.data?.revision as number) ?? 2 }),
-      ),
+      update: jest
+        .fn()
+        .mockImplementation((args: any) =>
+          Promise.resolve({ revision: (args.data?.revision as number) ?? 2 }),
+        ),
     },
     matchParticipant: {
       count: jest.fn().mockResolvedValue(0),
@@ -107,7 +115,12 @@ describe('MatchLifecycleJob — Auto-lock rule', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2); // capacity = 2
 
     const notification = buildMockNotification();
-    const job = new MatchLifecycleJob(prisma, mockAudit, notification, mockRealtimePublisher);
+    const job = new MatchLifecycleJob(
+      prisma,
+      mockAudit,
+      notification,
+      mockRealtimePublisher,
+    );
 
     await job.runTick();
 
@@ -148,7 +161,12 @@ describe('MatchLifecycleJob — Auto-lock rule', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2);
 
     const notification = buildMockNotification();
-    const job = new MatchLifecycleJob(prisma, mockAudit, notification, mockRealtimePublisher);
+    const job = new MatchLifecycleJob(
+      prisma,
+      mockAudit,
+      notification,
+      mockRealtimePublisher,
+    );
 
     await job.runTick();
 
@@ -178,7 +196,12 @@ describe('MatchLifecycleJob — Reminder rule', () => {
     });
 
     const notification = buildMockNotification();
-    const job = new MatchLifecycleJob(prisma, mockAudit, notification, mockRealtimePublisher);
+    const job = new MatchLifecycleJob(
+      prisma,
+      mockAudit,
+      notification,
+      mockRealtimePublisher,
+    );
 
     await job.runTick();
 
@@ -210,7 +233,12 @@ describe('MatchLifecycleJob — Reminder rule', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2);
 
     const notification = buildMockNotification();
-    const job = new MatchLifecycleJob(prisma, mockAudit, notification, mockRealtimePublisher);
+    const job = new MatchLifecycleJob(
+      prisma,
+      mockAudit,
+      notification,
+      mockRealtimePublisher,
+    );
 
     await job.runTick();
 
@@ -246,7 +274,12 @@ describe('MatchLifecycleJob — Auto-cancel rule', () => {
       .mockResolvedValue([{ userId: CREATOR_ID }]);
 
     const notification = buildMockNotification();
-    const job = new MatchLifecycleJob(prisma, mockAudit, notification, mockRealtimePublisher);
+    const job = new MatchLifecycleJob(
+      prisma,
+      mockAudit,
+      notification,
+      mockRealtimePublisher,
+    );
 
     await job.runTick();
 
@@ -288,7 +321,12 @@ describe('MatchLifecycleJob — Auto-cancel rule', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2);
 
     const notification = buildMockNotification();
-    const job = new MatchLifecycleJob(prisma, mockAudit, notification, mockRealtimePublisher);
+    const job = new MatchLifecycleJob(
+      prisma,
+      mockAudit,
+      notification,
+      mockRealtimePublisher,
+    );
 
     await job.runTick();
 

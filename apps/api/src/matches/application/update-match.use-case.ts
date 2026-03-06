@@ -58,8 +58,7 @@ export class UpdateMatchUseCase {
         throw new ConflictException('REVISION_CONFLICT');
       }
 
-      const minutesToStart =
-        (match.startsAt.getTime() - Date.now()) / 60_000;
+      const minutesToStart = (match.startsAt.getTime() - Date.now()) / 60_000;
       if (minutesToStart <= 60) {
         throw new UnprocessableEntityException('MATCH_EDIT_FROZEN');
       }

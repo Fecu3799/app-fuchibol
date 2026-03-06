@@ -89,7 +89,8 @@ export class MatchLifecycleJob {
 
         // Re-read inside tx to prevent double-lock
         const fresh = await tx.match.findUnique({ where: { id: match.id } });
-        if (!fresh || fresh.isLocked || fresh.status === 'canceled') return null;
+        if (!fresh || fresh.isLocked || fresh.status === 'canceled')
+          return null;
 
         const confirmedCount = await tx.matchParticipant.count({
           where: { matchId: match.id, status: 'CONFIRMED' },
@@ -141,9 +142,7 @@ export class MatchLifecycleJob {
       const adminUserIds = match.participants
         .filter((p) => p.isMatchAdmin)
         .map((p) => p.userId);
-      const recipientIds = [
-        ...new Set([match.createdById, ...adminUserIds]),
-      ];
+      const recipientIds = [...new Set([match.createdById, ...adminUserIds])];
 
       await this.matchNotification.onReminderMissingPlayers({
         matchId: match.id,
