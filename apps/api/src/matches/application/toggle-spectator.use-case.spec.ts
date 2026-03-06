@@ -98,7 +98,6 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
-      mockUserReliability,
     );
 
     await useCase.execute({
@@ -127,7 +126,6 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
-      mockUserReliability,
     );
 
     await useCase.execute({
@@ -160,7 +158,6 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
-      mockUserReliability,
     );
 
     await useCase.execute({
@@ -196,7 +193,6 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
-      mockUserReliability,
     );
 
     await useCase.execute({
@@ -222,7 +218,6 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
-      mockUserReliability,
     );
 
     await expect(
@@ -246,7 +241,6 @@ describe('ToggleSpectatorUseCase', () => {
       idempotency,
       mockAudit,
       mockMatchNotification,
-      mockUserReliability,
     );
 
     await expect(

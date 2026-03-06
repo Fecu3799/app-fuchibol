@@ -67,7 +67,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function ProfileScreen({ navigation }: Props) {
-  const { user, logout, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
 
@@ -93,7 +93,7 @@ export default function ProfileScreen({ navigation }: Props) {
 
     let size = asset.fileSize ?? 0;
     if (size === 0) {
-      const info = await FileSystem.getInfoAsync(asset.uri, { size: true });
+      const info = await FileSystem.getInfoAsync(asset.uri);
       if (info.exists && 'size' in info) size = (info as { size: number }).size;
     }
 
@@ -187,7 +187,14 @@ export default function ProfileScreen({ navigation }: Props) {
 
       {/* Identity card */}
       <View style={s.card}>
-        <Text style={s.cardTitle}>{displayName ?? user?.username ?? user?.email ?? '—'}</Text>
+        <View style={s.cardTitleRow}>
+          <Text style={s.cardTitle} numberOfLines={1}>
+            {displayName ?? user?.username ?? user?.email ?? '—'}
+          </Text>
+          {user?.age != null && (
+            <Text style={s.cardAge}>{user.age} años</Text>
+          )}
+        </View>
         {displayName && user?.username ? (
           <Text style={s.cardSubtitle}>@{user.username}</Text>
         ) : null}
@@ -245,9 +252,6 @@ export default function ProfileScreen({ navigation }: Props) {
         <Text style={s.chevron}>&gt;</Text>
       </Pressable>
 
-      <Pressable style={s.logoutBtn} onPress={logout}>
-        <Text style={s.logoutText}>Cerrar sesión</Text>
-      </Pressable>
     </ScrollView>
   );
 }
@@ -295,7 +299,9 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 2 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 2, flexShrink: 1 },
+  cardAge: { fontSize: 14, color: '#888', fontWeight: '500' },
   cardSubtitle: { fontSize: 13, color: '#888', marginBottom: 8 },
   cardHeader: { fontSize: 14, fontWeight: '700', color: '#444', marginBottom: 10 },
 
@@ -322,16 +328,6 @@ const s = StyleSheet.create({
   },
   menuRowText: { fontSize: 16, fontWeight: '500' },
   chevron: { fontSize: 18, color: '#999' },
-
-  logoutBtn: {
-    backgroundColor: '#d32f2f',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  logoutText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 
   suspensionBanner: {
     backgroundColor: '#fde8e8',

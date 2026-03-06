@@ -13,7 +13,9 @@ const mockPrisma = {
 } as unknown as PrismaService;
 
 const mockStorage = {
-  buildPublicUrl: jest.fn((key: string) => `http://localhost:9000/bucket/${key}`),
+  buildPublicUrl: jest.fn(
+    (key: string) => `http://localhost:9000/bucket/${key}`,
+  ),
 };
 
 const mockConfig = {

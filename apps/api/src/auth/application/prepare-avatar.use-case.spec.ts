@@ -5,8 +5,12 @@ import { PrepareAvatarUseCase } from './prepare-avatar.use-case';
 import { StorageService } from '../../infra/storage/storage.service';
 
 const mockStorage = {
-  createPresignedPutUrl: jest.fn().mockResolvedValue('https://s3.example.com/presigned'),
-  buildPublicUrl: jest.fn((key: string) => `http://localhost:9000/bucket/${key}`),
+  createPresignedPutUrl: jest
+    .fn()
+    .mockResolvedValue('https://s3.example.com/presigned'),
+  buildPublicUrl: jest.fn(
+    (key: string) => `http://localhost:9000/bucket/${key}`,
+  ),
 };
 
 const mockConfig = {

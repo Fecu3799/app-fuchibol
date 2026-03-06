@@ -12,6 +12,7 @@ type TransactionClient = Omit<
 export interface ParticipantView {
   userId: string;
   username: string;
+  avatarUrl: string | null;
   status: string;
   waitlistPosition: number | null;
   isMatchAdmin: boolean;
@@ -20,6 +21,7 @@ export interface ParticipantView {
 export interface SpectatorView {
   userId: string;
   username: string;
+  avatarUrl: string | null;
 }
 
 export interface MatchSnapshot {
@@ -51,6 +53,7 @@ export async function buildMatchSnapshot(
   prisma: PrismaClient | TransactionClient,
   matchId: string,
   actorId: string,
+  urlBuilder?: (key: string) => string,
 ): Promise<MatchSnapshot> {
   const match = await prisma.match.findUniqueOrThrow({
     where: { id: matchId },
@@ -59,7 +62,15 @@ export async function buildMatchSnapshot(
   const participants = await prisma.matchParticipant.findMany({
     where: { matchId },
     orderBy: { createdAt: 'asc' },
-    include: { user: { select: { username: true, gender: true } } },
+    include: {
+      user: {
+        select: {
+          username: true,
+          gender: true,
+          avatar: { select: { key: true } },
+        },
+      },
+    },
   });
 
   const confirmed = participants.filter((p) => p.status === 'CONFIRMED');
@@ -75,8 +86,7 @@ export async function buildMatchSnapshot(
   const isAdmin = isCreator || myParticipant?.isMatchAdmin === true;
   const isCanceled = match.status === 'canceled';
   // Matches are immutable once canceled OR once they started (≥1h after startsAt)
-  const isPlayed =
-    Date.now() >= match.startsAt.getTime() + 60 * 60 * 1000;
+  const isPlayed = Date.now() >= match.startsAt.getTime() + 60 * 60 * 1000;
   const isImmutable = isCanceled || isPlayed;
 
   const actionsAllowed: string[] = [];
@@ -120,11 +130,17 @@ export async function buildMatchSnapshot(
   }
 
   // Participants: exclude SPECTATOR (spectators shown separately)
+  const buildAvatarUrl = (key: string | null | undefined): string | null => {
+    if (!key || !urlBuilder) return null;
+    return urlBuilder(key);
+  };
+
   const participantViews: ParticipantView[] = participants
     .filter((p) => p.status !== 'SPECTATOR')
     .map((p) => ({
       userId: p.userId,
       username: p.user.username,
+      avatarUrl: buildAvatarUrl(p.user.avatar?.key),
       status: p.status,
       waitlistPosition: p.waitlistPosition,
       isMatchAdmin: p.isMatchAdmin,
@@ -133,6 +149,7 @@ export async function buildMatchSnapshot(
   const waitlistViews: ParticipantView[] = waitlisted.map((p, i) => ({
     userId: p.userId,
     username: p.user.username,
+    avatarUrl: buildAvatarUrl(p.user.avatar?.key),
     status: p.status,
     waitlistPosition: i + 1,
     isMatchAdmin: p.isMatchAdmin,
@@ -141,6 +158,7 @@ export async function buildMatchSnapshot(
   const spectatorViews: SpectatorView[] = spectatorRows.map((p) => ({
     userId: p.userId,
     username: p.user.username,
+    avatarUrl: buildAvatarUrl(p.user.avatar?.key),
   }));
 
   return {

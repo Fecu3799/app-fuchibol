@@ -4,44 +4,61 @@ import { StorageService } from '../../infra/storage/storage.service';
 import { computeReliabilityLabel } from '../../matches/application/user-reliability.service';
 import { calculateAge } from '../../common/utils/calculate-age';
 
+export interface PublicProfileView {
+  id: string;
+  username: string | null;
+  avatarUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  age: number | null;
+  gender: string | null;
+  preferredPosition: string | null;
+  skillLevel: string | null;
+  reliabilityScore: number;
+  reliabilityLabel: string;
+}
+
 @Injectable()
-export class GetMeUseCase {
+export class GetPublicProfileQuery {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
   ) {}
 
-  async execute(userId: string) {
+  async execute(targetUserId: string): Promise<PublicProfileView> {
     const user = await this.prisma.client.user.findUnique({
-      where: { id: userId },
+      where: { id: targetUserId },
       select: {
         id: true,
-        email: true,
         username: true,
-        role: true,
-        gender: true,
         firstName: true,
         lastName: true,
         birthDate: true,
+        gender: true,
         preferredPosition: true,
         skillLevel: true,
-        termsAcceptedAt: true,
         reliabilityScore: true,
-        suspendedUntil: true,
-        createdAt: true,
         avatar: { select: { key: true } },
       },
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException('USER_NOT_FOUND');
     }
 
-    const { avatar, ...rest } = user;
     return {
-      ...rest,
+      id: user.id,
+      username: user.username ?? null,
+      avatarUrl: user.avatar?.key
+        ? this.storage.buildPublicUrl(user.avatar.key)
+        : null,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
       age: calculateAge(user.birthDate ?? null),
-      avatarUrl: avatar ? this.storage.buildPublicUrl(avatar.key) : null,
+      gender: user.gender ?? null,
+      preferredPosition: user.preferredPosition ?? null,
+      skillLevel: user.skillLevel ?? null,
+      reliabilityScore: user.reliabilityScore,
       reliabilityLabel: computeReliabilityLabel(user.reliabilityScore),
     };
   }

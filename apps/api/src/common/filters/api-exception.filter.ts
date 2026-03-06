@@ -52,7 +52,10 @@ const DOMAIN_UNPROCESSABLE_CODES = new Set([
 ]);
 
 /** Known domain error codes sent as ForbiddenException message strings. */
-const DOMAIN_FORBIDDEN_CODES = new Set(['EMAIL_NOT_VERIFIED', 'account_suspended']);
+const DOMAIN_FORBIDDEN_CODES = new Set([
+  'EMAIL_NOT_VERIFIED',
+  'account_suspended',
+]);
 
 /** Known domain error codes sent as UnauthorizedException message strings. */
 const DOMAIN_UNAUTHORIZED_CODES = new Set([

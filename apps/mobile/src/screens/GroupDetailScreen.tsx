@@ -12,6 +12,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { GroupMember } from '../types/api';
+import { Avatar } from '../components/Avatar';
 import { useGroup } from '../features/groups/useGroup';
 import { useAddGroupMember } from '../features/groups/useAddGroupMember';
 import { useRemoveGroupMember } from '../features/groups/useRemoveGroupMember';
@@ -110,14 +111,18 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
 
     return (
       <View style={styles.memberRow}>
-        <View style={styles.memberInfo}>
+        <Pressable
+          style={styles.memberInfo}
+          onPress={() => navigation.navigate('PublicUserProfile', { userId: item.userId })}
+        >
+          <Avatar uri={item.avatarUrl} size={32} fallbackText={item.username} />
           <Text style={styles.memberName}>@{item.username}</Text>
           {isGroupOwner && (
             <View style={styles.ownerTag}>
               <Text style={styles.ownerTagText}>Owner</Text>
             </View>
           )}
-        </View>
+        </Pressable>
         {canRemove && (
           <Pressable
             style={styles.removeBtn}

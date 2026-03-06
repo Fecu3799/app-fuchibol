@@ -13,7 +13,6 @@ import type { CompositeScreenProps } from '@react-navigation/native';
 import type { RootStackParamList, TabParamList } from '../navigation/AppNavigator';
 import type { MatchHomeItem } from '../types/api';
 import { useMatches } from '../features/matches/useMatches';
-import { useAuth } from '../contexts/AuthContext';
 import { useLogoutOn401 } from '../lib/use-api-query';
 import { ApiError } from '../lib/api';
 
@@ -73,7 +72,6 @@ function MatchRow({ item, onPress }: { item: MatchHomeItem; onPress: () => void 
 }
 
 export default function HomeScreen({ navigation }: Props) {
-  const { logout } = useAuth();
   const query = useMatches();
   useLogoutOn401(query);
 
@@ -131,9 +129,6 @@ export default function HomeScreen({ navigation }: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Matches</Text>
-        <Pressable onPress={logout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </Pressable>
       </View>
 
       <Pressable
@@ -211,7 +206,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   headerTitle: { fontSize: 22, fontWeight: '700' },
-  logoutText: { fontSize: 14, color: '#d32f2f' },
   loader: { marginTop: 40 },
   list: { padding: 12 },
   row: {

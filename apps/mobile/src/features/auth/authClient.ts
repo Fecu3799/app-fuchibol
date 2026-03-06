@@ -5,6 +5,7 @@ import type {
   MeResponse,
   PreferredPosition,
   PrepareAvatarResponse,
+  PublicUserProfile,
   RefreshResponse,
   RegisterResponse,
   SessionItem,
@@ -147,6 +148,11 @@ export function deleteSession(sessionId: string): Promise<void> {
   return fetchJson<void>(buildUrl(`/api/v1/auth/sessions/${sessionId}`), {
     method: 'DELETE',
   });
+}
+
+/** GET /api/v1/users/:id/public-profile — Bearer auto-added. */
+export function getPublicProfile(userId: string): Promise<PublicUserProfile> {
+  return fetchJson<PublicUserProfile>(buildUrl(`/api/v1/users/${userId}/public-profile`));
 }
 
 /** Request a presigned PUT URL to upload an avatar. Bearer auto-added. */

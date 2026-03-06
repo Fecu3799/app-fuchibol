@@ -97,7 +97,9 @@ export class LoginUseCase {
 
     const now = new Date();
     if (user.suspendedUntil && user.suspendedUntil > now) {
-      this.logger.log(`login_failed userId=${user.id} reason=account_suspended`);
+      this.logger.log(
+        `login_failed userId=${user.id} reason=account_suspended`,
+      );
       void this.auditService
         .log({
           eventType: 'login_failed',

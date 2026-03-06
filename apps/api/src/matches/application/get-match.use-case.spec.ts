@@ -1,6 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { GetMatchUseCase } from './get-match.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import type { StorageService } from '../../infra/storage/storage.service';
+
+const mockStorage = {
+  buildPublicUrl: jest.fn((key: string) => `http://cdn/${key}`),
+} as unknown as StorageService;
 
 const mockMatch = {
   id: 'match-1',
@@ -35,7 +40,7 @@ describe('GetMatchUseCase', () => {
   it('throws when match does not exist', async () => {
     const prisma = buildPrisma();
     prisma.client.match.findUnique = jest.fn().mockResolvedValue(null);
-    const useCase = new GetMatchUseCase(prisma);
+    const useCase = new GetMatchUseCase(prisma, mockStorage);
 
     await expect(useCase.execute('missing-id')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -48,7 +53,7 @@ describe('GetMatchUseCase', () => {
     prisma.client.match.findUniqueOrThrow = jest
       .fn()
       .mockResolvedValue(mockMatch);
-    const useCase = new GetMatchUseCase(prisma);
+    const useCase = new GetMatchUseCase(prisma, mockStorage);
 
     const result = await useCase.execute('match-1', 'user-1');
     expect(result.id).toBe('match-1');

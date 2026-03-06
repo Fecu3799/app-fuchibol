@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/AppNavigator";
+import { Avatar } from "../components/Avatar";
 import type {
   MatchSnapshot,
   ParticipantView,
@@ -735,6 +736,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         onPromote={handlePromote}
         onDemote={handleDemote}
         onKick={handleKick}
+        onUserPress={(userId) => navigation.navigate("PublicUserProfile", { userId })}
       />
 
       {/* 4. Actions bar */}
@@ -1120,6 +1122,7 @@ function PlayerRow({
   onPromote,
   onDemote,
   onKick,
+  onUserPress,
 }: {
   participant: ParticipantView;
   isConfirmed: boolean;
@@ -1131,17 +1134,21 @@ function PlayerRow({
   onPromote: (userId: string, username: string) => void;
   onDemote: (userId: string, username: string) => void;
   onKick: (userId: string, username: string) => void;
+  onUserPress?: (userId: string) => void;
 }) {
   const isCreator = p.userId === creatorId;
   const dotColor = isConfirmed ? CONFIRMED_DOT_COLOR : OTHER_DOT_COLOR;
   return (
     <View style={styles.playerRow}>
-      <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-      <Text style={styles.playerName} numberOfLines={1}>
-        {isCreator ? "★ " : ""}{p.username}
-        {!isCreator && p.isMatchAdmin ? " [A]" : ""}
-        {p.waitlistPosition != null ? ` #${p.waitlistPosition}` : ""}
-      </Text>
+      <Pressable style={styles.playerIdentity} onPress={() => onUserPress?.(p.userId)}>
+        <Avatar uri={p.avatarUrl} size={28} fallbackText={p.username} />
+        <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+        <Text style={styles.playerName} numberOfLines={1}>
+          {isCreator ? "★ " : ""}{p.username}
+          {!isCreator && p.isMatchAdmin ? " [A]" : ""}
+          {p.waitlistPosition != null ? ` #${p.waitlistPosition}` : ""}
+        </Text>
+      </Pressable>
       <View style={styles.playerActions}>
         {canManageAdmins && !isCreator && (
           <Pressable
@@ -1187,6 +1194,7 @@ function OthersAccordion({
   onPromote,
   onDemote,
   onKick,
+  onUserPress,
 }: {
   others: ParticipantView[];
   spectators: SpectatorView[];
@@ -1198,6 +1206,7 @@ function OthersAccordion({
   onPromote: (userId: string, username: string) => void;
   onDemote: (userId: string, username: string) => void;
   onKick: (userId: string, username: string) => void;
+  onUserPress?: (userId: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const total = others.length + spectators.length;
@@ -1223,12 +1232,16 @@ function OthersAccordion({
               onPromote={onPromote}
               onDemote={onDemote}
               onKick={onKick}
+              onUserPress={onUserPress}
             />
           ))}
           {spectators.map((s) => (
             <View key={s.userId} style={styles.playerRow}>
-              <View style={[styles.statusDot, { backgroundColor: SPECTATOR_DOT_COLOR }]} />
-              <Text style={styles.playerName}>-{s.username}</Text>
+              <Pressable style={styles.playerIdentity} onPress={() => onUserPress?.(s.userId)}>
+                <Avatar uri={s.avatarUrl} size={28} fallbackText={s.username} />
+                <View style={[styles.statusDot, { backgroundColor: SPECTATOR_DOT_COLOR }]} />
+                <Text style={styles.playerName}>-{s.username}</Text>
+              </Pressable>
               {canKick && s.userId !== creatorId && (
                 <View style={styles.playerActions}>
                   <Pressable
@@ -1261,6 +1274,7 @@ function ConfirmedListCard({
   onPromote,
   onDemote,
   onKick,
+  onUserPress,
 }: {
   confirmed: ParticipantView[];
   capacity: number;
@@ -1274,6 +1288,7 @@ function ConfirmedListCard({
   onPromote: (userId: string, username: string) => void;
   onDemote: (userId: string, username: string) => void;
   onKick: (userId: string, username: string) => void;
+  onUserPress?: (userId: string) => void;
 }) {
   return (
     <View style={styles.card}>
@@ -1292,6 +1307,7 @@ function ConfirmedListCard({
           onPromote={onPromote}
           onDemote={onDemote}
           onKick={onKick}
+          onUserPress={onUserPress}
         />
       ))}
       {confirmed.length === 0 && (
@@ -1309,6 +1325,7 @@ function ConfirmedListCard({
           onPromote={onPromote}
           onDemote={onDemote}
           onKick={onKick}
+          onUserPress={onUserPress}
         />
       )}
     </View>
@@ -1641,9 +1658,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#c8c8c8",
   },
-  playerName: { flex: 1, fontWeight: "600", color: "#1a1a1a", fontSize: 14, marginLeft: 8 },
+  playerIdentity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 6 },
+  playerName: { flex: 1, fontWeight: "600", color: "#1a1a1a", fontSize: 14 },
   playerActions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
   adminBtn: {
     borderRadius: 4,
     paddingHorizontal: 8,

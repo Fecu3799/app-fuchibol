@@ -203,11 +203,16 @@ export class LeaveMatchUseCase {
       const isLateleave =
         timeUntilMatchMs > 0 && timeUntilMatchMs <= LATE_LEAVE_THRESHOLD_MS;
       if (isLateleave) {
+        const minutesToStart = timeUntilMatchMs / 60_000;
         await tx.user.update({
           where: { id: input.actorId },
           data: { lateLeaveCount: { increment: 1 } },
         });
-        await this.userReliability.applyLateLeavePenalty(tx, input.actorId);
+        await this.userReliability.applyLateLeavePenalty(
+          tx,
+          input.actorId,
+          minutesToStart,
+        );
       }
 
       // Hard delete the participation row

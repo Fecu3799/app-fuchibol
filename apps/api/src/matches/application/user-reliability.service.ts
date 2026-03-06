@@ -7,9 +7,22 @@ type TransactionClient = Omit<
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'
 >;
 
-const LATE_LEAVE_PENALTY = 10;
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const SUSPENSION_DAYS = 14;
+
+/**
+ * Returns the penalty points for a late leave based on how many minutes
+ * remain until match start. Evaluated from most to least severe.
+ */
+export function getLateLeavePenaltyPoints(minutesToStart: number): number {
+  if (minutesToStart < 10) return 50;
+  if (minutesToStart < 20) return 40;
+  if (minutesToStart < 30) return 30;
+  if (minutesToStart < 40) return 15;
+  if (minutesToStart < 50) return 12;
+  if (minutesToStart < 60) return 10;
+  return 0;
+}
 
 export function computeReliabilityLabel(score: number): string {
   if (score >= 85) return 'Cumplidor';
@@ -32,6 +45,7 @@ export class UserReliabilityService {
   async applyLateLeavePenalty(
     tx: PrismaClient | TransactionClient,
     userId: string,
+    minutesToStart: number,
     now: Date = new Date(),
   ): Promise<void> {
     const user = await tx.user.findUniqueOrThrow({
@@ -48,7 +62,8 @@ export class UserReliabilityService {
       return;
     }
 
-    const newScore = Math.max(0, user.reliabilityScore - LATE_LEAVE_PENALTY);
+    const penalty = getLateLeavePenaltyPoints(minutesToStart);
+    const newScore = Math.max(0, user.reliabilityScore - penalty);
 
     // Determine window start: reset if expired or not yet started
     let windowStart: Date;
@@ -64,8 +79,7 @@ export class UserReliabilityService {
     // Trigger suspension when score hits 0 within the active window
     let suspendedUntil: Date | undefined;
     if (newScore === 0) {
-      const withinWindow =
-        now.getTime() - windowStart.getTime() <= WINDOW_MS;
+      const withinWindow = now.getTime() - windowStart.getTime() <= WINDOW_MS;
       if (withinWindow) {
         suspendedUntil = new Date(
           now.getTime() + SUSPENSION_DAYS * 24 * 60 * 60 * 1000,

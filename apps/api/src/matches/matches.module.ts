@@ -3,6 +3,7 @@ import { PrismaModule } from '../infra/prisma/prisma.module';
 import { IdempotencyModule } from '../common/idempotency/idempotency.module';
 import { MatchRealtimeModule } from './realtime/match-realtime.module';
 import { PushModule } from '../push/push.module';
+import { StorageModule } from '../infra/storage/storage.module';
 import { MatchesController } from './api/matches.controller';
 import { CreateMatchUseCase } from './application/create-match.use-case';
 import { GetMatchUseCase } from './application/get-match.use-case';
@@ -27,7 +28,13 @@ import { MatchLifecycleJob } from './application/match-lifecycle.job';
 import { UserReliabilityService } from './application/user-reliability.service';
 
 @Module({
-  imports: [PrismaModule, IdempotencyModule, MatchRealtimeModule, PushModule],
+  imports: [
+    PrismaModule,
+    IdempotencyModule,
+    MatchRealtimeModule,
+    PushModule,
+    StorageModule,
+  ],
   controllers: [MatchesController],
   providers: [
     CreateMatchUseCase,

@@ -30,6 +30,7 @@ export interface MeResponse {
   firstName?: string | null;
   lastName?: string | null;
   birthDate?: string | null;
+  age?: number | null;
   preferredPosition?: PreferredPosition | null;
   skillLevel?: SkillLevel | null;
   termsAcceptedAt?: string;
@@ -38,6 +39,20 @@ export interface MeResponse {
   suspendedUntil?: string | null;
   avatarUrl?: string | null;
   createdAt: string;
+}
+
+export interface PublicUserProfile {
+  id: string;
+  username: string | null;
+  avatarUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  age: number | null;
+  gender: UserGender | null;
+  preferredPosition: PreferredPosition | null;
+  skillLevel: SkillLevel | null;
+  reliabilityScore: number;
+  reliabilityLabel: string;
 }
 
 export interface PrepareAvatarResponse {
@@ -87,6 +102,7 @@ export interface ListMatchesResponse {
 export interface ParticipantView {
   userId: string;
   username: string;
+  avatarUrl: string | null;
   status: string;
   waitlistPosition: number | null;
   isMatchAdmin: boolean;
@@ -95,6 +111,7 @@ export interface ParticipantView {
 export interface SpectatorView {
   userId: string;
   username: string;
+  avatarUrl: string | null;
 }
 
 export interface MatchSnapshot {
@@ -150,6 +167,7 @@ export interface ListGroupsResponse {
 export interface GroupMember {
   userId: string;
   username: string;
+  avatarUrl: string | null;
   createdAt: string;
 }
 

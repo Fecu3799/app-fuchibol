@@ -4,10 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { StorageService } from '../../infra/storage/storage.service';
 
 export interface GroupMemberView {
   userId: string;
   username: string;
+  avatarUrl: string | null;
   createdAt: Date;
 }
 
@@ -22,14 +24,24 @@ export interface GroupDetail {
 
 @Injectable()
 export class GetGroupQuery {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   async execute(groupId: string, actorId: string): Promise<GroupDetail> {
     const group = await this.prisma.client.group.findUnique({
       where: { id: groupId },
       include: {
         members: {
-          include: { user: { select: { username: true } } },
+          include: {
+            user: {
+              select: {
+                username: true,
+                avatar: { select: { key: true } },
+              },
+            },
+          },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -52,6 +64,9 @@ export class GetGroupQuery {
       members: group.members.map((m) => ({
         userId: m.userId,
         username: m.user.username,
+        avatarUrl: m.user.avatar?.key
+          ? this.storage.buildPublicUrl(m.user.avatar.key)
+          : null,
         createdAt: m.createdAt,
       })),
       createdAt: group.createdAt,

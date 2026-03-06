@@ -93,7 +93,6 @@ describe('UpdateMeUseCase', () => {
 
     await useCase.execute({ userId: 'user-id', firstName: 'Juan' });
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     const callArg = (prisma.client.user.update as jest.Mock).mock
       .calls[0][0] as {
       data: Record<string, unknown>;

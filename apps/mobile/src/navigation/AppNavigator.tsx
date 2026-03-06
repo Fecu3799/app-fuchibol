@@ -21,6 +21,7 @@ import CreateGroupScreen from '../screens/CreateGroupScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import EditMatchScreen from '../screens/EditMatchScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
+import PublicUserProfileScreen from '../screens/PublicUserProfileScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
@@ -60,6 +61,7 @@ export type RootStackParamList = {
   ChangePassword: undefined;
   Sessions: undefined;
   EditProfile: undefined;
+  PublicUserProfile: { userId: string };
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -220,6 +222,11 @@ function AppNavigator() {
         name="EditProfile"
         component={EditProfileScreen}
         options={{ title: 'Editar perfil' }}
+      />
+      <RootStack.Screen
+        name="PublicUserProfile"
+        component={PublicUserProfileScreen}
+        options={{ title: 'Perfil' }}
       />
     </RootStack.Navigator>
   );

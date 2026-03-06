@@ -23,9 +23,7 @@ export class StorageService {
       forcePathStyle,
       credentials: {
         accessKeyId: config.getOrThrow<string>('STORAGE_ACCESS_KEY_ID'),
-        secretAccessKey: config.getOrThrow<string>(
-          'STORAGE_SECRET_ACCESS_KEY',
-        ),
+        secretAccessKey: config.getOrThrow<string>('STORAGE_SECRET_ACCESS_KEY'),
       },
     });
   }
