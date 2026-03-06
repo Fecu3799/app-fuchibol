@@ -17,11 +17,22 @@ export interface RegisterResponse {
   user: { id: string; email: string; username: string };
 }
 
+export type UserGender = 'MALE' | 'FEMALE' | 'OTHER';
+export type PreferredPosition = 'GOALKEEPER' | 'DEFENDER' | 'MIDFIELDER' | 'FORWARD';
+export type SkillLevel = 'BEGINNER' | 'AMATEUR' | 'REGULAR' | 'SEMIPRO' | 'PRO';
+
 export interface MeResponse {
   id: string;
   email: string;
   username?: string;
   role: string;
+  gender?: UserGender | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  birthDate?: string | null;
+  preferredPosition?: PreferredPosition | null;
+  skillLevel?: SkillLevel | null;
+  termsAcceptedAt?: string;
   createdAt: string;
 }
 

@@ -1,5 +1,23 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { LoginResponse, MeResponse, RefreshResponse, RegisterResponse, SessionItem } from '../../types/api';
+import type {
+  LoginResponse,
+  MeResponse,
+  PreferredPosition,
+  RefreshResponse,
+  RegisterResponse,
+  SessionItem,
+  SkillLevel,
+  UserGender,
+} from '../../types/api';
+
+export interface UpdateMePayload {
+  firstName?: string | null;
+  lastName?: string | null;
+  birthDate?: string | null;
+  gender?: UserGender | null;
+  preferredPosition?: PreferredPosition | null;
+  skillLevel?: SkillLevel | null;
+}
 
 interface DeviceInfo {
   deviceId?: string;
@@ -8,15 +26,24 @@ interface DeviceInfo {
   appVersion?: string;
 }
 
-export function postRegister(
-  email: string,
-  password: string,
-  username: string,
-): Promise<RegisterResponse> {
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  username: string;
+  acceptTerms: boolean;
+  firstName?: string;
+  lastName?: string;
+  birthDate?: string;
+  gender?: UserGender;
+  preferredPosition?: PreferredPosition;
+  skillLevel?: SkillLevel;
+}
+
+export function postRegister(payload: RegisterPayload): Promise<RegisterResponse> {
   return fetchJson<RegisterResponse>(buildUrl('/api/v1/auth/register'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, username }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -52,6 +79,15 @@ export function postLogoutAll(): Promise<void> {
 /** GET /api/v1/me — uses the auto-injected Bearer from the interceptor. */
 export function getMe(): Promise<MeResponse> {
   return fetchJson<MeResponse>(buildUrl('/api/v1/me'));
+}
+
+/** PATCH /api/v1/me — update profile fields (email not editable). Bearer auto-added. */
+export function patchMe(payload: UpdateMePayload): Promise<MeResponse> {
+  return fetchJson<MeResponse>(buildUrl('/api/v1/me'), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 /** Request a verification email. Pass the user's email address. */

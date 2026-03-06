@@ -59,6 +59,7 @@ interface AuthState {
 interface AuthContextValue extends AuthState {
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -179,6 +180,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ isLoading: false, isAuthenticated: true, token: res.accessToken, user });
   }, []);
 
+  // ── Refresh user ──
+
+  const refreshUser = useCallback(async () => {
+    const user = await getMe();
+    setState(prev => ({ ...prev, user }));
+  }, []);
+
   // ── Logout ──
 
   const logout = useCallback(async () => {
@@ -200,8 +208,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ──
 
   const value = useMemo(
-    () => ({ ...state, login, logout }),
-    [state, login, logout],
+    () => ({ ...state, login, logout, refreshUser }),
+    [state, login, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

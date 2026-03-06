@@ -12,6 +12,7 @@ import { PasswordController } from './api/password.controller';
 import { RegisterUseCase } from './application/register.use-case';
 import { LoginUseCase } from './application/login.use-case';
 import { GetMeUseCase } from './application/get-me.use-case';
+import { UpdateMeUseCase } from './application/update-me.use-case';
 import { RefreshUseCase } from './application/refresh.use-case';
 import { LogoutUseCase } from './application/logout.use-case';
 import { LogoutAllUseCase } from './application/logout-all.use-case';
@@ -52,6 +53,7 @@ import { AuthAuditService } from './infra/auth-audit.service';
     RegisterUseCase,
     LoginUseCase,
     GetMeUseCase,
+    UpdateMeUseCase,
     RefreshUseCase,
     LogoutUseCase,
     LogoutAllUseCase,

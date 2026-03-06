@@ -4,6 +4,7 @@ Monorepo pnpm con tres workspaces: `apps/api` (NestJS + Prisma), `apps/mobile` (
 Arquitectura: monolito modular, DDD pragmático, Light CQRS. Match es el agregado principal. PostgreSQL es la fuente de verdad.
 
 > Workflow de implementación detallado → @docs/SKILL.md
+> Guía UI nativa (Expo, estilos, navegación, componentes) → @.agents/skills/building-native-ui/SKILL.md
 > Registro cronológico → `docs/stepbystep.md`
 > Extensiones futuras → `docs/future-implementations.md`
 

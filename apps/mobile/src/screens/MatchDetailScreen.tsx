@@ -231,17 +231,23 @@ function useDevMatchLogger() {
 
 // ── Countdown helper ──
 
-function computeCountdown(isoString: string): string {
-  const diff = new Date(isoString).getTime() - Date.now();
-  if (diff <= 0) return "";
+type CountdownResult = { display: string; mode: "DHM" | "HMS" } | null;
+
+function formatMatchCountdown(isoString: string, now: number): CountdownResult {
+  const diff = new Date(isoString).getTime() - now;
+  if (diff <= 0) return null;
   const totalSec = Math.floor(diff / 1000);
-  const days = Math.floor(totalSec / 86400);
-  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const p = (n: number) => String(n).padStart(2, "0");
+  if (diff >= 24 * 3600 * 1000) {
+    const days = Math.floor(totalSec / 86400);
+    const hrs = Math.floor((totalSec % 86400) / 3600);
+    const mins = Math.floor((totalSec % 3600) / 60);
+    return { display: `${days}:${p(hrs)}:${p(mins)}`, mode: "DHM" };
+  }
+  const hrs = Math.floor(totalSec / 3600);
   const mins = Math.floor((totalSec % 3600) / 60);
   const secs = totalSec % 60;
-  const p = (n: number) => String(n).padStart(2, "0");
-  if (days > 0) return `${days}:${p(hrs)}:${p(mins)}`;
-  return `${p(hrs)}:${p(mins)}:${p(secs)} HS`;
+  return { display: `${p(hrs)}:${p(mins)}:${p(secs)}`, mode: "HMS" };
 }
 
 // ── Component ──
@@ -324,14 +330,46 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   }, [isFetching, devStats.count]);
 
   const startsAtStr = displayMatch?.startsAt ?? null;
+  const prevCountdownModeRef = useRef<string | null>(null);
   useEffect(() => {
     if (!startsAtStr) { setCountdown(""); return; }
-    const update = () => setCountdown(computeCountdown(startsAtStr));
-    update();
-    const diff = new Date(startsAtStr).getTime() - Date.now();
-    const tick = diff > 24 * 3600 * 1000 ? 60_000 : 1_000;
-    const id = setInterval(update, tick);
-    return () => clearInterval(id);
+
+    let timerId: ReturnType<typeof setTimeout>;
+
+    function tick() {
+      const now = Date.now();
+      const result = formatMatchCountdown(startsAtStr!, now);
+
+      if (__DEV__) {
+        const newMode = result?.mode ?? "PAST";
+        if (newMode !== prevCountdownModeRef.current) {
+          prevCountdownModeRef.current = newMode;
+          const parsedMs = new Date(startsAtStr!).getTime();
+          const diffMs = parsedMs - now;
+          console.log("[CountdownDebug] file=MatchDetailScreen", {
+            startsAtRaw: startsAtStr,
+            startsAtISO: isNaN(parsedMs) ? "INVALID_DATE" : new Date(parsedMs).toISOString(),
+            nowISO: new Date(now).toISOString(),
+            diffMs,
+            diffHoursTotal: Math.floor(diffMs / 3_600_000),
+            modeSelected: newMode,
+            formattedOutput: result?.display ?? "null (past)",
+          });
+        }
+      }
+
+      if (!result) { setCountdown(""); return; }
+      setCountdown(result.display);
+      setCountdownMode(result.mode);
+      const interval = result.mode === "DHM" ? 60_000 : 1_000;
+      const delay = result.mode === "DHM"
+        ? interval - (now % interval)
+        : 1_000;
+      timerId = setTimeout(tick, delay);
+    }
+
+    tick();
+    return () => clearTimeout(timerId);
   }, [startsAtStr]);
 
   const handleAction = (action: string) => {
@@ -412,6 +450,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const [leaveLoading, setLeaveLoading] = useState(false);
   const [rejectLoading, setRejectLoading] = useState(false);
   const [countdown, setCountdown] = useState("");
+  const [countdownMode, setCountdownMode] = useState<"DHM" | "HMS">("HMS");
   const [spectatorLoading, setSpectatorLoading] = useState(false);
   const [spectatorError, setSpectatorError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
@@ -636,9 +675,22 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const canLeave = displayMatch.actionsAllowed.includes("leave");
   const canManageAdmins = displayMatch.actionsAllowed.includes("manage_admins");
   const lockTogglePending = lockMutation.isPending || unlockMutation.isPending;
-  const isCanceled = displayMatch.status === "canceled";
-  const canKick = !isCanceled && displayMatch.actionsAllowed.includes("manage_kick");
+  // Read-only when the match is finished: PLAYED (≥1h after startsAt) or CANCELLED.
+  // matchStatus is computed server-side by computeMatchStatusView.
+  const isReadOnly =
+    displayMatch.matchStatus === "PLAYED" || displayMatch.matchStatus === "CANCELLED";
+  const canKick = !isReadOnly && displayMatch.actionsAllowed.includes("manage_kick");
   const groups = deriveParticipantGroups(displayMatch);
+
+  if (__DEV__) {
+    console.log("[ReadOnlyDebug] file=MatchDetailScreen", {
+      status: displayMatch.status,
+      matchStatus: displayMatch.matchStatus,
+      startsAtRaw: displayMatch.startsAt,
+      isReadOnlyFinal: isReadOnly,
+      actionsAllowed: displayMatch.actionsAllowed,
+    });
+  }
 
   return (
     <View style={styles.screenWrap}>
@@ -698,7 +750,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       </View>
 
       {/* 1. Countdown */}
-      {countdown ? <MatchCountdownPanel countdown={countdown} /> : null}
+      {countdown ? <MatchCountdownPanel countdown={countdown} mode={countdownMode} /> : null}
 
       {/* 2. Match info */}
       <MatchInfoCard match={displayMatch} />
@@ -706,6 +758,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       {/* 3. Confirmed list + Others accordion */}
       <ConfirmedListCard
         confirmed={groups.confirmed}
+        capacity={displayMatch.capacity}
         others={[...groups.waitlist, ...groups.invited]}
         spectators={groups.spectators}
         creatorId={displayMatch.createdById}
@@ -719,7 +772,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       />
 
       {/* 4. Actions bar */}
-      {!isCanceled && (
+      {!isReadOnly && (
         <MatchActionsBar
           visibleActions={visibleActions as string[]}
           canSpectator={canSpectator}
@@ -754,7 +807,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       {spectatorError ? <Text style={styles.errorText}>{spectatorError}</Text> : null}
 
       {/* 5. Invite block (toggled by INVITAR button in actions bar) */}
-      {showInviteBlock && canInvite && !isCanceled && (
+      {showInviteBlock && canInvite && !isReadOnly && (
         <View style={styles.inviteBlock}>
           <Text style={styles.sectionTitle}>Invite Player</Text>
           <View style={styles.inviteRow}>
@@ -801,8 +854,8 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* 6. Group invite block — keep unchanged */}
-      {!isCanceled && !displayMatch.isLocked && canInvite && (
+      {/* 6. Group invite block */}
+      {!isReadOnly && !displayMatch.isLocked && canInvite && (
         <View style={styles.groupInviteBlock}>
           {!showGroupInvite ? (
             <Pressable
@@ -1017,23 +1070,28 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
 
 // ── Subcomponents ──
 
-function SectionPill({ label }: { label: string }) {
+function SectionPill({ label, badge }: { label: string; badge?: string }) {
   return (
     <View style={{ alignItems: "center", marginBottom: 12 }}>
       <View style={styles.sectionPill}>
         <Text style={styles.sectionPillText}>{label}</Text>
+        {badge !== undefined ? (
+          <Text style={styles.sectionPillBadge}> {badge}</Text>
+        ) : null}
       </View>
     </View>
   );
 }
 
-function MatchCountdownPanel({ countdown }: { countdown: string }) {
+function MatchCountdownPanel({ countdown, mode }: { countdown: string; mode: "DHM" | "HMS" }) {
+  const unitLabel = mode === "DHM" ? "DÍAS  :  HS  :  MIN" : "HS  :  MIN  :  SEG";
   return (
     <View style={styles.countdownCard}>
       <Text style={styles.countdownLabel}>PARTIDO COMIENZA EN:</Text>
       <View style={styles.countdownPill}>
         <Text style={styles.countdownValue}>{countdown}</Text>
       </View>
+      <Text style={styles.countdownUnits}>{unitLabel}</Text>
     </View>
   );
 }
@@ -1226,6 +1284,7 @@ function OthersAccordion({
 
 function ConfirmedListCard({
   confirmed,
+  capacity,
   others,
   spectators,
   creatorId,
@@ -1238,6 +1297,7 @@ function ConfirmedListCard({
   onKick,
 }: {
   confirmed: ParticipantView[];
+  capacity: number;
   others: ParticipantView[];
   spectators: SpectatorView[];
   creatorId: string;
@@ -1251,7 +1311,7 @@ function ConfirmedListCard({
 }) {
   return (
     <View style={styles.card}>
-      <SectionPill label="CONFIRMADOS" />
+      <SectionPill label="CONFIRMADOS" badge={`${confirmed.length}/${capacity}`} />
       <Text style={styles.confirmedSubtitle}>JUGADORES CONFIRMADOS</Text>
       {confirmed.map((p) => (
         <PlayerRow
@@ -1523,6 +1583,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 24,
     paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
   },
   sectionPillText: {
     color: PILL_TEXT_COLOR,
@@ -1530,6 +1592,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 1,
     textTransform: "uppercase",
+  },
+  sectionPillBadge: {
+    color: PILL_TEXT_COLOR,
+    fontWeight: "700",
+    fontSize: 15,
   },
 
   // Countdown
@@ -1556,6 +1623,13 @@ const styles = StyleSheet.create({
     backgroundColor: VALUE_PILL_BG,
   },
   countdownValue: { fontSize: 36, fontWeight: "700", color: "#111", letterSpacing: 2 },
+  countdownUnits: {
+    fontSize: 11,
+    color: PILL_TEXT_COLOR,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginTop: 6,
+  },
 
   // Info rows
   infoRow: {

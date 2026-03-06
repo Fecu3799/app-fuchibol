@@ -74,10 +74,14 @@ export async function buildMatchSnapshot(
   const isCreator = match.createdById === actorId;
   const isAdmin = isCreator || myParticipant?.isMatchAdmin === true;
   const isCanceled = match.status === 'canceled';
+  // Matches are immutable once canceled OR once they started (≥1h after startsAt)
+  const isPlayed =
+    Date.now() >= match.startsAt.getTime() + 60 * 60 * 1000;
+  const isImmutable = isCanceled || isPlayed;
 
   const actionsAllowed: string[] = [];
 
-  if (!isCanceled) {
+  if (!isImmutable) {
     if (!match.isLocked) {
       if (!myStatus) {
         actionsAllowed.push('confirm');
