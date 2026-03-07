@@ -13,6 +13,7 @@
     "db:status": "prisma migrate status",
     "db:generate": "prisma generate",
     "db:seed": "prisma db seed",
+    "db:seed-admin": "ts-node --project tsconfig.scripts.json prisma/seed-admin.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

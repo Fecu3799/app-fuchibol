@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -1064,16 +1065,33 @@ function MatchCountdownPanel({ countdown, mode }: { countdown: string; mode: "DH
   );
 }
 
+function buildVenueMapsUrl(v: {
+  mapsUrl: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}): string | null {
+  if (v.mapsUrl) return v.mapsUrl;
+  if (v.latitude != null && v.longitude != null) {
+    return `https://maps.google.com/?q=${v.latitude},${v.longitude}`;
+  }
+  return null;
+}
+
+function formatPrice(price: number | null, capacity: number): string {
+  if (price == null) return "Precio no informado";
+  const total = `$${price.toLocaleString("es-AR")}`;
+  const perPlayer = capacity > 0 ? ` ($${Math.round(price / capacity).toLocaleString("es-AR")} c/u)` : "";
+  return `${total}${perPlayer}`;
+}
+
 function MatchInfoCard({ match }: { match: MatchSnapshot }) {
+  const venue = match.venueSnapshot ?? null;
+  const pitch = match.pitchSnapshot ?? null;
+  const mapsUrl = venue ? buildVenueMapsUrl(venue) : null;
+
   return (
     <View style={styles.card}>
       <SectionPill label="INFORMACIÓN" />
-      <View style={styles.infoRow}>
-        <Text style={styles.infoLabel}>UBICACIÓN</Text>
-        <View style={styles.infoValuePill}>
-          <Text style={styles.infoValueText}>{match.location || "—"}</Text>
-        </View>
-      </View>
       <View style={styles.infoRow}>
         <Text style={styles.infoLabel}>DÍA - HORA</Text>
         <View style={{ flexDirection: "row", gap: 6 }}>
@@ -1086,14 +1104,6 @@ function MatchInfoCard({ match }: { match: MatchSnapshot }) {
         </View>
       </View>
       <View style={styles.infoRow}>
-        <Text style={styles.infoLabel}>CANTIDAD</Text>
-        <View style={styles.infoValuePill}>
-          <Text style={styles.infoValueText}>
-            Fútbol {Math.round(match.capacity / 2)} ({match.capacity} JG)
-          </Text>
-        </View>
-      </View>
-      <View style={styles.infoRow}>
         <Text style={styles.infoLabel}>TIPO DE PARTIDO</Text>
         <View style={styles.infoValuePill}>
           <Text style={styles.infoValueText}>
@@ -1101,12 +1111,44 @@ function MatchInfoCard({ match }: { match: MatchSnapshot }) {
           </Text>
         </View>
       </View>
-      <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-        <Text style={styles.infoLabel}>PRECIOS</Text>
-        <View style={styles.infoValuePill}>
-          <Text style={styles.infoValueText}>—</Text>
+
+      {venue && pitch ? (
+        <>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>PREDIO</Text>
+            <View style={styles.infoValuePill}>
+              <Text style={styles.infoValueText}>{venue.name}</Text>
+            </View>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>CANCHA</Text>
+            <View style={styles.infoValuePill}>
+              <Text style={styles.infoValueText}>{pitch.name} · {pitch.pitchType}</Text>
+            </View>
+          </View>
+          <View style={[styles.infoRow, { borderBottomWidth: mapsUrl ? 1 : 0 }]}>
+            <Text style={styles.infoLabel}>PRECIO</Text>
+            <View style={styles.infoValuePill}>
+              <Text style={styles.infoValueText}>{formatPrice(pitch.price, match.capacity)}</Text>
+            </View>
+          </View>
+          {mapsUrl ? (
+            <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+              <Text style={styles.infoLabel}>MAPA</Text>
+              <Pressable onPress={() => void Linking.openURL(mapsUrl)} hitSlop={8}>
+                <Text style={styles.mapLinkText}>Abrir en mapa</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+          <Text style={styles.infoLabel}>PRECIO</Text>
+          <View style={styles.infoValuePill}>
+            <Text style={styles.infoValueText}>—</Text>
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -1741,6 +1783,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   retryBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  mapLinkText: { fontSize: 13, color: "#1976d2", fontWeight: "500" },
   requestIdText: {
     fontSize: 11,
     fontFamily: "monospace",

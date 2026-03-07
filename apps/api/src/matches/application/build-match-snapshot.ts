@@ -3,6 +3,9 @@ import { computeMatchStatusView } from '../domain/compute-match-status-view';
 import type { MatchStatusView } from '../domain/compute-match-status-view';
 import { computeMatchGender } from '../domain/compute-match-gender';
 import type { MatchGender } from '../domain/compute-match-gender';
+import type { VenueSnapshot, PitchSnapshot } from './create-match.use-case';
+
+export type { VenueSnapshot, PitchSnapshot };
 
 type TransactionClient = Omit<
   PrismaClient,
@@ -45,6 +48,10 @@ export interface MatchSnapshot {
   spectatorCount: number;
   myStatus: string | null;
   actionsAllowed: string[];
+  venueId: string | null;
+  venuePitchId: string | null;
+  venueSnapshot: VenueSnapshot | null;
+  pitchSnapshot: PitchSnapshot | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -186,6 +193,10 @@ export async function buildMatchSnapshot(
     spectatorCount: spectatorRows.length,
     myStatus,
     actionsAllowed: [...new Set(actionsAllowed)],
+    venueId: match.venueId ?? null,
+    venuePitchId: match.venuePitchId ?? null,
+    venueSnapshot: (match.venueSnapshot as VenueSnapshot | null) ?? null,
+    pitchSnapshot: (match.pitchSnapshot as PitchSnapshot | null) ?? null,
     createdAt: match.createdAt,
     updatedAt: match.updatedAt,
   };

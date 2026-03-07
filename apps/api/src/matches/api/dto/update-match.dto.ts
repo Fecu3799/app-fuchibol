@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   IsNotEmpty,
 } from 'class-validator';
@@ -32,4 +33,12 @@ export class UpdateMatchDto {
   @IsInt()
   @Min(1)
   capacity?: number;
+
+  @IsOptional()
+  @IsUUID()
+  venueId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  venuePitchId?: string;
 }

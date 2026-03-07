@@ -114,6 +114,20 @@ export interface SpectatorView {
   avatarUrl: string | null;
 }
 
+export interface VenueSnapshot {
+  name: string;
+  addressText: string | null;
+  mapsUrl: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface PitchSnapshot {
+  name: string;
+  pitchType: string;
+  price: number | null;
+}
+
 export interface MatchSnapshot {
   id: string;
   title: string;
@@ -135,6 +149,10 @@ export interface MatchSnapshot {
   spectatorCount: number;
   myStatus: string | null;
   actionsAllowed: string[];
+  venueId: string | null;
+  venuePitchId: string | null;
+  venueSnapshot: VenueSnapshot | null;
+  pitchSnapshot: PitchSnapshot | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -147,6 +165,27 @@ export interface CreateMatchResponse {
   id: string;
   revision: number;
   status: string;
+}
+
+// ── Venue Pitches ──
+
+export type PitchType = 'F5' | 'F7' | 'F9' | 'F11';
+
+export interface VenuePitchItem {
+  venueId: string;
+  venueName: string;
+  venueAddressText: string | null;
+  venueMapsUrl: string | null;
+  venueLatitude: number | null;
+  venueLongitude: number | null;
+  venuePitchId: string;
+  venuePitchName: string;
+  pitchType: PitchType;
+  price: number | null;
+}
+
+export interface SearchVenuePitchesResponse {
+  items: VenuePitchItem[];
 }
 
 // ── Groups ──
@@ -241,6 +280,38 @@ export interface SessionItem {
   appVersion?: string;
   ip?: string;
   isCurrent: boolean;
+}
+
+// ── Admin: Venues & Pitches ──
+
+export interface VenueAdmin {
+  id: string;
+  name: string;
+  addressText: string | null;
+  mapsUrl: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  isActive: boolean;
+  pitchCount: number;
+  createdAt: string;
+}
+
+export interface PitchAdmin {
+  id: string;
+  venueId: string;
+  name: string;
+  pitchType: string;
+  price: number | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface ListVenuesAdminResponse {
+  items: VenueAdmin[];
+}
+
+export interface ListPitchesAdminResponse {
+  items: PitchAdmin[];
 }
 
 // ── Errors ──

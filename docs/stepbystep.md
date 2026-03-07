@@ -43,6 +43,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 35. [Match Lifecycle: Scheduler + Freeze Edit + Missing-Players Alerts + Notification Bucket Dedup](#35-match-lifecycle-scheduler--freeze-edit--missing-players-alerts--notification-bucket-dedup)
 36. [User Profile Fields + termsAcceptedAt](#36-user-profile-fields--termsacceptedat)
 37. [Reliability Score + Suspension (Sprint 1)](#37-reliability-score--suspension-sprint-1)
+39. [Venues + CreateMatch en 2 pasos](#39-venues--creatematch-en-2-pasos)
 
 ---
 
@@ -1335,4 +1336,119 @@ infra/docker-compose.yml (servicio minio)
 apps/mobile/src/types/api.ts (avatarUrl en MeResponse + nuevos tipos)
 apps/mobile/src/features/auth/authClient.ts (postAvatarPrepare, postAvatarConfirm)
 apps/mobile/src/screens/ProfileScreen.tsx (avatar UI + flujo de upload)
+```
+
+---
+
+## 39. Venues + CreateMatch en 2 pasos
+
+### Que se hizo
+
+Modelo `Venue`/`VenuePitch` + endpoint de búsqueda + flujo CreateMatch refactorizado en 2 pasos (fecha/hora/tipo → selección de cancha).
+
+**Flujo CreateMatch nuevo:**
+1. Step 1: usuario elige fecha, hora y tipo de cancha (F5/F7/F9/F11) → "Siguiente" busca canchas activas de ese tipo
+2. Step 2: lista de canchas, selección → "Crear partido" crea el match con venueId + venuePitchId
+
+**Reglas:**
+- El endpoint `GET /api/v1/venue-pitches/search?pitchType=` devuelve solo canchas activas (isActive=true) cuyo predio también esté activo
+- No hay booking real ni disponibilidad horaria: la selección es representativa/informativa
+- Title se auto-genera: `${pitchType} en ${venueName}`
+- Capacity se deriva del pitchType: F5→10, F7→14, F9→18, F11→22
+
+### Migracion
+
+`20260306150000_add_venue_venuepitch`: enum `PitchType`, tablas `Venue` y `VenuePitch`, columnas opcionales `venueId` y `venuePitchId` en `Match`.
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma (PitchType enum, Venue, VenuePitch, Match.venueId/venuePitchId)
+apps/api/prisma/migrations/20260306150000_add_venue_venuepitch/migration.sql
+apps/api/src/venues/venues.module.ts (nuevo)
+apps/api/src/venues/api/venue-pitches.controller.ts (nuevo)
+apps/api/src/venues/api/dto/search-venue-pitches-query.dto.ts (nuevo)
+apps/api/src/venues/application/search-venue-pitches.query.ts (nuevo)
+apps/api/src/venues/application/search-venue-pitches.query.spec.ts (nuevo)
+apps/api/src/app.module.ts (VenuesModule registrado)
+apps/api/src/matches/api/dto/create-match.dto.ts (venueId?, venuePitchId?)
+apps/api/src/matches/application/create-match.use-case.ts (venueId?, venuePitchId? en input + create)
+apps/mobile/src/types/api.ts (PitchType, VenuePitchItem, SearchVenuePitchesResponse)
+apps/mobile/src/features/matches/matchesClient.ts (searchVenuePitches, createMatch actualizado)
+apps/mobile/src/screens/CreateMatchScreen.tsx (flujo 2 pasos completo)
+```
+
+---
+
+## 40. Venue/Pitch Snapshot en Match — Estabilidad histórica (Sprint 2)
+
+### Objetivo
+
+Garantizar que `MatchDetails` muestre predio, cancha, tipo, precio y mapa de forma históricamente estable, incluso si el catálogo de Venue/VenuePitch cambia o se desactiva.
+
+### Qué se implementó
+
+- **Snapshots en Match**: dos columnas JSONB (`venueSnapshot`, `pitchSnapshot`) persisten los datos del predio y cancha al momento de creación.
+- **Validación en create-match**: si se provee uno de `venueId`/`venuePitchId` sin el otro → 422. Si ambos presentes: verifica que sean activos y que el pitch pertenezca al venue. `pitchType` se deriva del `VenuePitch`, no de input del cliente.
+- **Snapshot expuesto en `buildMatchSnapshot`**: los campos son parte del `MatchSnapshot` estándar.
+- **MatchDetails mobile**: `MatchInfoCard` renderiza PREDIO, DIRECCIÓN, CANCHA (nombre · tipo), PRECIO y botón "Abrir en mapa" solo si los snapshots existen. No muestra bloques vacíos para matches sin cancha asignada.
+
+### Migración
+
+`20260307120000_match_venue_pitch_snapshot`: agrega columnas `venueSnapshot JSONB` y `pitchSnapshot JSONB` a la tabla `Match`.
+
+### Archivos clave
+
+```
+apps/api/prisma/schema.prisma (Match.venueSnapshot Json?, Match.pitchSnapshot Json?)
+apps/api/prisma/migrations/20260307120000_match_venue_pitch_snapshot/migration.sql
+apps/api/src/matches/application/create-match.use-case.ts (validación + snapshots)
+apps/api/src/matches/application/create-match.use-case.spec.ts (10 tests)
+apps/api/src/matches/application/build-match-snapshot.ts (venueSnapshot, pitchSnapshot en output)
+apps/mobile/src/types/api.ts (VenueSnapshot, PitchSnapshot, MatchSnapshot actualizado)
+apps/mobile/src/screens/MatchDetailScreen.tsx (MatchInfoCard con venue/pitch/mapa)
+```
+
+---
+
+## 41. Admin Base + Gestión de Predios y Canchas (Sprint admin/venues)
+
+### Objetivo
+
+Crear el área de administración en mobile y conectar ahí la gestión completa de predios y canchas (CRUD + activación/desactivación).
+
+### Qué se implementó
+
+**Backend:**
+- 6 endpoints `admin/venues` protegidos por `@Roles('ADMIN')` + `JwtAuthGuard` + `RolesGuard`.
+- `AdminVenueService` y `AdminPitchService`: listar todos (incluido inactivos), crear, actualizar y activar/desactivar via PATCH `{ isActive }`.
+- Validación de pertenencia pitch↔venue en update: 404 si el pitch no pertenece al venue indicado.
+
+**Mobile:**
+- `AdminTab` en `MainTabs` visible solo para `user.role === 'ADMIN'`.
+- `AdminNavigator` (NativeStackNavigator anidado dentro del tab) con 5 screens: AdminHome → AdminVenues → (AdminVenueForm | AdminVenuePitches → AdminPitchForm).
+- `AdminHomeScreen`: hub con card "Predios & Canchas" operativa y placeholders para Usuarios y Métricas (futuro).
+- `AdminVenuesScreen`: lista todos los predios con conteo de canchas y botones Editar / Canchas / Activar/Desactivar. Reload automático al volver de formularios (`useFocusEffect`).
+- `AdminVenueFormScreen`: crear y editar predio (nombre, dirección, mapsUrl, lat/lng, isActive solo en edición).
+- `AdminVenuePitchesScreen`: canchas de un predio con estado y botones Editar / Activar/Desactivar.
+- `AdminPitchFormScreen`: crear y editar cancha (nombre, pitchType pills, precio, isActive solo en edición).
+
+### Archivos clave
+
+```
+apps/api/src/venues/api/admin-venues.controller.ts (nuevo)
+apps/api/src/venues/api/dto/admin-venue.dto.ts (nuevo)
+apps/api/src/venues/api/dto/admin-pitch.dto.ts (nuevo)
+apps/api/src/venues/application/admin-venue.service.ts (nuevo)
+apps/api/src/venues/application/admin-pitch.service.ts (nuevo)
+apps/api/src/venues/application/admin-venue.service.spec.ts (nuevo, 13 tests)
+apps/api/src/venues/venues.module.ts (actualizado)
+apps/mobile/src/navigation/AppNavigator.tsx (AdminStackParamList, AdminNavigator, AdminTab condicional)
+apps/mobile/src/types/api.ts (VenueAdmin, PitchAdmin, response types)
+apps/mobile/src/features/admin/adminClient.ts (nuevo)
+apps/mobile/src/screens/AdminHomeScreen.tsx (nuevo)
+apps/mobile/src/screens/AdminVenuesScreen.tsx (nuevo)
+apps/mobile/src/screens/AdminVenueFormScreen.tsx (nuevo)
+apps/mobile/src/screens/AdminVenuePitchesScreen.tsx (nuevo)
+apps/mobile/src/screens/AdminPitchFormScreen.tsx (nuevo)
 ```

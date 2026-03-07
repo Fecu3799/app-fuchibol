@@ -1,5 +1,5 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { CreateMatchResponse, GetInviteCandidatesResponse, GetMatchAuditLogsResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot } from '../../types/api';
+import type { CreateMatchResponse, GetInviteCandidatesResponse, GetMatchAuditLogsResponse, GetMatchResponse, ListMatchesResponse, MatchSnapshot, SearchVenuePitchesResponse } from '../../types/api';
 
 interface ListParams {
   page?: number;
@@ -23,7 +23,13 @@ export function getMatch(token: string, matchId: string): Promise<GetMatchRespon
 
 export function createMatch(
   token: string,
-  payload: { title: string; startsAt: string; capacity: number },
+  payload: {
+    title: string;
+    startsAt: string;
+    capacity: number;
+    venueId?: string;
+    venuePitchId?: string;
+  },
 ): Promise<CreateMatchResponse> {
   return fetchJson<CreateMatchResponse>(buildUrl('/api/v1/matches'), {
     method: 'POST',
@@ -33,6 +39,16 @@ export function createMatch(
     },
     body: JSON.stringify(payload),
   });
+}
+
+export function searchVenuePitches(
+  token: string,
+  pitchType: string,
+): Promise<SearchVenuePitchesResponse> {
+  return fetchJson<SearchVenuePitchesResponse>(
+    buildUrl('/api/v1/venue-pitches/search', { pitchType }),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
 }
 
 export function postMatchAction(

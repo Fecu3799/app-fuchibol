@@ -26,6 +26,11 @@ import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/ResetPasswordScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import SessionsScreen from '../screens/SessionsScreen';
+import AdminHomeScreen from '../screens/AdminHomeScreen';
+import AdminVenuesScreen from '../screens/AdminVenuesScreen';
+import AdminVenueFormScreen from '../screens/AdminVenueFormScreen';
+import AdminVenuePitchesScreen from '../screens/AdminVenuePitchesScreen';
+import AdminPitchFormScreen from '../screens/AdminPitchFormScreen';
 
 // Preload and decode the auth background as soon as this module is imported,
 // so it's ready before the first AuthNavigator render.
@@ -50,8 +55,17 @@ export type TabParamList = {
   SettingsTab: undefined;
 };
 
+export type AdminStackParamList = {
+  AdminHome: undefined;
+  AdminVenues: undefined;
+  AdminVenueForm: { venueId?: string };
+  AdminVenuePitches: { venueId: string; venueName: string };
+  AdminPitchForm: { venueId: string; pitchId?: string };
+};
+
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<TabParamList>;
+  AdminMain: undefined;
   CreateMatch: undefined;
   MatchDetail: { matchId: string };
   EditMatch: { matchId: string };
@@ -75,6 +89,7 @@ export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
+const AdminStack = createNativeStackNavigator<AdminStackParamList>();
 
 // ── Placeholder for Create tab (never rendered — intercepted by listener) ──
 
@@ -82,7 +97,45 @@ function CreateTabPlaceholder() {
   return null;
 }
 
-// ── Tab Navigator ──
+// ── Admin section navigator (stack inside each admin tab) ──
+
+function AdminNavigator() {
+  return (
+    <AdminStack.Navigator>
+      <AdminStack.Screen
+        name="AdminHome"
+        component={AdminHomeScreen}
+        options={{ title: 'Administración' }}
+      />
+      <AdminStack.Screen
+        name="AdminVenues"
+        component={AdminVenuesScreen}
+        options={{ title: 'Predios' }}
+      />
+      <AdminStack.Screen
+        name="AdminVenueForm"
+        component={AdminVenueFormScreen}
+        options={({ route }) => ({
+          title: route.params?.venueId ? 'Editar Predio' : 'Nuevo Predio',
+        })}
+      />
+      <AdminStack.Screen
+        name="AdminVenuePitches"
+        component={AdminVenuePitchesScreen}
+        options={({ route }) => ({ title: route.params.venueName })}
+      />
+      <AdminStack.Screen
+        name="AdminPitchForm"
+        component={AdminPitchFormScreen}
+        options={({ route }) => ({
+          title: route.params?.pitchId ? 'Editar Cancha' : 'Nueva Cancha',
+        })}
+      />
+    </AdminStack.Navigator>
+  );
+}
+
+// ── User Tab Navigator ──
 
 function MainTabs() {
   return (
@@ -171,63 +224,76 @@ const authBgStyles = StyleSheet.create({
 // ── App Navigator (Root Stack wraps tabs + modal screens) ──
 
 function AppNavigator() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+
   return (
     <RootStack.Navigator>
-      <RootStack.Screen
-        name="MainTabs"
-        component={MainTabs}
-        options={{ headerShown: false }}
-      />
-      <RootStack.Screen
-        name="CreateMatch"
-        component={CreateMatchScreen}
-        options={{ title: 'Create Match' }}
-      />
-      <RootStack.Screen
-        name="MatchDetail"
-        component={MatchDetailScreen}
-        options={{ title: 'Match Detail' }}
-      />
-      <RootStack.Screen
-        name="EditMatch"
-        component={EditMatchScreen}
-        options={{ title: 'Edit Match' }}
-      />
-      <RootStack.Screen
-        name="MatchHistory"
-        component={MatchHistoryScreen}
-        options={{ title: 'Match History' }}
-      />
-      <RootStack.Screen
-        name="CreateGroup"
-        component={CreateGroupScreen}
-        options={{ title: 'Create Group' }}
-      />
-      <RootStack.Screen
-        name="GroupDetail"
-        component={GroupDetailScreen}
-        options={{ title: 'Group Detail' }}
-      />
-      <RootStack.Screen
-        name="ChangePassword"
-        component={ChangePasswordScreen}
-        options={{ title: 'Change Password' }}
-      />
-      <RootStack.Screen
-        name="Sessions"
-        component={SessionsScreen}
-        options={{ title: 'Devices' }}
-      />
-      <RootStack.Screen
-        name="EditProfile"
-        component={EditProfileScreen}
-        options={{ title: 'Editar perfil' }}
-      />
-      <RootStack.Screen
-        name="PublicUserProfile"
-        component={PublicUserProfileScreen}
-        options={{ title: 'Perfil' }}
-      />
+      {isAdmin ? (
+        <RootStack.Screen
+          name="AdminMain"
+          component={AdminNavigator}
+          options={{ headerShown: false }}
+        />
+      ) : (
+        <>
+          <RootStack.Screen
+            name="MainTabs"
+            component={MainTabs}
+            options={{ headerShown: false }}
+          />
+          <RootStack.Screen
+            name="CreateMatch"
+            component={CreateMatchScreen}
+            options={{ title: 'Create Match' }}
+          />
+          <RootStack.Screen
+            name="MatchDetail"
+            component={MatchDetailScreen}
+            options={{ title: 'Match Detail' }}
+          />
+          <RootStack.Screen
+            name="EditMatch"
+            component={EditMatchScreen}
+            options={{ title: 'Edit Match' }}
+          />
+          <RootStack.Screen
+            name="MatchHistory"
+            component={MatchHistoryScreen}
+            options={{ title: 'Match History' }}
+          />
+          <RootStack.Screen
+            name="CreateGroup"
+            component={CreateGroupScreen}
+            options={{ title: 'Create Group' }}
+          />
+          <RootStack.Screen
+            name="GroupDetail"
+            component={GroupDetailScreen}
+            options={{ title: 'Group Detail' }}
+          />
+          <RootStack.Screen
+            name="ChangePassword"
+            component={ChangePasswordScreen}
+            options={{ title: 'Change Password' }}
+          />
+          <RootStack.Screen
+            name="Sessions"
+            component={SessionsScreen}
+            options={{ title: 'Devices' }}
+          />
+          <RootStack.Screen
+            name="EditProfile"
+            component={EditProfileScreen}
+            options={{ title: 'Editar perfil' }}
+          />
+          <RootStack.Screen
+            name="PublicUserProfile"
+            component={PublicUserProfileScreen}
+            options={{ title: 'Perfil' }}
+          />
+        </>
+      )}
     </RootStack.Navigator>
   );
 }

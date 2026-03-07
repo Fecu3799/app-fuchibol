@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { GroupsModule } from './groups/groups.module';
 import { PushModule } from './push/push.module';
+import { VenuesModule } from './venues/venues.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PushModule } from './push/push.module';
     MatchesModule,
     GroupsModule,
     PushModule,
+    VenuesModule,
   ],
   controllers: [AppController],
   providers: [],

@@ -13,6 +13,13 @@ enum MatchStatus {
   canceled
 }
 
+enum PitchType {
+  F5
+  F7
+  F9
+  F11
+}
+
 enum Role {
   USER
   ADMIN
@@ -82,19 +89,57 @@ model UserAvatar {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model Venue {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String
+  addressText String?
+  mapsUrl     String?
+  latitude    Float?
+  longitude   Float?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  pitches     VenuePitch[]
+  matches     Match[]
+
+  @@index([isActive])
+}
+
+model VenuePitch {
+  id        String     @id @default(uuid()) @db.Uuid
+  venueId   String     @db.Uuid
+  name      String
+  pitchType PitchType
+  price     Float?
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  venue     Venue      @relation(fields: [venueId], references: [id])
+  matches   Match[]
+
+  @@index([pitchType, isActive])
+  @@index([venueId])
+}
+
 model Match {
-  id           String             @id @default(uuid()) @db.Uuid
-  title        String
-  startsAt     DateTime
-  location     String?
-  capacity     Int
-  status       MatchStatus        @default(scheduled)
-  revision     Int                @default(1)
-  isLocked     Boolean            @default(false)
-  lockedAt     DateTime?
-  lockedBy     String?            @db.Uuid
-  createdById  String             @db.Uuid
+  id              String             @id @default(uuid()) @db.Uuid
+  title           String
+  startsAt        DateTime
+  location        String?
+  capacity        Int
+  status          MatchStatus        @default(scheduled)
+  revision        Int                @default(1)
+  isLocked        Boolean            @default(false)
+  lockedAt        DateTime?
+  lockedBy        String?            @db.Uuid
+  createdById     String             @db.Uuid
+  venueId         String?            @db.Uuid
+  venuePitchId    String?            @db.Uuid
+  venueSnapshot   Json?
+  pitchSnapshot   Json?
   createdBy    User               @relation(fields: [createdById], references: [id])
+  venue        Venue?             @relation(fields: [venueId], references: [id])
+  venuePitch   VenuePitch?        @relation(fields: [venuePitchId], references: [id])
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   participants MatchParticipant[]

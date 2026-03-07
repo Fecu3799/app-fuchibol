@@ -3,7 +3,9 @@ import {
   IsDateString,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 
@@ -19,4 +21,12 @@ export class CreateMatchDto {
   @IsInt()
   @Min(1)
   capacity: number;
+
+  @IsOptional()
+  @IsUUID()
+  venueId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  venuePitchId?: string;
 }

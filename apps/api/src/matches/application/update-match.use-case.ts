@@ -6,11 +6,13 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { type Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
 import { MatchNotificationService } from './match-notification.service';
+import type { VenueSnapshot, PitchSnapshot } from './create-match.use-case';
 
 export interface UpdateMatchInput {
   matchId: string;
@@ -20,6 +22,8 @@ export interface UpdateMatchInput {
   startsAt?: string;
   location?: string;
   capacity?: number;
+  venueId?: string;
+  venuePitchId?: string;
 }
 
 @Injectable()
@@ -33,6 +37,67 @@ export class UpdateMatchUseCase {
   ) {}
 
   async execute(input: UpdateMatchInput): Promise<MatchSnapshot> {
+    // Validate that venueId and venuePitchId are provided together
+    const hasVenue = input.venueId !== undefined;
+    const hasPitch = input.venuePitchId !== undefined;
+    if (hasVenue !== hasPitch) {
+      throw new UnprocessableEntityException(
+        'venueId and venuePitchId must both be provided together',
+      );
+    }
+
+    // Pre-fetch and validate venue/pitch before entering the transaction
+    let newVenueSnapshot: VenueSnapshot | undefined;
+    let newPitchSnapshot: PitchSnapshot | undefined;
+
+    if (input.venueId && input.venuePitchId) {
+      const pitch = await this.prisma.client.venuePitch.findUnique({
+        where: { id: input.venuePitchId },
+        include: {
+          venue: {
+            select: {
+              id: true,
+              name: true,
+              addressText: true,
+              mapsUrl: true,
+              latitude: true,
+              longitude: true,
+              isActive: true,
+            },
+          },
+        },
+      });
+
+      if (!pitch) {
+        throw new UnprocessableEntityException('Pitch not found');
+      }
+
+      if (!pitch.isActive || !pitch.venue.isActive) {
+        throw new UnprocessableEntityException(
+          'Selected pitch or venue is not available',
+        );
+      }
+
+      if (pitch.venueId !== input.venueId) {
+        throw new UnprocessableEntityException(
+          'venuePitchId does not belong to the provided venueId',
+        );
+      }
+
+      newVenueSnapshot = {
+        name: pitch.venue.name,
+        addressText: pitch.venue.addressText,
+        mapsUrl: pitch.venue.mapsUrl,
+        latitude: pitch.venue.latitude,
+        longitude: pitch.venue.longitude,
+      };
+      newPitchSnapshot = {
+        name: pitch.name,
+        pitchType: pitch.pitchType,
+        price: pitch.price,
+      };
+    }
+
     let reconfirmUserIds: string[] = [];
 
     const snapshot = await this.prisma.client.$transaction(async (tx) => {
@@ -81,6 +146,20 @@ export class UpdateMatchUseCase {
       if (input.capacity !== undefined && input.capacity !== match.capacity)
         data.capacity = input.capacity;
 
+      // Venue/pitch update — only if pitch actually changed
+      if (
+        newVenueSnapshot &&
+        newPitchSnapshot &&
+        input.venuePitchId !== match.venuePitchId
+      ) {
+        data.venueId = input.venueId;
+        data.venuePitchId = input.venuePitchId;
+        data.venueSnapshot =
+          newVenueSnapshot as unknown as Prisma.InputJsonObject;
+        data.pitchSnapshot =
+          newPitchSnapshot as unknown as Prisma.InputJsonObject;
+      }
+
       // Nothing actually changed
       if (Object.keys(data).length === 0) {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
@@ -90,11 +169,12 @@ export class UpdateMatchUseCase {
         data.capacity !== undefined &&
         (data.capacity as number) < match.capacity;
 
-      // Detect major change (startsAt, location, or capacity reduction).
+      // Detect major change (startsAt, location, capacity reduction, or venue change).
       const isMajorChange =
         data.startsAt !== undefined ||
         data.location !== undefined ||
-        capacityDecreased;
+        capacityDecreased ||
+        data.venueId !== undefined;
 
       // Apply update + increment revision
       data.revision = match.revision + 1;
