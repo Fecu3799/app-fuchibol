@@ -74,7 +74,7 @@ export class ToggleSpectatorUseCase {
         throw new NotFoundException('Match not found');
       }
 
-      if (match.status === 'canceled') {
+      if (['canceled', 'in_progress', 'played'].includes(match.status)) {
         throw new ConflictException('MATCH_CANCELLED');
       }
 

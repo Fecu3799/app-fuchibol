@@ -204,7 +204,7 @@ describe('ListMatchesQuery', () => {
     expect(dateClause.startsAt.lte).toEqual(new Date('2026-06-30T23:59:59Z'));
   });
 
-  it('default view (upcoming): where clause excludes canceled and played matches', async () => {
+  it('default view (upcoming): where clause includes only active statuses', async () => {
     const prisma = buildPrisma();
     const query = new ListMatchesQuery(prisma);
 
@@ -217,17 +217,13 @@ describe('ListMatchesQuery', () => {
     const countCall = (prisma.client.match.count as jest.Mock).mock.calls[0][0];
     const whereClause = countCall.where;
 
-    // Should have status not canceled
+    // Should have status in [scheduled, locked, in_progress]
     const statusClause = whereClause.AND.find(
       (c: Record<string, unknown>) => c.status,
     );
-    expect(statusClause).toEqual({ status: { not: 'canceled' } });
-
-    // Should have startsAt > playedCutoff (now - 1h) to exclude played matches
-    const startsAtClause = whereClause.AND.find(
-      (c: Record<string, unknown>) => c.startsAt,
-    );
-    expect(startsAtClause.startsAt.gt).toBeInstanceOf(Date);
+    expect(statusClause).toEqual({
+      status: { in: ['scheduled', 'locked', 'in_progress'] },
+    });
   });
 
   it('view=upcoming: orders by startsAt asc', async () => {
@@ -251,7 +247,7 @@ describe('ListMatchesQuery', () => {
     expect(findManyCall.orderBy).toEqual({ startsAt: 'asc' });
   });
 
-  it('view=history: where clause includes canceled OR played matches', async () => {
+  it('view=history: where clause includes only canceled and played statuses', async () => {
     const prisma = buildPrisma();
     const query = new ListMatchesQuery(prisma);
 
@@ -265,18 +261,13 @@ describe('ListMatchesQuery', () => {
     const countCall = (prisma.client.match.count as jest.Mock).mock.calls[0][0];
     const whereClause = countCall.where;
 
-    // Should have OR clause for canceled or played (startsAt <= now - 1h)
+    // Should have status in [canceled, played]
     const historyClause = whereClause.AND.find(
-      (c: Record<string, unknown>) => c.OR,
+      (c: Record<string, unknown>) => c.status,
     );
-    expect(historyClause.OR).toEqual(
-      expect.arrayContaining([
-        { status: 'canceled' },
-        expect.objectContaining({
-          startsAt: expect.objectContaining({ lte: expect.any(Date) }),
-        }),
-      ]),
-    );
+    expect(historyClause).toEqual({
+      status: { in: ['canceled', 'played'] },
+    });
   });
 
   it('view=history: orders by startsAt desc', async () => {

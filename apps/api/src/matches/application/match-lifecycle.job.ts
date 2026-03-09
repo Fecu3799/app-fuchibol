@@ -6,6 +6,12 @@ import { MatchAuditService, AuditLogType } from './match-audit.service';
 import { MatchNotificationService } from './match-notification.service';
 import { MatchRealtimePublisher } from '../realtime/match-realtime.publisher';
 
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+// Safety cap: process at most this many overdue matches per tick to avoid
+// overwhelming the DB on first deploy with a large backlog.
+const OVERDUE_BATCH_LIMIT = 50;
+
 type MatchWithParticipants = {
   id: string;
   title: string;
@@ -36,48 +42,110 @@ export class MatchLifecycleJob {
   @Cron(CronExpression.EVERY_MINUTE)
   async runTick(): Promise<void> {
     const now = new Date();
-    const windowStart = new Date(now.getTime() - 5 * 60 * 1000); // now - 5min
-    const windowEnd = new Date(now.getTime() + 60 * 60 * 1000); // now + 60min
+    const upcomingWindowEnd = new Date(now.getTime() + 60 * 60 * 1000);
 
-    const matches = await this.prisma.client.match.findMany({
-      where: {
-        startsAt: { gte: windowStart, lte: windowEnd },
-        status: { notIn: ['canceled', 'played'] },
-      },
-      include: {
-        participants: {
-          select: { userId: true, status: true, isMatchAdmin: true },
-        },
-      },
-    });
+    const [upcomingMatches, overdueMatches, inProgressMatches] =
+      await Promise.all([
+        // Future matches within the next 60min: candidates for auto-lock and reminders.
+        // Lower bound is now (exclusive) so only pre-start matches are included.
+        this.prisma.client.match.findMany({
+          where: {
+            startsAt: { gt: now, lte: upcomingWindowEnd },
+            status: { in: ['scheduled', 'locked'] },
+          },
+          include: {
+            participants: {
+              select: { userId: true, status: true, isMatchAdmin: true },
+            },
+          },
+        }),
 
-    await Promise.allSettled(
-      matches.map((match) => this.processMatch(match as MatchWithParticipants)),
-    );
+        // Overdue matches: startsAt is in the past, still scheduled/locked.
+        // NO lower bound — catches ALL stale matches regardless of age.
+        // Ordered oldest-first so the backlog clears consistently.
+        // Batch-limited to avoid thundering-herd on first run after a long gap.
+        this.prisma.client.match.findMany({
+          where: {
+            startsAt: { lte: now },
+            status: { in: ['scheduled', 'locked'] },
+          },
+          orderBy: { startsAt: 'asc' },
+          take: OVERDUE_BATCH_LIMIT,
+          include: {
+            participants: {
+              select: { userId: true, status: true, isMatchAdmin: true },
+            },
+          },
+        }),
+
+        // In-progress matches that may be ready to finalize as played.
+        this.prisma.client.match.findMany({
+          where: { status: 'in_progress' },
+          include: {
+            participants: {
+              select: { userId: true, status: true, isMatchAdmin: true },
+            },
+          },
+        }),
+      ]);
+
+    await Promise.allSettled([
+      ...upcomingMatches.map((match) =>
+        this.processUpcoming(match as MatchWithParticipants, now),
+      ),
+      ...overdueMatches.map((match) =>
+        this.processOverdue(match as MatchWithParticipants, now),
+      ),
+      ...inProgressMatches.map((match) =>
+        this.tryFinalizeMatch(match as MatchWithParticipants, now),
+      ),
+    ]);
   }
 
-  private async processMatch(match: MatchWithParticipants): Promise<void> {
-    const now = Date.now();
-    const minutesToStart = (match.startsAt.getTime() - now) / 60_000;
+  /**
+   * Handles matches that have NOT started yet (startsAt > now) and are
+   * within the next 60 minutes.
+   * - Auto-lock when full
+   * - Send reminder when not full
+   */
+  private async processUpcoming(
+    match: MatchWithParticipants,
+    now: Date,
+  ): Promise<void> {
+    const minutesToStart = (match.startsAt.getTime() - now.getTime()) / 60_000;
     const confirmedCount = match.participants.filter(
       (p) => p.status === 'CONFIRMED',
     ).length;
-
     const isFull = confirmedCount >= match.capacity;
-    const isBeforeStart = minutesToStart > 0;
 
-    // Rule 1: Auto-lock — match is full and not yet locked
-    if (isBeforeStart && minutesToStart <= 60 && isFull && !match.isLocked) {
+    if (isFull && !match.isLocked) {
       await this.autoLock(match);
     }
 
-    // Rule 2: Reminder — not full, within 60min, before start (even if just auto-locked)
-    if (isBeforeStart && minutesToStart <= 60 && !isFull) {
+    if (!isFull) {
       await this.sendReminder(match, confirmedCount, minutesToStart);
     }
+  }
 
-    // Rule 3: Auto-cancel — past start time, not full
-    if (!isBeforeStart && !isFull) {
+  /**
+   * Handles matches that are past their startsAt and still scheduled/locked.
+   * - Full → in_progress (or played directly if job ran >60min late)
+   * - Not full → canceled
+   * No window constraint — any stale match is reconciled here.
+   */
+  private async processOverdue(
+    match: MatchWithParticipants,
+    now: Date,
+  ): Promise<void> {
+    const confirmedCount = match.participants.filter(
+      (p) => p.status === 'CONFIRMED',
+    ).length;
+    const isFull = confirmedCount >= match.capacity;
+
+    if (isFull) {
+      const isLate = now.getTime() >= match.startsAt.getTime() + ONE_HOUR_MS;
+      await this.autoStart(match, isLate);
+    } else {
       await this.autoCancel(match);
     }
   }
@@ -87,7 +155,6 @@ export class MatchLifecycleJob {
       const newRevision = await this.prisma.client.$transaction(async (tx) => {
         await lockMatchRow(tx, match.id);
 
-        // Re-read inside tx to prevent double-lock
         const fresh = await tx.match.findUnique({ where: { id: match.id } });
         if (!fresh || fresh.isLocked || fresh.status === 'canceled')
           return null;
@@ -159,6 +226,102 @@ export class MatchLifecycleJob {
     }
   }
 
+  /**
+   * Transitions a full match at/past startsAt:
+   * - Normal: scheduled/locked → in_progress (remove waitlist)
+   * - Late reconciliation (job ran >60min late): skip in_progress, go directly to played
+   */
+  private async autoStart(
+    match: MatchWithParticipants,
+    isLate: boolean,
+  ): Promise<void> {
+    try {
+      let newRevision: number | null = null;
+      let confirmedUserIds: string[] = [];
+
+      await this.prisma.client.$transaction(async (tx) => {
+        await lockMatchRow(tx, match.id);
+
+        const fresh = await tx.match.findUnique({ where: { id: match.id } });
+        // Idempotent: already transitioned by a prior run
+        if (
+          !fresh ||
+          fresh.status === 'canceled' ||
+          fresh.status === 'in_progress' ||
+          fresh.status === 'played'
+        )
+          return;
+
+        const confirmedCount = await tx.matchParticipant.count({
+          where: { matchId: match.id, status: 'CONFIRMED' },
+        });
+        // Re-check fullness inside tx — if no longer full, autoCancel should handle it next tick
+        if (confirmedCount < match.capacity) return;
+
+        const targetStatus = isLate ? 'played' : 'in_progress';
+
+        const updated = await tx.match.update({
+          where: { id: match.id },
+          data: { status: targetStatus, revision: fresh.revision + 1 },
+        });
+
+        // Remove waitlist — no longer relevant once match is underway
+        await tx.matchParticipant.deleteMany({
+          where: { matchId: match.id, status: 'WAITLISTED' },
+        });
+
+        await this.audit.log(
+          tx,
+          match.id,
+          null,
+          AuditLogType.MATCH_STARTED,
+          { confirmedCount, targetStatus },
+        );
+
+        if (isLate) {
+          await this.audit.log(
+            tx,
+            match.id,
+            null,
+            AuditLogType.MATCH_PLAYED,
+            { confirmedCount, lateReconciliation: true },
+          );
+        }
+
+        const rows = await tx.matchParticipant.findMany({
+          where: { matchId: match.id, status: 'CONFIRMED' },
+          select: { userId: true },
+        });
+
+        newRevision = updated.revision;
+        confirmedUserIds = rows.map((r) => r.userId);
+      });
+
+      if (newRevision !== null) {
+        this.realtimePublisher.notifyMatchUpdated(match.id, newRevision);
+        this.logger.log(
+          `[MatchLifecycle] Match ${match.id} started (${isLate ? 'played (late)' : 'in_progress'})`,
+        );
+
+        void this.matchNotification
+          .onMatchStarted({
+            matchId: match.id,
+            matchTitle: match.title,
+            userIds: confirmedUserIds,
+          })
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `[MatchLifecycle] onMatchStarted notification failed for match ${match.id}: ${(err as Error)?.message}`,
+            ),
+          );
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `[MatchLifecycle] Auto-start failed for match ${match.id}: ${(err as Error)?.message}`,
+      );
+    }
+  }
+
   private async autoCancel(match: MatchWithParticipants): Promise<void> {
     try {
       let newRevision: number | null = null;
@@ -168,7 +331,13 @@ export class MatchLifecycleJob {
         await lockMatchRow(tx, match.id);
 
         const fresh = await tx.match.findUnique({ where: { id: match.id } });
-        if (!fresh || fresh.status === 'canceled' || fresh.status === 'played')
+        // Guard against all terminal/in-flight statuses
+        if (
+          !fresh ||
+          fresh.status === 'canceled' ||
+          fresh.status === 'played' ||
+          fresh.status === 'in_progress'
+        )
           return;
 
         const confirmedCount = await tx.matchParticipant.count({
@@ -221,6 +390,55 @@ export class MatchLifecycleJob {
     } catch (err: unknown) {
       this.logger.warn(
         `[MatchLifecycle] Auto-cancel failed for match ${match.id}: ${(err as Error)?.message}`,
+      );
+    }
+  }
+
+  /**
+   * Transitions in_progress matches to played once 60 minutes have elapsed since startsAt.
+   */
+  private async tryFinalizeMatch(
+    match: MatchWithParticipants,
+    now: Date,
+  ): Promise<void> {
+    const elapsed = now.getTime() - match.startsAt.getTime();
+    if (elapsed < ONE_HOUR_MS) return; // not time yet
+
+    try {
+      let newRevision: number | null = null;
+
+      await this.prisma.client.$transaction(async (tx) => {
+        await lockMatchRow(tx, match.id);
+
+        const fresh = await tx.match.findUnique({ where: { id: match.id } });
+        // Idempotent: already finalized
+        if (!fresh || fresh.status !== 'in_progress') return;
+
+        const updated = await tx.match.update({
+          where: { id: match.id },
+          data: { status: 'played', revision: fresh.revision + 1 },
+        });
+
+        await this.audit.log(
+          tx,
+          match.id,
+          null,
+          AuditLogType.MATCH_PLAYED,
+          { elapsed: Math.round(elapsed / 60_000) },
+        );
+
+        newRevision = updated.revision;
+      });
+
+      if (newRevision !== null) {
+        this.realtimePublisher.notifyMatchUpdated(match.id, newRevision);
+        this.logger.log(
+          `[MatchLifecycle] Match ${match.id} finalized as played`,
+        );
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `[MatchLifecycle] Finalize failed for match ${match.id}: ${(err as Error)?.message}`,
       );
     }
   }

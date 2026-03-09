@@ -41,7 +41,7 @@ export class LockMatchUseCase {
         throw new ForbiddenException('Only match admin can lock');
       }
 
-      if (match.status === 'canceled') {
+      if (['canceled', 'in_progress', 'played'].includes(match.status)) {
         throw new ConflictException('MATCH_CANCELLED');
       }
 

@@ -10,6 +10,7 @@ export type MatchNotificationType =
   | 'promoted'
   | 'reconfirm_required'
   | 'canceled'
+  | 'match_started'
   | 'reminder_missing_players'
   | 'missing_players_alert';
 
@@ -18,6 +19,7 @@ const COOLDOWN_MS: Partial<Record<MatchNotificationType, number>> = {
   promoted: 5 * 60 * 1000,
   reconfirm_required: 60 * 60 * 1000,
   canceled: 60 * 60 * 1000,
+  match_started: 60 * 60 * 1000,
   missing_players_alert: 5 * 60 * 1000,
   // reminder_missing_players uses bucket-based dedup (no time-window cooldown)
 };
@@ -54,6 +56,12 @@ export interface OnReminderMissingPlayersInput {
   missingCount: number;
   minutesToStart: number;
   bucket: string;
+}
+
+export interface OnMatchStartedInput {
+  matchId: string;
+  matchTitle: string;
+  userIds: string[];
 }
 
 export interface OnMissingPlayersAlertInput {
@@ -181,6 +189,24 @@ export class MatchNotificationService {
           'reminder_missing_players',
           bucket,
         );
+      }),
+    );
+  }
+
+  async onMatchStarted(input: OnMatchStartedInput): Promise<void> {
+    const { matchId, matchTitle, userIds } = input;
+
+    await Promise.allSettled(
+      userIds.map(async (userId) => {
+        if (!(await this.shouldSend(userId, matchId, 'match_started'))) return;
+
+        await this.provider.sendToUser(userId, {
+          title: '¡El partido comenzó!',
+          body: `"${matchTitle}" ya está en juego.`,
+          data: { type: 'match_started', matchId },
+        });
+
+        await this.recordDelivery(userId, matchId, 'match_started');
       }),
     );
   }

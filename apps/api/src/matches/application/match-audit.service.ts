@@ -20,6 +20,8 @@ export const AuditLogType = {
   PARTICIPANT_KICKED: 'participant.kicked',
   MATCH_AUTO_LOCKED: 'match.auto_locked',
   MATCH_AUTO_CANCELED: 'match.auto_canceled',
+  MATCH_STARTED: 'match.started',
+  MATCH_PLAYED: 'match.played',
 } as const;
 
 type TransactionClient = Omit<

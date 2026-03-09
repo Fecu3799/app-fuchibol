@@ -1,18 +1,17 @@
-export type MatchStatusView = 'CANCELLED' | 'PLAYED' | 'UPCOMING';
-
-const ONE_HOUR_MS = 60 * 60 * 1000;
+export type MatchStatusView = 'CANCELLED' | 'IN_PROGRESS' | 'PLAYED' | 'UPCOMING';
 
 /**
- * Derives the display status for a match without persisting to DB.
- * - canceled in DB => CANCELLED
- * - now >= startsAt + 1h => PLAYED
- * - otherwise => UPCOMING
+ * Maps the DB status to a display status. Fully DB-driven — no time calculations.
+ * - canceled → CANCELLED
+ * - in_progress → IN_PROGRESS
+ * - played → PLAYED
+ * - scheduled / locked → UPCOMING
  */
 export function computeMatchStatusView(
-  match: { status: string; startsAt: Date },
-  now: Date = new Date(),
+  match: { status: string },
 ): MatchStatusView {
   if (match.status === 'canceled') return 'CANCELLED';
-  if (now.getTime() >= match.startsAt.getTime() + ONE_HOUR_MS) return 'PLAYED';
+  if (match.status === 'in_progress') return 'IN_PROGRESS';
+  if (match.status === 'played') return 'PLAYED';
   return 'UPCOMING';
 }

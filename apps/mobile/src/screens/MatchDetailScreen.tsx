@@ -653,10 +653,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const canLeave = displayMatch.actionsAllowed.includes("leave");
   const canManageAdmins = displayMatch.actionsAllowed.includes("manage_admins");
   const lockTogglePending = lockMutation.isPending || unlockMutation.isPending;
-  // Read-only when the match is finished: PLAYED (≥1h after startsAt) or CANCELLED.
-  // matchStatus is computed server-side by computeMatchStatusView.
+  // Read-only when the match is immutable (server-side status: IN_PROGRESS, PLAYED, or CANCELLED).
   const isReadOnly =
-    displayMatch.matchStatus === "PLAYED" || displayMatch.matchStatus === "CANCELLED";
+    displayMatch.matchStatus === "IN_PROGRESS" ||
+    displayMatch.matchStatus === "PLAYED" ||
+    displayMatch.matchStatus === "CANCELLED";
   const canKick = !isReadOnly && displayMatch.actionsAllowed.includes("manage_kick");
   const groups = deriveParticipantGroups(displayMatch);
 
@@ -717,8 +718,14 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
         )}
       </View>
 
-      {/* 1. Countdown */}
-      {countdown ? <MatchCountdownPanel countdown={countdown} mode={countdownMode} /> : null}
+      {/* 1. Status panel: countdown / in_progress / played */}
+      {displayMatch.matchStatus === "IN_PROGRESS" ? (
+        <MatchInProgressPanel />
+      ) : displayMatch.matchStatus === "PLAYED" ? (
+        <MatchPlayedPanel />
+      ) : countdown ? (
+        <MatchCountdownPanel countdown={countdown} mode={countdownMode} />
+      ) : null}
 
       {/* 2. Match info */}
       <MatchInfoCard match={displayMatch} />
@@ -1048,6 +1055,22 @@ function SectionPill({ label, badge }: { label: string; badge?: string }) {
           <Text style={styles.sectionPillBadge}> {badge}</Text>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function MatchInProgressPanel() {
+  return (
+    <View style={[styles.countdownCard, styles.inProgressCard]}>
+      <Text style={styles.inProgressLabel}>PARTIDO EN JUEGO</Text>
+    </View>
+  );
+}
+
+function MatchPlayedPanel() {
+  return (
+    <View style={[styles.countdownCard, styles.playedCard]}>
+      <Text style={styles.playedLabel}>PARTIDO FINALIZADO</Text>
     </View>
   );
 }
@@ -1654,6 +1677,24 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 1,
     marginTop: 6,
+  },
+  inProgressCard: {
+    backgroundColor: "#e8f5e9",
+  },
+  inProgressLabel: {
+    color: "#1b5e20",
+    fontWeight: "800",
+    fontSize: 16,
+    letterSpacing: 1.5,
+  },
+  playedCard: {
+    backgroundColor: "#f5f5f5",
+  },
+  playedLabel: {
+    color: "#616161",
+    fontWeight: "700",
+    fontSize: 15,
+    letterSpacing: 1,
   },
 
   // Info rows

@@ -103,6 +103,11 @@ export class CancelMatchUseCase {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
 
+      // Cannot cancel a match that has already started
+      if (match.status === 'in_progress' || match.status === 'played') {
+        throw new ConflictException('MATCH_CANCELLED');
+      }
+
       await tx.match.update({
         where: { id: input.matchId },
         data: {

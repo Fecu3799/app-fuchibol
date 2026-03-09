@@ -44,6 +44,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 36. [User Profile Fields + termsAcceptedAt](#36-user-profile-fields--termsacceptedat)
 37. [Reliability Score + Suspension (Sprint 1)](#37-reliability-score--suspension-sprint-1)
 39. [Venues + CreateMatch en 2 pasos](#39-venues--creatematch-en-2-pasos)
+40. [Match Lifecycle: IN_PROGRESS + PLAYED DB-driven](#40-match-lifecycle-in_progress--played-db-driven)
 
 ---
 
@@ -1451,4 +1452,56 @@ apps/mobile/src/screens/AdminVenuesScreen.tsx (nuevo)
 apps/mobile/src/screens/AdminVenueFormScreen.tsx (nuevo)
 apps/mobile/src/screens/AdminVenuePitchesScreen.tsx (nuevo)
 apps/mobile/src/screens/AdminPitchFormScreen.tsx (nuevo)
+```
+
+---
+
+## 40. Match Lifecycle: IN_PROGRESS + PLAYED DB-driven
+
+### Que se hizo
+
+Implementado el ciclo de vida completo del partido con estados `IN_PROGRESS` y `PLAYED` persistidos en DB (reemplaza el PLAYED derivado por tiempo).
+
+**Nuevo flujo de estados:**
+- `SCHEDULED` → `LOCKED` (scheduler: auto-lock si está completo 60min antes)
+- `SCHEDULED/LOCKED` → `IN_PROGRESS` (scheduler: al llegar `startsAt` y `confirmedCount >= capacity`)
+- `SCHEDULED/LOCKED` → `CANCELED` (scheduler: al llegar `startsAt` y `confirmedCount < capacity`)
+- `IN_PROGRESS` → `PLAYED` (scheduler: 60min después de `startsAt`)
+- Reconciliación tardía: si el job corrió tarde y `startsAt + 60min` ya pasó, salta directamente a `PLAYED`.
+
+**Al iniciar (`in_progress`):**
+- Se eliminan los rows de `WAITLISTED` (ya no relevantes).
+- Push fire-and-forget a todos los `CONFIRMED`.
+- Audit log `match.started`.
+
+**Al finalizar (`played`):**
+- Audit log `match.played`.
+- WS emite `{ matchId, revision }` → cliente refetchea.
+
+**Reglas de inmutabilidad:**
+- `in_progress`, `played`, `canceled` → todas las mutaciones retornan 409 `MATCH_CANCELLED`.
+- `actionsAllowed` vacío en el snapshot para esos estados.
+
+**list-matches view filter:** ahora basado en status DB (no en tiempo).
+- `upcoming`: `status IN (scheduled, locked, in_progress)`
+- `history`: `status IN (canceled, played)`
+
+### Archivos modificados
+
+```
+apps/api/prisma/schema.prisma (enum MatchStatus: +in_progress)
+apps/api/prisma/migrations/20260308120000_add_in_progress_status/ (nueva)
+packages/shared/src/index.ts (IN_PROGRESS: "in_progress")
+apps/api/src/matches/domain/compute-match-status-view.ts (DB-driven, sin cálculo por tiempo)
+apps/api/src/matches/domain/compute-match-status-view.spec.ts (tests actualizados)
+apps/api/src/matches/application/build-match-snapshot.ts (isImmutable basado en status DB)
+apps/api/src/matches/application/match-audit.service.ts (+MATCH_STARTED, +MATCH_PLAYED)
+apps/api/src/matches/application/match-notification.service.ts (+onMatchStarted, +match_started type)
+apps/api/src/matches/application/match-lifecycle.job.ts (reescrito: autoStart, tryFinalizeMatch)
+apps/api/src/matches/application/match-lifecycle.job.spec.ts (18 tests: +auto-start, +finalize, +idempotencia, +late reconciliation)
+apps/api/src/matches/application/list-matches.query.ts (view filter DB-driven)
+apps/api/src/matches/application/list-matches.query.spec.ts (tests actualizados)
+apps/api/src/matches/application/*.use-case.ts (todos: bloquean in_progress y played)
+apps/mobile/src/types/api.ts (matchStatus: +IN_PROGRESS)
+apps/mobile/src/screens/MatchDetailScreen.tsx (MatchInProgressPanel, MatchPlayedPanel, isReadOnly actualizado)
 ```

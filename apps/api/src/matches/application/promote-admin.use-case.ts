@@ -40,7 +40,7 @@ export class PromoteAdminUseCase {
         throw new ForbiddenException('Only creator can manage admins');
       }
 
-      if (match.status === 'canceled') {
+      if (['canceled', 'in_progress', 'played'].includes(match.status)) {
         throw new ConflictException('MATCH_CANCELLED');
       }
 

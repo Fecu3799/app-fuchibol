@@ -54,8 +54,7 @@ export class ListMatchesQuery {
   async execute(input: ListMatchesInput): Promise<ListMatchesResult> {
     const { actorId, page, pageSize, from, to, view = 'upcoming' } = input;
     const skip = (page - 1) * pageSize;
-    const now = new Date();
-    const playedCutoff = new Date(now.getTime() - 60 * 60 * 1000);
+
 
     // Build where clause: scope=mine (matches where actor participates OR is creator)
     const dateFilter: Record<string, unknown> = {};
@@ -66,21 +65,25 @@ export class ListMatchesQuery {
       Object.keys(dateFilter).length > 0 ? dateFilter : undefined;
 
     // View filtering
-    // upcoming: not canceled AND not played (startsAt > now - 1h)
-    // history: canceled OR played (startsAt <= now - 1h)
+    // upcoming: active statuses (scheduled, locked, in_progress) — not canceled, not played
+    // history: canceled OR played
     const viewFilter =
       view === 'history'
         ? [
             {
-              OR: [
-                { status: MatchStatus.canceled },
-                { startsAt: { lte: playedCutoff } },
-              ],
+              status: { in: [MatchStatus.canceled, MatchStatus.played] },
             },
           ]
         : [
-            { status: { not: MatchStatus.canceled } },
-            { startsAt: { gt: playedCutoff } },
+            {
+              status: {
+                in: [
+                  MatchStatus.scheduled,
+                  MatchStatus.locked,
+                  MatchStatus.in_progress,
+                ],
+              },
+            },
           ];
 
     const where = {
@@ -174,7 +177,7 @@ export class ListMatchesQuery {
       location: m.location,
       capacity: m.capacity,
       status: m.status,
-      matchStatus: computeMatchStatusView(m, now),
+      matchStatus: computeMatchStatusView(m),
       matchGender: computeMatchGender(gendersByMatch.get(m.id) ?? []),
       revision: m.revision,
       isLocked: m.isLocked,

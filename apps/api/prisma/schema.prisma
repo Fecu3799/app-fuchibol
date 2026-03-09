@@ -9,6 +9,7 @@ datasource db {
 enum MatchStatus {
   scheduled
   locked
+  in_progress
   played
   canceled
 }

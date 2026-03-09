@@ -74,7 +74,7 @@ export interface MatchHomeItem {
   location: string | null;
   capacity: number;
   status: string;
-  matchStatus: 'UPCOMING' | 'PLAYED' | 'CANCELLED';
+  matchStatus: 'UPCOMING' | 'IN_PROGRESS' | 'PLAYED' | 'CANCELLED';
   matchGender: 'SIN_DEFINIR' | 'MASCULINO' | 'FEMENINO' | 'MIXTO';
   revision: number;
   isLocked: boolean;
@@ -135,7 +135,7 @@ export interface MatchSnapshot {
   location: string | null;
   capacity: number;
   status: string;
-  matchStatus: 'UPCOMING' | 'PLAYED' | 'CANCELLED';
+  matchStatus: 'UPCOMING' | 'IN_PROGRESS' | 'PLAYED' | 'CANCELLED';
   matchGender: 'SIN_DEFINIR' | 'MASCULINO' | 'FEMENINO' | 'MIXTO';
   revision: number;
   isLocked: boolean;

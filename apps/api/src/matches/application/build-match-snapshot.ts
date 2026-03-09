@@ -91,10 +91,11 @@ export async function buildMatchSnapshot(
 
   const isCreator = match.createdById === actorId;
   const isAdmin = isCreator || myParticipant?.isMatchAdmin === true;
-  const isCanceled = match.status === 'canceled';
-  // Matches are immutable once canceled OR once they started (≥1h after startsAt)
-  const isPlayed = Date.now() >= match.startsAt.getTime() + 60 * 60 * 1000;
-  const isImmutable = isCanceled || isPlayed;
+  // Matches are immutable (no actions) when DB status is canceled, played, or in_progress.
+  const isImmutable =
+    match.status === 'canceled' ||
+    match.status === 'played' ||
+    match.status === 'in_progress';
 
   const actionsAllowed: string[] = [];
 

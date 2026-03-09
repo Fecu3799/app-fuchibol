@@ -41,7 +41,7 @@ export class UnlockMatchUseCase {
         throw new ForbiddenException('Only match admin can unlock');
       }
 
-      if (match.status === 'canceled') {
+      if (['canceled', 'in_progress', 'played'].includes(match.status)) {
         throw new ConflictException('MATCH_CANCELLED');
       }
 
