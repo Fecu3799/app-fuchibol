@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { UnprocessableEntityException } from '@nestjs/common';
 import { UpdateMatchUseCase } from './update-match.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';

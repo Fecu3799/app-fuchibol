@@ -114,6 +114,18 @@ export interface SpectatorView {
   avatarUrl: string | null;
 }
 
+export interface TeamSlotView {
+  slotIndex: number;
+  userId: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+}
+
+export interface TeamsSnapshot {
+  teamA: TeamSlotView[];
+  teamB: TeamSlotView[];
+}
+
 export interface VenueSnapshot {
   name: string;
   addressText: string | null;
@@ -149,6 +161,8 @@ export interface MatchSnapshot {
   spectatorCount: number;
   myStatus: string | null;
   actionsAllowed: string[];
+  teamsConfigured: boolean;
+  teams: TeamsSnapshot | null;
   venueId: string | null;
   venuePitchId: string | null;
   venueSnapshot: VenueSnapshot | null;

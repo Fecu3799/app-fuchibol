@@ -57,7 +57,6 @@ describe('ConfirmPasswordResetUseCase', () => {
     );
     await useCase.execute('raw-token', 'NewPass1');
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.$transaction).toHaveBeenCalled();
   });
 

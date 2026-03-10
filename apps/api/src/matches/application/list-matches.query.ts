@@ -55,7 +55,6 @@ export class ListMatchesQuery {
     const { actorId, page, pageSize, from, to, view = 'upcoming' } = input;
     const skip = (page - 1) * pageSize;
 
-
     // Build where clause: scope=mine (matches where actor participates OR is creator)
     const dateFilter: Record<string, unknown> = {};
     if (from) dateFilter.gte = new Date(from);

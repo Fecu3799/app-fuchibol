@@ -6,7 +6,9 @@ describe('computeMatchStatusView', () => {
   });
 
   it('returns IN_PROGRESS for in_progress status', () => {
-    expect(computeMatchStatusView({ status: 'in_progress' })).toBe('IN_PROGRESS');
+    expect(computeMatchStatusView({ status: 'in_progress' })).toBe(
+      'IN_PROGRESS',
+    );
   });
 
   it('returns PLAYED for played status', () => {

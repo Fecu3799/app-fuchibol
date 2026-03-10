@@ -24,7 +24,6 @@ describe('LogoutUseCase', () => {
 
     await useCase.execute('session-uuid', 'user-uuid');
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.authSession.updateMany).toHaveBeenCalledWith({
       where: { id: 'session-uuid', userId: 'user-uuid', revokedAt: null },
       data: { revokedAt: expect.any(Date) },

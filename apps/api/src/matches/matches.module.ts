@@ -24,6 +24,11 @@ import { GetMatchAuditLogsQuery } from './application/get-match-audit-logs.query
 import { MatchNotificationService } from './application/match-notification.service';
 import { GetInviteCandidatesQuery } from './application/get-invite-candidates.query';
 import { KickParticipantUseCase } from './application/kick-participant.use-case';
+import { SaveTeamsUseCase } from './application/save-teams.use-case';
+import { GenerateRandomTeamsUseCase } from './application/generate-random-teams.use-case';
+import { GenerateBalancedTeamsUseCase } from './application/generate-balanced-teams.use-case';
+import { MoveTeamPlayerUseCase } from './application/move-team-player.use-case';
+import { BlockTeamAutoGenUseCase } from './application/block-team-autogen.use-case';
 import { MatchLifecycleJob } from './application/match-lifecycle.job';
 import { UserReliabilityService } from './application/user-reliability.service';
 
@@ -56,6 +61,11 @@ import { UserReliabilityService } from './application/user-reliability.service';
     MatchNotificationService,
     GetInviteCandidatesQuery,
     KickParticipantUseCase,
+    SaveTeamsUseCase,
+    GenerateRandomTeamsUseCase,
+    GenerateBalancedTeamsUseCase,
+    MoveTeamPlayerUseCase,
+    BlockTeamAutoGenUseCase,
     MatchLifecycleJob,
     UserReliabilityService,
   ],

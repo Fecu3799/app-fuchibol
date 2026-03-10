@@ -12,6 +12,7 @@ import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
 import { MatchNotificationService } from './match-notification.service';
 import { UserReliabilityService } from './user-reliability.service';
+import { releaseTeamSlot, autoAssignTeamSlot } from './team-slot-sync';
 
 const LATE_LEAVE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -72,48 +73,24 @@ export class LeaveMatchUseCase {
     }
 
     if (result.wasConfirmed && result.isLocked && result.minutesToStart <= 60) {
-      void this.notifyMissingPlayers(
-        input.matchId,
-        result.snapshot,
-        result.confirmedCount,
-        result.minutesToStart,
-      ).catch((err: unknown) =>
-        this.logger.warn(
-          `[MatchNotification] onMissingPlayersAlert failed: ${(err as Error)?.message}`,
-          { matchId: input.matchId },
-        ),
-      );
+      void this.matchNotification
+        .onMissingPlayersAlertWithLookup({
+          matchId: input.matchId,
+          matchTitle: result.snapshot.title,
+          creatorId: result.snapshot.createdById,
+          confirmedCount: result.confirmedCount,
+          capacity: result.snapshot.capacity,
+          minutesToStart: result.minutesToStart,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `[MatchNotification] onMissingPlayersAlert failed: ${(err as Error)?.message}`,
+            { matchId: input.matchId },
+          ),
+        );
     }
 
     return result.snapshot;
-  }
-
-  private async notifyMissingPlayers(
-    matchId: string,
-    snapshot: MatchSnapshot,
-    confirmedCount: number,
-    minutesToStart: number,
-  ): Promise<void> {
-    const missingCount = snapshot.capacity - confirmedCount;
-    if (missingCount <= 0) return;
-
-    // Notify creator + admins (distinct)
-    const adminRows = await this.prisma.client.matchParticipant.findMany({
-      where: { matchId, isMatchAdmin: true },
-      select: { userId: true },
-    });
-    const creatorId = snapshot.createdById;
-    const recipientIds = [
-      ...new Set([creatorId, ...adminRows.map((r) => r.userId)]),
-    ];
-
-    await this.matchNotification.onMissingPlayersAlert({
-      matchId,
-      matchTitle: snapshot.title,
-      userIds: recipientIds,
-      missingCount,
-      minutesToStart,
-    });
   }
 
   private async run(input: LeaveMatchInput): Promise<RunResult> {
@@ -220,6 +197,16 @@ export class LeaveMatchUseCase {
         where: { id: existing.id },
       });
 
+      if (wasConfirmed && match.teamsConfigured) {
+        await releaseTeamSlot(
+          tx,
+          input.matchId,
+          input.actorId,
+          input.actorId,
+          this.audit,
+        );
+      }
+
       // Promote from waitlist if the leaving user was confirmed
       let promotedUserId: string | null = null;
       if (wasConfirmed) {
@@ -238,6 +225,16 @@ export class LeaveMatchUseCase {
             },
           });
           promotedUserId = nextInWaitlist.userId;
+
+          if (match.teamsConfigured) {
+            await autoAssignTeamSlot(
+              tx,
+              input.matchId,
+              nextInWaitlist.userId,
+              input.actorId,
+              this.audit,
+            );
+          }
         }
       }
 

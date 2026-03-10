@@ -45,6 +45,8 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 37. [Reliability Score + Suspension (Sprint 1)](#37-reliability-score--suspension-sprint-1)
 39. [Venues + CreateMatch en 2 pasos](#39-venues--creatematch-en-2-pasos)
 40. [Match Lifecycle: IN_PROGRESS + PLAYED DB-driven](#40-match-lifecycle-in_progress--played-db-driven)
+41. [Team Assembly Sprint 3: Roster integration (slot sync automático)](#41-team-assembly-sprint-3-roster-integration-slot-sync-automático)
+42. [Team Assembly Sprint 4: Auto-generación de equipos a T-30](#42-team-assembly-sprint-4-auto-generación-de-equipos-a-t-30)
 
 ---
 
@@ -1504,4 +1506,143 @@ apps/api/src/matches/application/list-matches.query.spec.ts (tests actualizados)
 apps/api/src/matches/application/*.use-case.ts (todos: bloquean in_progress y played)
 apps/mobile/src/types/api.ts (matchStatus: +IN_PROGRESS)
 apps/mobile/src/screens/MatchDetailScreen.tsx (MatchInProgressPanel, MatchPlayedPanel, isReadOnly actualizado)
+```
+
+
+---
+
+## Sprint: Armado de equipos — Step 1 (Backend)
+
+**Objetivo:** modelo persistente de slots por equipo, generación automática (random y equilibrada por skill), movimiento de jugadores entre slots, expuesto en snapshot del match.
+
+### Modelo de datos
+
+`MatchTeamSlot`: slot-based, `team` (A/B), `slotIndex`, `userId?` (nullable FK a User con ON DELETE SET NULL).
+
+`Match.teamsConfigured Boolean @default(false)`: flag que indica que el match tiene equipos configurados.
+
+Reglas:
+- `capacity/2` slots por equipo (floor para capacidades impares).
+- Solo jugadores CONFIRMED pueden ocupar slots.
+- No se permiten duplicados entre ambos equipos.
+- Solo el creator puede modificar equipos.
+- El match no puede estar en estado inmutable (canceled/played/in_progress).
+
+### Use Cases
+
+| Use Case | Endpoint | Descripción |
+|---|---|---|
+| `SaveTeamsUseCase` | `POST /matches/:id/teams` | Reemplaza todos los slots con configuración manual |
+| `GenerateRandomTeamsUseCase` | `POST /matches/:id/teams/generate-random` | Fisher-Yates shuffle, split mitad/mitad |
+| `GenerateBalancedTeamsUseCase` | `POST /matches/:id/teams/generate-balanced` | Snake draft por skillLevel (PRO→A, SEMIPRO→B, REGULAR→B, AMATEUR→A...) |
+| `MoveTeamPlayerUseCase` | `POST /matches/:id/teams/move-player` | Swap de userId entre dos slots |
+
+### Snapshot del match
+
+`MatchSnapshot` ahora incluye:
+- `teamsConfigured: boolean`
+- `teams: { teamA: TeamSlotView[], teamB: TeamSlotView[] } | null` (solo si `teamsConfigured=true`)
+- `actionsAllowed` incluye `'manage_teams'` para el creator (en estados no inmutables)
+
+### Archivos modificados
+
+```
+apps/api/prisma/schema.prisma (+MatchTeamSlot, +Match.teamsConfigured, +User.teamSlots)
+apps/api/prisma/migrations/20260309120000_add_team_slots/ (nueva)
+apps/api/src/matches/application/build-match-snapshot.ts (+TeamSlotView, +TeamsSnapshot, +teams, +teamsConfigured, +manage_teams)
+apps/api/src/matches/application/match-audit.service.ts (+TEAMS_CONFIGURED, +TEAMS_GENERATED_RANDOM, +TEAMS_GENERATED_BALANCED, +TEAM_PLAYER_MOVED)
+apps/api/src/matches/application/save-teams.use-case.ts (nuevo)
+apps/api/src/matches/application/generate-random-teams.use-case.ts (nuevo)
+apps/api/src/matches/application/generate-balanced-teams.use-case.ts (nuevo)
+apps/api/src/matches/application/move-team-player.use-case.ts (nuevo)
+apps/api/src/matches/application/teams.use-case.spec.ts (nuevo, 22 tests)
+apps/api/src/matches/api/dto/team-command.dto.ts (nuevo)
+apps/api/src/matches/api/matches.controller.ts (+4 endpoints de teams)
+apps/api/src/matches/matches.module.ts (+4 providers)
+apps/mobile/src/types/api.ts (+TeamSlotView, +TeamsSnapshot, +teams, +teamsConfigured en MatchSnapshot)
+```
+
+---
+
+## Sprint: Armado de equipos — Step 2 (Mobile UI)
+
+**Objetivo:** pantalla de armado de equipos para el creator, con visualización de equipos en MatchDetails.
+
+### Decisiones de implementación
+
+- **Aleatorio**: Fisher-Yates shuffle local → snake draft → actualiza estado local (no API, sin persistir)
+- **Equilibrado**: sort alfabético por username + snake draft local (proxy sin datos de skill) → actualiza estado local
+- **Guardar**: única acción que llama al backend (`POST /matches/:id/teams`) → persiste + incrementa revision + back
+- **Visualización**: si `teamsConfigured === true`, MatchDetails muestra `TeamsDisplayCard` (dos columnas) en lugar de la lista plana de confirmados
+
+### UX de edición de slots
+
+- Tap en un slot → lo selecciona (highlight azul)
+- Tap en otro slot → intercambia los jugadores entre los dos slots
+- Tap en el mismo slot → lo deselecciona
+- Tap en jugador "Sin asignar" con slot seleccionado → coloca al jugador en ese slot
+- Tap en jugador "Sin asignar" sin selección → lo ubica en el primer slot vacío (A primero, luego B)
+
+### Archivos modificados
+
+```
+apps/mobile/src/features/matches/matchesClient.ts (+saveTeams, +generateBalancedTeams)
+apps/mobile/src/navigation/AppNavigator.tsx (+TeamAssembly en RootStackParamList + Screen)
+apps/mobile/src/screens/TeamAssemblyScreen.tsx (nuevo — screen de armado)
+apps/mobile/src/screens/MatchDetailScreen.tsx (+canManageTeams, +TeamsDisplayCard, +botón Armar/Editar equipos)
+```
+
+---
+
+## 41. Team Assembly Sprint 3: Roster integration (slot sync automático)
+
+**Objetivo:** mantener los slots de equipo sincronizados con los cambios del roster: liberar slot cuando un CONFIRMED deja de jugar, asignar slot cuando un jugador entra a CONFIRMED.
+
+### Reglas implementadas
+
+- **Liberar slot** (releaseTeamSlot): cuando un CONFIRMED hace leave, es kickeado, o pasa a SPECTATOR → su slot queda vacío (userId = null)
+- **Liberar batch** (releaseTeamSlotsBatch): en cambio mayor (update-match) que reinicia CONFIRMED → INVITED, se liberan todos sus slots
+- **Auto-asignar** (autoAssignTeamSlot): cuando un jugador entra a CONFIRMED (confirm-participation o promoción desde waitlist tras leave/kick/spectator) → ocupa el primer slot vacío en orden determinístico (team A first, por slotIndex)
+- Todo ocurre solo si `match.teamsConfigured === true`; si no hay equipos configurados, no hay efecto
+
+### Archivos creados / modificados
+
+```
+apps/api/src/matches/application/team-slot-sync.ts (nuevo — 3 helpers: releaseTeamSlot, releaseTeamSlotsBatch, autoAssignTeamSlot)
+apps/api/src/matches/application/team-slot-sync.spec.ts (nuevo — 7 tests)
+apps/api/src/matches/application/confirm-participation.use-case.ts (+autoAssignTeamSlot si teamsConfigured)
+apps/api/src/matches/application/leave-match.use-case.ts (+releaseTeamSlot al salir + autoAssignTeamSlot al promovido)
+apps/api/src/matches/application/kick-participant.use-case.ts (+releaseTeamSlot al kickeado + autoAssignTeamSlot al promovido)
+apps/api/src/matches/application/toggle-spectator.use-case.ts (+releaseTeamSlot CONFIRMED→SPECTATOR + autoAssignTeamSlot al promovido)
+apps/api/src/matches/application/update-match.use-case.ts (+releaseTeamSlotsBatch en cambio mayor)
+apps/api/src/matches/application/match-audit.service.ts (+TEAM_SLOT_RELEASED, +TEAM_SLOT_AUTO_ASSIGNED)
+```
+
+---
+
+## 42. Team Assembly Sprint 4: Auto-generación de equipos a T-30
+
+**Objetivo:** generar equipos aleatorios automáticamente 30 minutos antes del inicio si el creator no intervino, con notificación push y bloqueo permanente de esa autogeneración cuando el creator abre la pantalla de armado.
+
+### Decisiones de implementación
+
+- **`teamsAutoGenBlocked`**: nuevo campo booleano en `Match` que el creator activa al entrar a `TeamAssemblyScreen`. Una vez activado, el scheduler no genera equipos aunque el partido todavía no los tenga configurados.
+- **Ventana T-30**: el job evalúa `minutesToStart <= 30` para todos los partidos del bucket upcoming (0–60min). Las guards internas (lock de fila + re-fetch dentro del tx) garantizan idempotencia.
+- **Sin segunda autogeneración**: una vez que `teamsConfigured=true` (ya sea por auto-gen o por save manual), el job no vuelve a intentarlo.
+- **Fire-and-forget notification**: push solo al creator, con cooldown de 60min.
+
+### Archivos modificados
+
+```
+apps/api/prisma/schema.prisma (+teamsAutoGenBlocked al modelo Match)
+apps/api/prisma/migrations/20260309140000_add_teams_autogen_blocked/migration.sql (nuevo)
+apps/api/src/matches/application/match-audit.service.ts (+MATCH_AUTO_TEAMS_GENERATED)
+apps/api/src/matches/application/match-notification.service.ts (+teams_auto_generated type, cooldown y onTeamsAutoGenerated)
+apps/api/src/matches/application/match-lifecycle.job.ts (+teamsConfigured/teamsAutoGenBlocked en tipo, +autoGenerateTeams, hook en processUpcoming)
+apps/api/src/matches/application/block-team-autogen.use-case.ts (nuevo)
+apps/api/src/matches/api/matches.controller.ts (POST :id/teams/block-autogen)
+apps/api/src/matches/matches.module.ts (+BlockTeamAutoGenUseCase)
+apps/api/src/matches/application/match-lifecycle.job.spec.ts (+5 tests auto-gen, +matchTeamSlot en mock tx, +teamsConfigured/teamsAutoGenBlocked en makeMatch)
+apps/mobile/src/features/matches/matchesClient.ts (+blockTeamAutoGen)
+apps/mobile/src/screens/TeamAssemblyScreen.tsx (useEffect on mount → blockTeamAutoGen)
 ```

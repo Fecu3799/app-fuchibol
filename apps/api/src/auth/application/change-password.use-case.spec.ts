@@ -44,7 +44,6 @@ describe('ChangePasswordUseCase', () => {
       useCase.execute('user-id', 'session-id', 'wrong', 'NewPass1'),
     ).rejects.toBeInstanceOf(UnauthorizedException);
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.$transaction).not.toHaveBeenCalled();
   });
 
@@ -55,7 +54,6 @@ describe('ChangePasswordUseCase', () => {
     const useCase = new ChangePasswordUseCase(prisma, buildAuditService());
     await useCase.execute('user-id', 'session-id', 'correct', 'NewPass1');
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.$transaction).toHaveBeenCalled();
   });
 });

@@ -69,6 +69,7 @@ model User {
   updatedAt         DateTime           @updatedAt
   matches          Match[]
   participations   MatchParticipant[]
+  teamSlots        MatchTeamSlot[]
   ownedGroups      Group[]            @relation("GroupOwner")
   groupMemberships GroupMember[]
   auditLogs        MatchAuditLog[]    @relation("UserAuditLogs")
@@ -138,6 +139,8 @@ model Match {
   venuePitchId    String?            @db.Uuid
   venueSnapshot   Json?
   pitchSnapshot   Json?
+  teamsConfigured     Boolean            @default(false)
+  teamsAutoGenBlocked Boolean            @default(false)
   createdBy    User               @relation(fields: [createdById], references: [id])
   venue        Venue?             @relation(fields: [venueId], references: [id])
   venuePitch   VenuePitch?        @relation(fields: [venuePitchId], references: [id])
@@ -145,9 +148,24 @@ model Match {
   updatedAt    DateTime           @updatedAt
   participants MatchParticipant[]
   auditLogs    MatchAuditLog[]
+  teamSlots    MatchTeamSlot[]
 
   @@index([createdById], map: "Match_createdById_idx")
   @@index([startsAt], map: "Match_startsAt_idx")
+}
+
+model MatchTeamSlot {
+  id        String  @id @default(uuid()) @db.Uuid
+  matchId   String  @db.Uuid
+  team      String
+  slotIndex Int
+  userId    String? @db.Uuid
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([matchId, team, slotIndex])
+  @@index([matchId, team])
 }
 
 enum MatchParticipantStatus {

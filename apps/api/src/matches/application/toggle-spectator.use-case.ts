@@ -10,6 +10,7 @@ import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
 import { MatchNotificationService } from './match-notification.service';
+import { releaseTeamSlot, autoAssignTeamSlot } from './team-slot-sync';
 
 export interface ToggleSpectatorInput {
   matchId: string;
@@ -121,6 +122,16 @@ export class ToggleSpectatorUseCase {
           },
         });
 
+        if (match.teamsConfigured) {
+          await releaseTeamSlot(
+            tx,
+            input.matchId,
+            input.actorId,
+            input.actorId,
+            this.audit,
+          );
+        }
+
         const nextInWaitlist = await tx.matchParticipant.findFirst({
           where: { matchId: input.matchId, status: 'WAITLISTED' },
           orderBy: { waitlistPosition: 'asc' },
@@ -136,6 +147,16 @@ export class ToggleSpectatorUseCase {
             },
           });
           promotedUserId = nextInWaitlist.userId;
+
+          if (match.teamsConfigured) {
+            await autoAssignTeamSlot(
+              tx,
+              input.matchId,
+              nextInWaitlist.userId,
+              input.actorId,
+              this.audit,
+            );
+          }
         }
         auditType = AuditLogType.PARTICIPANT_SPECTATOR_ON;
         auditMeta = { fromStatus: 'CONFIRMED' };

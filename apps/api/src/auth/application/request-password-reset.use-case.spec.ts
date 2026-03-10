@@ -47,9 +47,8 @@ describe('RequestPasswordResetUseCase', () => {
     );
     await expect(useCase.execute('ghost@example.com')).resolves.toBeUndefined();
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(emailService.sendPasswordReset).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.passwordResetToken.create).not.toHaveBeenCalled();
   });
 
@@ -70,15 +69,14 @@ describe('RequestPasswordResetUseCase', () => {
     );
     await useCase.execute('user@example.com', '1.2.3.4');
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.passwordResetToken.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ userId: 'user-1', usedAt: null }),
       }),
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.passwordResetToken.create).toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(emailService.sendPasswordReset).toHaveBeenCalledWith(
       'user@example.com',
       'raw-token',

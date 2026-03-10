@@ -30,6 +30,11 @@ import { DemoteAdminUseCase } from '../application/demote-admin.use-case';
 import { GetMatchAuditLogsQuery } from '../application/get-match-audit-logs.query';
 import { GetInviteCandidatesQuery } from '../application/get-invite-candidates.query';
 import { KickParticipantUseCase } from '../application/kick-participant.use-case';
+import { SaveTeamsUseCase } from '../application/save-teams.use-case';
+import { GenerateRandomTeamsUseCase } from '../application/generate-random-teams.use-case';
+import { GenerateBalancedTeamsUseCase } from '../application/generate-balanced-teams.use-case';
+import { MoveTeamPlayerUseCase } from '../application/move-team-player.use-case';
+import { BlockTeamAutoGenUseCase } from '../application/block-team-autogen.use-case';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { CreateMatchResponseDto } from './dto/create-match-response.dto';
 import { GetMatchResponseDto } from './dto/match-snapshot.dto';
@@ -43,6 +48,11 @@ import { PromoteAdminDto, DemoteAdminDto } from './dto/admin-command.dto';
 import { AuditLogsQueryDto } from './dto/audit-logs-query.dto';
 import { InviteCandidatesQueryDto } from './dto/invite-candidates-query.dto';
 import { KickParticipantDto } from './dto/kick-participant.dto';
+import {
+  SaveTeamsDto,
+  GenerateTeamsDto,
+  MoveTeamPlayerDto,
+} from './dto/team-command.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
@@ -70,6 +80,11 @@ export class MatchesController {
     private readonly getMatchAuditLogsQuery: GetMatchAuditLogsQuery,
     private readonly getInviteCandidatesQuery: GetInviteCandidatesQuery,
     private readonly kickParticipantUseCase: KickParticipantUseCase,
+    private readonly saveTeamsUseCase: SaveTeamsUseCase,
+    private readonly generateRandomTeamsUseCase: GenerateRandomTeamsUseCase,
+    private readonly generateBalancedTeamsUseCase: GenerateBalancedTeamsUseCase,
+    private readonly moveTeamPlayerUseCase: MoveTeamPlayerUseCase,
+    private readonly blockTeamAutoGenUseCase: BlockTeamAutoGenUseCase,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -385,6 +400,93 @@ export class MatchesController {
     });
     this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
     return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/teams')
+  async saveTeams(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: SaveTeamsDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    const snapshot: MatchSnapshot = await this.saveTeamsUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      expectedRevision: body.expectedRevision,
+      teamA: body.teamA,
+      teamB: body.teamB,
+    });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/teams/generate-random')
+  async generateRandomTeams(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: GenerateTeamsDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    const snapshot: MatchSnapshot =
+      await this.generateRandomTeamsUseCase.execute({
+        matchId,
+        actorId: actor.userId,
+        expectedRevision: body.expectedRevision,
+      });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/teams/generate-balanced')
+  async generateBalancedTeams(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: GenerateTeamsDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    const snapshot: MatchSnapshot =
+      await this.generateBalancedTeamsUseCase.execute({
+        matchId,
+        actorId: actor.userId,
+        expectedRevision: body.expectedRevision,
+      });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/teams/move-player')
+  async moveTeamPlayer(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Body() body: MoveTeamPlayerDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    const snapshot: MatchSnapshot = await this.moveTeamPlayerUseCase.execute({
+      matchId,
+      actorId: actor.userId,
+      expectedRevision: body.expectedRevision,
+      fromTeam: body.fromTeam,
+      fromSlotIndex: body.fromSlotIndex,
+      toTeam: body.toTeam,
+      toSlotIndex: body.toSlotIndex,
+    });
+    this.realtimePublisher.notifyMatchUpdated(snapshot.id, snapshot.revision);
+    return snapshot;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/teams/block-autogen')
+  async blockTeamAutoGen(
+    @Param('id', new ParseUUIDPipe()) matchId: string,
+    @Actor() actor: ActorPayload,
+  ): Promise<{ ok: boolean }> {
+    await this.blockTeamAutoGenUseCase.execute(matchId, actor.userId);
+    return { ok: true };
   }
 
   private requireIdempotencyKey(

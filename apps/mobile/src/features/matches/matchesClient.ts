@@ -171,3 +171,40 @@ export function kickParticipant(
     body: JSON.stringify({ userId, expectedRevision }),
   });
 }
+
+export function saveTeams(
+  token: string,
+  matchId: string,
+  body: { expectedRevision: number; teamA: (string | null)[]; teamB: (string | null)[] },
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/teams`), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export function blockTeamAutoGen(token: string, matchId: string): Promise<void> {
+  return fetchJson<void>(buildUrl(`/api/v1/matches/${matchId}/teams/block-autogen`), {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export function generateBalancedTeams(
+  token: string,
+  matchId: string,
+  expectedRevision: number,
+): Promise<MatchSnapshot> {
+  return fetchJson<MatchSnapshot>(buildUrl(`/api/v1/matches/${matchId}/teams/generate-balanced`), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ expectedRevision }),
+  });
+}

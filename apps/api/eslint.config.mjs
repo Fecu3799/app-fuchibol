@@ -42,4 +42,15 @@ export default tseslint.config(
       'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
+  {
+    files: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
+    rules: {
+      // Jest mocks are always bound correctly; the unbound-method rule produces
+      // false positives when asserting on mock functions via expect(mock.method).
+      '@typescript-eslint/unbound-method': 'off',
+      // Mock implementations often use async without await to satisfy type
+      // signatures that return Promise (e.g. $transaction callbacks).
+      '@typescript-eslint/require-await': 'off',
+    },
+  },
 );

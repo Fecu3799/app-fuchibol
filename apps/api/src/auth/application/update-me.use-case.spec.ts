@@ -50,7 +50,7 @@ describe('UpdateMeUseCase', () => {
     });
 
     expect(result.firstName).toBe('Juan');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'user-id' },
@@ -65,7 +65,6 @@ describe('UpdateMeUseCase', () => {
 
     await useCase.execute({ userId: 'user-id', birthDate: '1990-05-15' });
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ birthDate: new Date('1990-05-15') }),
@@ -79,7 +78,6 @@ describe('UpdateMeUseCase', () => {
 
     await useCase.execute({ userId: 'user-id', birthDate: null });
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ birthDate: null }),

@@ -22,6 +22,14 @@ export const AuditLogType = {
   MATCH_AUTO_CANCELED: 'match.auto_canceled',
   MATCH_STARTED: 'match.started',
   MATCH_PLAYED: 'match.played',
+  TEAMS_CONFIGURED: 'teams.configured',
+  TEAMS_GENERATED_RANDOM: 'teams.generated_random',
+  TEAMS_GENERATED_BALANCED: 'teams.generated_balanced',
+  TEAM_PLAYER_MOVED: 'teams.player_moved',
+  TEAM_SLOT_RELEASED: 'teams.slot_released',
+  TEAM_SLOT_AUTO_ASSIGNED: 'teams.slot_auto_assigned',
+  MATCH_AUTO_TEAMS_GENERATED: 'match.auto_teams_generated',
+  TEAMS_RESET: 'teams.reset',
 } as const;
 
 type TransactionClient = Omit<

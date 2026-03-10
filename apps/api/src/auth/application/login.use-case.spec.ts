@@ -74,7 +74,7 @@ describe('LoginUseCase', () => {
     expect(result).toHaveProperty('accessToken', 'mock-access-token');
     expect(result).toHaveProperty('refreshToken', 'sessionid.secret');
     expect(result).toHaveProperty('sessionId', 'session-uuid');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'login_success',
@@ -104,7 +104,7 @@ describe('LoginUseCase', () => {
     });
 
     // Should have looked up by username
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.user.findUnique).toHaveBeenCalledWith({
       where: { username: 'testuser' },
     });
@@ -123,7 +123,7 @@ describe('LoginUseCase', () => {
     await expect(
       useCase.execute({ identifier: 'no@example.com', password: 'pass' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'login_failed', userId: null }),
     );
@@ -142,7 +142,7 @@ describe('LoginUseCase', () => {
     await expect(
       useCase.execute({ identifier: 'test@example.com', password: 'wrong' }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'login_failed', userId: 'uuid-1' }),
     );

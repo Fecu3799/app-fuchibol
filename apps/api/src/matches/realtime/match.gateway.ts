@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -10,6 +11,7 @@ import {
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../../infra/prisma/prisma.service';
 import { MatchRealtimePublisher } from './match-realtime.publisher';
 
 @WebSocketGateway({ namespace: '/matches', cors: { origin: '*' } })
@@ -19,9 +21,12 @@ export class MatchGateway
   @WebSocketServer()
   server!: Server;
 
+  private readonly logger = new Logger(MatchGateway.name);
+
   constructor(
     private readonly publisher: MatchRealtimePublisher,
     private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
   ) {}
 
   afterInit(server: Server): void {
@@ -54,6 +59,37 @@ export class MatchGateway
     // lastKnownRevision accepted for forward compatibility (gap detection)
     @MessageBody() data: { matchId: string; lastKnownRevision?: number },
   ): Promise<void> {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) {
+      client.disconnect();
+      return;
+    }
+
+    // Verify actor is the creator or has a participation row (any status)
+    const match = await this.prisma.client.match.findUnique({
+      where: { id: data.matchId },
+      select: { createdById: true },
+    });
+
+    if (!match) {
+      this.logger.warn(`WS subscribe: match ${data.matchId} not found`);
+      return;
+    }
+
+    const isCreator = match.createdById === userId;
+    if (!isCreator) {
+      const participant = await this.prisma.client.matchParticipant.findUnique({
+        where: { matchId_userId: { matchId: data.matchId, userId } },
+        select: { id: true },
+      });
+      if (!participant) {
+        this.logger.warn(
+          `WS subscribe: user ${userId} not member of match ${data.matchId}`,
+        );
+        return;
+      }
+    }
+
     await client.join(`match:${data.matchId}`);
   }
 

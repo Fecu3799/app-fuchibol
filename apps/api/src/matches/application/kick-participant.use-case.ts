@@ -11,6 +11,7 @@ import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
 import { MatchNotificationService } from './match-notification.service';
+import { releaseTeamSlot, autoAssignTeamSlot } from './team-slot-sync';
 
 export interface KickParticipantInput {
   matchId: string;
@@ -79,6 +80,16 @@ export class KickParticipantUseCase {
         where: { id: participant.id },
       });
 
+      if (wasConfirmed && match.teamsConfigured) {
+        await releaseTeamSlot(
+          tx,
+          input.matchId,
+          input.targetUserId,
+          input.actorId,
+          this.audit,
+        );
+      }
+
       // Promote FIFO from waitlist if a confirmed participant was kicked
       if (wasConfirmed) {
         const next = await tx.matchParticipant.findFirst({
@@ -101,6 +112,16 @@ export class KickParticipantUseCase {
             AuditLogType.WAITLIST_PROMOTED,
             { promotedUserId: next.userId },
           );
+
+          if (match.teamsConfigured) {
+            await autoAssignTeamSlot(
+              tx,
+              input.matchId,
+              next.userId,
+              input.actorId,
+              this.audit,
+            );
+          }
         }
       }
 
@@ -136,49 +157,23 @@ export class KickParticipantUseCase {
 
     if (alertContext) {
       const { matchTitle, confirmedCount, minutesToStart } = alertContext;
-      void this.notifyMissingPlayers(
-        input.matchId,
-        matchTitle,
-        snapshot.createdById,
-        confirmedCount,
-        snapshot.capacity,
-        minutesToStart,
-      ).catch((err: unknown) =>
-        this.logger.warn(
-          `[MatchNotification] onMissingPlayersAlert (kick) failed: ${(err as Error)?.message}`,
-          { matchId: input.matchId },
-        ),
-      );
+      void this.matchNotification
+        .onMissingPlayersAlertWithLookup({
+          matchId: input.matchId,
+          matchTitle,
+          creatorId: snapshot.createdById,
+          confirmedCount,
+          capacity: snapshot.capacity,
+          minutesToStart,
+        })
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `[MatchNotification] onMissingPlayersAlert (kick) failed: ${(err as Error)?.message}`,
+            { matchId: input.matchId },
+          ),
+        );
     }
 
     return snapshot;
-  }
-
-  private async notifyMissingPlayers(
-    matchId: string,
-    matchTitle: string,
-    creatorId: string,
-    confirmedCount: number,
-    capacity: number,
-    minutesToStart: number,
-  ): Promise<void> {
-    const missingCount = capacity - confirmedCount;
-    if (missingCount <= 0) return;
-
-    const adminRows = await this.prisma.client.matchParticipant.findMany({
-      where: { matchId, isMatchAdmin: true },
-      select: { userId: true },
-    });
-    const recipientIds = [
-      ...new Set([creatorId, ...adminRows.map((r) => r.userId)]),
-    ];
-
-    await this.matchNotification.onMissingPlayersAlert({
-      matchId,
-      matchTitle,
-      userIds: recipientIds,
-      missingCount,
-      minutesToStart,
-    });
   }
 }

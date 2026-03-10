@@ -27,6 +27,18 @@ export interface SpectatorView {
   avatarUrl: string | null;
 }
 
+export interface TeamSlotView {
+  slotIndex: number;
+  userId: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+}
+
+export interface TeamsSnapshot {
+  teamA: TeamSlotView[];
+  teamB: TeamSlotView[];
+}
+
 export interface MatchSnapshot {
   id: string;
   title: string;
@@ -48,6 +60,8 @@ export interface MatchSnapshot {
   spectatorCount: number;
   myStatus: string | null;
   actionsAllowed: string[];
+  teamsConfigured: boolean;
+  teams: TeamsSnapshot | null;
   venueId: string | null;
   venuePitchId: string | null;
   venueSnapshot: VenueSnapshot | null;
@@ -133,7 +147,13 @@ export async function buildMatchSnapshot(
 
     // Creator-only actions
     if (isCreator) {
-      actionsAllowed.push('update', 'cancel', 'manage_admins', 'manage_kick');
+      actionsAllowed.push(
+        'update',
+        'cancel',
+        'manage_admins',
+        'manage_kick',
+        'manage_teams',
+      );
     }
   }
 
@@ -169,6 +189,30 @@ export async function buildMatchSnapshot(
     avatarUrl: buildAvatarUrl(p.user.avatar?.key),
   }));
 
+  // Teams: only fetch when configured
+  let teamsSnapshotResult: TeamsSnapshot | null = null;
+  if (match.teamsConfigured) {
+    const slots = await prisma.matchTeamSlot.findMany({
+      where: { matchId },
+      orderBy: [{ team: 'asc' }, { slotIndex: 'asc' }],
+      include: {
+        user: { select: { username: true, avatar: { select: { key: true } } } },
+      },
+    });
+
+    const toSlotView = (slot: (typeof slots)[number]): TeamSlotView => ({
+      slotIndex: slot.slotIndex,
+      userId: slot.userId,
+      username: slot.user?.username ?? null,
+      avatarUrl: buildAvatarUrl(slot.user?.avatar?.key),
+    });
+
+    teamsSnapshotResult = {
+      teamA: slots.filter((s) => s.team === 'A').map(toSlotView),
+      teamB: slots.filter((s) => s.team === 'B').map(toSlotView),
+    };
+  }
+
   return {
     id: match.id,
     title: match.title,
@@ -194,6 +238,8 @@ export async function buildMatchSnapshot(
     spectatorCount: spectatorRows.length,
     myStatus,
     actionsAllowed: [...new Set(actionsAllowed)],
+    teamsConfigured: match.teamsConfigured,
+    teams: teamsSnapshotResult,
     venueId: match.venueId ?? null,
     venuePitchId: match.venuePitchId ?? null,
     venueSnapshot: (match.venueSnapshot as VenueSnapshot | null) ?? null,

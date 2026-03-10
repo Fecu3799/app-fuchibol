@@ -433,6 +433,8 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const [spectatorError, setSpectatorError] = useState("");
   const [adminActionLoading, setAdminActionLoading] = useState(false);
   const [showInviteBlock, setShowInviteBlock] = useState(false);
+  const [participantView, setParticipantView] = useState<"teams" | "list">("teams");
+  const [inviteMode, setInviteMode] = useState<"player" | "group">("player");
 
   const handleSpectatorToggle = async () => {
     if (!displayMatch || !token) return;
@@ -659,6 +661,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     displayMatch.matchStatus === "PLAYED" ||
     displayMatch.matchStatus === "CANCELLED";
   const canKick = !isReadOnly && displayMatch.actionsAllowed.includes("manage_kick");
+  const canManageTeams = displayMatch.actionsAllowed.includes("manage_teams");
   const groups = deriveParticipantGroups(displayMatch);
 
   return (
@@ -728,24 +731,96 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
       ) : null}
 
       {/* 2. Match info */}
-      <MatchInfoCard match={displayMatch} />
-
-      {/* 3. Confirmed list + Others accordion */}
-      <ConfirmedListCard
-        confirmed={groups.confirmed}
-        capacity={displayMatch.capacity}
-        others={[...groups.waitlist, ...groups.invited]}
-        spectators={groups.spectators}
-        creatorId={displayMatch.createdById}
-        canManageAdmins={canManageAdmins}
-        canKick={canKick}
-        adminActionLoading={adminActionLoading}
-        kickLoading={kickLoading}
-        onPromote={handlePromote}
-        onDemote={handleDemote}
-        onKick={handleKick}
-        onUserPress={(userId) => navigation.navigate("PublicUserProfile", { userId })}
+      <MatchInfoCard
+        match={displayMatch}
+        canEdit={canEdit}
+        onEdit={() => navigation.navigate("EditMatch", { matchId })}
       />
+
+      {/* 3a. Teams display (when configured) or confirmed list */}
+      {displayMatch.teamsConfigured && displayMatch.teams ? (
+        <>
+          <View style={styles.viewToggleRow}>
+            <Pressable
+              style={[styles.viewToggleBtn, participantView === "teams" && styles.viewToggleBtnActive]}
+              onPress={() => setParticipantView("teams")}
+            >
+              <Text style={[styles.viewToggleBtnText, participantView === "teams" && styles.viewToggleBtnTextActive]}>
+                Equipos
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.viewToggleBtn, participantView === "list" && styles.viewToggleBtnActive]}
+              onPress={() => setParticipantView("list")}
+            >
+              <Text style={[styles.viewToggleBtnText, participantView === "list" && styles.viewToggleBtnTextActive]}>
+                Lista
+              </Text>
+            </Pressable>
+          </View>
+          {participantView === "teams" ? (
+            <TeamsDisplayCard
+              teams={displayMatch.teams}
+              capacity={displayMatch.capacity}
+              canManageTeams={canManageTeams}
+              onManageTeams={() => navigation.navigate("TeamAssembly", { matchId })}
+              others={[...groups.waitlist, ...groups.invited]}
+              spectators={groups.spectators}
+              creatorId={displayMatch.createdById}
+              canManageAdmins={canManageAdmins}
+              canKick={canKick}
+              adminActionLoading={adminActionLoading}
+              kickLoading={kickLoading}
+              onPromote={handlePromote}
+              onDemote={handleDemote}
+              onKick={handleKick}
+              onUserPress={(userId) => navigation.navigate("PublicUserProfile", { userId })}
+            />
+          ) : (
+            <ConfirmedListCard
+              confirmed={groups.confirmed}
+              capacity={displayMatch.capacity}
+              others={[...groups.waitlist, ...groups.invited]}
+              spectators={groups.spectators}
+              creatorId={displayMatch.createdById}
+              canManageAdmins={canManageAdmins}
+              canKick={canKick}
+              adminActionLoading={adminActionLoading}
+              kickLoading={kickLoading}
+              onPromote={handlePromote}
+              onDemote={handleDemote}
+              onKick={handleKick}
+              onUserPress={(userId) => navigation.navigate("PublicUserProfile", { userId })}
+            />
+          )}
+        </>
+      ) : (
+        <ConfirmedListCard
+          confirmed={groups.confirmed}
+          capacity={displayMatch.capacity}
+          others={[...groups.waitlist, ...groups.invited]}
+          spectators={groups.spectators}
+          creatorId={displayMatch.createdById}
+          canManageAdmins={canManageAdmins}
+          canKick={canKick}
+          adminActionLoading={adminActionLoading}
+          kickLoading={kickLoading}
+          onPromote={handlePromote}
+          onDemote={handleDemote}
+          onKick={handleKick}
+          onUserPress={(userId) => navigation.navigate("PublicUserProfile", { userId })}
+        />
+      )}
+
+      {/* 3b. "Armar equipos" button (only when teams not yet configured) */}
+      {canManageTeams && !displayMatch.teamsConfigured && (
+        <Pressable
+          style={styles.teamsBtn}
+          onPress={() => navigation.navigate("TeamAssembly", { matchId })}
+        >
+          <Text style={styles.teamsBtnText}>Armar equipos</Text>
+        </Pressable>
+      )}
 
       {/* 4. Actions bar */}
       {!isReadOnly && (
@@ -754,98 +829,99 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           canSpectator={canSpectator}
           isSpectator={isSpectator}
           canInvite={canInvite}
-          canEdit={canEdit}
           canToggleLock={canToggleLock}
           isLocked={displayMatch.isLocked}
-          canLeave={canLeave}
-          canCancel={canCancel}
           mutation={mutation}
           lockTogglePending={lockTogglePending}
           spectatorLoading={spectatorLoading}
-          leaveLoading={leaveLoading}
-          cancelPending={cancelMutation.isPending}
           rejectLoading={rejectLoading}
           onAction={handleAction}
           onSpectator={handleSpectatorToggle}
           onInvite={() => setShowInviteBlock((b) => !b)}
-          onEdit={() => navigation.navigate("EditMatch", { matchId })}
           onLockToggle={handleLockToggle}
-          onLeave={handleLeave}
-          onCancel={handleCancel}
         />
       )}
 
       {/* Error messages */}
       {actionError ? <Text style={styles.errorText}>{actionError}</Text> : null}
       {lockError ? <Text style={styles.errorText}>{lockError}</Text> : null}
-      {leaveError ? <Text style={styles.errorText}>{leaveError}</Text> : null}
-      {cancelError ? <Text style={styles.errorText}>{cancelError}</Text> : null}
       {spectatorError ? <Text style={styles.errorText}>{spectatorError}</Text> : null}
 
-      {/* 5. Invite block (toggled by INVITAR button in actions bar) */}
+      {/* 5. Invite block (unified: jugador directo + desde grupo) */}
       {showInviteBlock && canInvite && !isReadOnly && (
         <View style={styles.inviteBlock}>
-          <Text style={styles.sectionTitle}>Invite Player</Text>
-          <View style={styles.inviteRow}>
-            <TextInput
-              style={styles.inviteInput}
-              placeholder="@username or email"
-              value={inviteInput}
-              onChangeText={(text) => {
-                setInviteInput(text);
-                if (inviteMsg) setInviteMsg("");
-              }}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!inviteMutation.isPending}
-            />
+          {/* Mode selector */}
+          <View style={styles.inviteModeRow}>
             <Pressable
-              style={[
-                styles.inviteBtn,
-                (!inviteInput.trim() || inviteMutation.isPending) &&
-                  styles.btnDisabled,
-              ]}
-              onPress={handleInvite}
-              disabled={!inviteInput.trim() || inviteMutation.isPending}
+              style={[styles.inviteModeBtn, inviteMode === "player" && styles.inviteModeBtnActive]}
+              onPress={() => setInviteMode("player")}
             >
-              {inviteMutation.isPending ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.inviteBtnText}>Invite</Text>
-              )}
+              <Text style={[styles.inviteModeBtnText, inviteMode === "player" && styles.inviteModeBtnTextActive]}>
+                Jugador
+              </Text>
             </Pressable>
+            {!displayMatch.isLocked && (
+              <Pressable
+                style={[styles.inviteModeBtn, inviteMode === "group" && styles.inviteModeBtnActive]}
+                onPress={() => {
+                  setInviteMode("group");
+                  setShowGroupInvite(true);
+                }}
+              >
+                <Text style={[styles.inviteModeBtnText, inviteMode === "group" && styles.inviteModeBtnTextActive]}>
+                  Desde grupo
+                </Text>
+              </Pressable>
+            )}
           </View>
-          {inviteMsg ? (
-            <Text
-              style={[
-                styles.inviteMsg,
-                inviteMsgType === "error"
-                  ? styles.inviteMsgError
-                  : styles.inviteMsgSuccess,
-              ]}
-            >
-              {inviteMsg}
-            </Text>
-          ) : null}
-        </View>
-      )}
 
-      {/* 6. Group invite block */}
-      {!isReadOnly && !displayMatch.isLocked && canInvite && (
-        <View style={styles.groupInviteBlock}>
-          {!showGroupInvite ? (
-            <Pressable
-              style={styles.groupInviteBtn}
-              onPress={() => setShowGroupInvite(true)}
-            >
-              <Text style={styles.groupInviteBtnText}>Invite from Group</Text>
-            </Pressable>
+          {inviteMode === "player" ? (
+            <>
+              <View style={styles.inviteRow}>
+                <TextInput
+                  style={styles.inviteInput}
+                  placeholder="@usuario o email"
+                  value={inviteInput}
+                  onChangeText={(text) => {
+                    setInviteInput(text);
+                    if (inviteMsg) setInviteMsg("");
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!inviteMutation.isPending}
+                />
+                <Pressable
+                  style={[
+                    styles.inviteBtn,
+                    (!inviteInput.trim() || inviteMutation.isPending) && styles.btnDisabled,
+                  ]}
+                  onPress={handleInvite}
+                  disabled={!inviteInput.trim() || inviteMutation.isPending}
+                >
+                  {inviteMutation.isPending ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.inviteBtnText}>Invitar</Text>
+                  )}
+                </Pressable>
+              </View>
+              {inviteMsg ? (
+                <Text
+                  style={[
+                    styles.inviteMsg,
+                    inviteMsgType === "error" ? styles.inviteMsgError : styles.inviteMsgSuccess,
+                  ]}
+                >
+                  {inviteMsg}
+                </Text>
+              ) : null}
+            </>
           ) : !selectedGroupId ? (
             <View>
               <View style={styles.groupInviteHeader}>
-                <Text style={styles.sectionTitle}>Select Group</Text>
-                <Pressable onPress={() => setShowGroupInvite(false)}>
-                  <Text style={styles.groupCancelText}>Cancel</Text>
+                <Text style={styles.sectionTitle}>Seleccionar grupo</Text>
+                <Pressable onPress={() => { setShowGroupInvite(false); setInviteMode("player"); }}>
+                  <Text style={styles.groupCancelText}>Cancelar</Text>
                 </Pressable>
               </View>
               {groupsQuery.isLoading ? (
@@ -858,7 +934,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                   (g, i, arr) => arr.findIndex((x) => x.id === g.id) === i,
                 );
                 return allGroups.length === 0 ? (
-                  <Text style={styles.groupEmptyText}>No groups</Text>
+                  <Text style={styles.groupEmptyText}>Sin grupos</Text>
                 ) : (
                   allGroups.map((g) => (
                     <Pressable
@@ -870,9 +946,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                       }}
                     >
                       <Text style={styles.groupOptionName}>{g.name}</Text>
-                      <Text style={styles.groupOptionCount}>
-                        {g.memberCount} members
-                      </Text>
+                      <Text style={styles.groupOptionCount}>{g.memberCount} miembros</Text>
                     </Pressable>
                   ))
                 );
@@ -881,14 +955,14 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           ) : (
             <View>
               <View style={styles.groupInviteHeader}>
-                <Text style={styles.sectionTitle}>Select Members</Text>
+                <Text style={styles.sectionTitle}>Seleccionar miembros</Text>
                 <Pressable
                   onPress={() => {
                     setSelectedGroupId("");
                     setSelectedMembers(new Set());
                   }}
                 >
-                  <Text style={styles.groupCancelText}>Back</Text>
+                  <Text style={styles.groupCancelText}>Volver</Text>
                 </Pressable>
               </View>
               {candidatesQuery.isLoading ? (
@@ -898,15 +972,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                   {(candidatesQuery.data?.candidates ?? []).map(
                     (c: InviteCandidate) => {
                       const isSelected = selectedMembers.has(c.username);
-                      const isDisabled =
-                        !c.canInvite || batchInviteMutation.isPending;
+                      const isDisabled = !c.canInvite || batchInviteMutation.isPending;
                       return (
                         <Pressable
                           key={c.userId}
-                          style={[
-                            styles.memberCheckRow,
-                            isDisabled && { opacity: 0.5 },
-                          ]}
+                          style={[styles.memberCheckRow, isDisabled && { opacity: 0.5 }]}
                           onPress={() => {
                             if (!c.canInvite) return;
                             setSelectedMembers((prev) => {
@@ -917,33 +987,19 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                             });
                           }}
                         >
-                          <View
-                            style={[
-                              styles.checkbox,
-                              isSelected && styles.checkboxChecked,
-                            ]}
-                          >
-                            {isSelected && (
-                              <Text style={styles.checkmark}>✓</Text>
-                            )}
+                          <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                            {isSelected && <Text style={styles.checkmark}>✓</Text>}
                           </View>
-                          <Text style={styles.memberCheckName}>
-                            @{c.username}
-                          </Text>
+                          <Text style={styles.memberCheckName}>@{c.username}</Text>
                           {c.matchStatus !== "NONE" && (
                             <View
                               style={[
                                 styles.statusChip,
-                                {
-                                  backgroundColor:
-                                    CANDIDATE_STATUS_COLOR[c.matchStatus] ??
-                                    "#999",
-                                },
+                                { backgroundColor: CANDIDATE_STATUS_COLOR[c.matchStatus] ?? "#999" },
                               ]}
                             >
                               <Text style={styles.statusChipText}>
-                                {CANDIDATE_STATUS_LABEL[c.matchStatus] ??
-                                  c.matchStatus}
+                                {CANDIDATE_STATUS_LABEL[c.matchStatus] ?? c.matchStatus}
                               </Text>
                             </View>
                           )}
@@ -954,9 +1010,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                   <Pressable
                     style={[
                       styles.batchInviteBtn,
-                      (selectedMembers.size === 0 ||
-                        batchInviteMutation.isPending) &&
-                        styles.btnDisabled,
+                      (selectedMembers.size === 0 || batchInviteMutation.isPending) && styles.btnDisabled,
                     ]}
                     onPress={() => {
                       if (!displayMatch || selectedMembers.size === 0) return;
@@ -969,26 +1023,24 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
                           onSuccess: (result) => {
                             const msg =
                               result.failed === 0
-                                ? `Invited ${result.successful} player${result.successful !== 1 ? "s" : ""}`
-                                : `Invited ${result.successful}/${result.total}. Failed: ${result.errors.map((e) => `@${e.username}`).join(", ")}`;
-                            Alert.alert("Invite Results", msg);
+                                ? `Invitados: ${result.successful}`
+                                : `Invitados ${result.successful}/${result.total}. Fallidos: ${result.errors.map((e) => `@${e.username}`).join(", ")}`;
+                            Alert.alert("Resultado", msg);
                             setShowGroupInvite(false);
                             setSelectedGroupId("");
                             setSelectedMembers(new Set());
+                            setInviteMode("player");
                           },
                         },
                       );
                     }}
-                    disabled={
-                      selectedMembers.size === 0 ||
-                      batchInviteMutation.isPending
-                    }
+                    disabled={selectedMembers.size === 0 || batchInviteMutation.isPending}
                   >
                     {batchInviteMutation.isPending ? (
                       <ActivityIndicator color="#fff" size="small" />
                     ) : (
                       <Text style={styles.batchInviteBtnText}>
-                        Invite ({selectedMembers.size})
+                        Invitar ({selectedMembers.size})
                       </Text>
                     )}
                   </Pressable>
@@ -1038,6 +1090,40 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           </>
         )}
       </View>
+
+      {/* 8. Destructive actions (bottom, separate from operational actions) */}
+      {!isReadOnly && (canLeave || canCancel) && (
+        <View style={styles.destructiveActionsBlock}>
+          {leaveError ? <Text style={[styles.errorText, { marginBottom: 8 }]}>{leaveError}</Text> : null}
+          {cancelError ? <Text style={[styles.errorText, { marginBottom: 8 }]}>{cancelError}</Text> : null}
+          {canLeave && (
+            <Pressable
+              style={[styles.destructiveTextBtn, leaveLoading && styles.btnDisabled]}
+              onPress={handleLeave}
+              disabled={leaveLoading}
+            >
+              {leaveLoading ? (
+                <ActivityIndicator color="#d32f2f" size="small" />
+              ) : (
+                <Text style={styles.destructiveTextBtnLabel}>Abandonar partido</Text>
+              )}
+            </Pressable>
+          )}
+          {canCancel && (
+            <Pressable
+              style={[styles.destructiveTextBtn, cancelMutation.isPending && styles.btnDisabled]}
+              onPress={handleCancel}
+              disabled={cancelMutation.isPending}
+            >
+              {cancelMutation.isPending ? (
+                <ActivityIndicator color="#d32f2f" size="small" />
+              ) : (
+                <Text style={styles.destructiveTextBtnLabel}>Cancelar partido</Text>
+              )}
+            </Pressable>
+          )}
+        </View>
+      )}
 
     </ScrollView>
     </View>
@@ -1107,14 +1193,31 @@ function formatPrice(price: number | null, capacity: number): string {
   return `${total}${perPlayer}`;
 }
 
-function MatchInfoCard({ match }: { match: MatchSnapshot }) {
+function MatchInfoCard({
+  match,
+  canEdit,
+  onEdit,
+}: {
+  match: MatchSnapshot;
+  canEdit?: boolean;
+  onEdit?: () => void;
+}) {
   const venue = match.venueSnapshot ?? null;
   const pitch = match.pitchSnapshot ?? null;
   const mapsUrl = venue ? buildVenueMapsUrl(venue) : null;
 
   return (
     <View style={styles.card}>
-      <SectionPill label="INFORMACIÓN" />
+      <View style={styles.infoCardHeader}>
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <SectionPill label="INFORMACIÓN" />
+        </View>
+        {canEdit && onEdit && (
+          <Pressable onPress={onEdit} style={styles.infoEditBtn} hitSlop={8}>
+            <Text style={styles.infoEditBtnText}>Editar</Text>
+          </Pressable>
+        )}
+      </View>
       <View style={styles.infoRow}>
         <Text style={styles.infoLabel}>DÍA - HORA</Text>
         <View style={{ flexDirection: "row", gap: 6 }}>
@@ -1326,6 +1429,7 @@ function OthersAccordion({
   );
 }
 
+
 function ConfirmedListCard({
   confirmed,
   capacity,
@@ -1397,54 +1501,176 @@ function ConfirmedListCard({
   );
 }
 
+// ── TeamsDisplayCard ──
+
+function TeamsDisplayCard({
+  teams,
+  capacity,
+  canManageTeams,
+  onManageTeams,
+  others,
+  spectators,
+  creatorId,
+  canManageAdmins,
+  canKick,
+  adminActionLoading,
+  kickLoading,
+  onPromote,
+  onDemote,
+  onKick,
+  onUserPress,
+}: {
+  teams: { teamA: import("../types/api").TeamSlotView[]; teamB: import("../types/api").TeamSlotView[] };
+  capacity: number;
+  canManageTeams?: boolean;
+  onManageTeams?: () => void;
+  others: ParticipantView[];
+  spectators: SpectatorView[];
+  creatorId: string;
+  canManageAdmins: boolean;
+  canKick: boolean;
+  adminActionLoading: boolean;
+  kickLoading: boolean;
+  onPromote: (userId: string, username: string) => void;
+  onDemote: (userId: string, username: string) => void;
+  onKick: (userId: string, username: string) => void;
+  onUserPress?: (userId: string) => void;
+}) {
+  const slotsPerTeam = Math.floor(capacity / 2);
+  const teamACount = teams.teamA.filter((s) => s.userId !== null).length;
+  const teamBCount = teams.teamB.filter((s) => s.userId !== null).length;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.infoCardHeader}>
+        <View style={{ flex: 1, alignItems: "center" }}>
+          <SectionPill label="EQUIPOS" badge={`${teamACount + teamBCount}/${capacity}`} />
+        </View>
+        {canManageTeams && onManageTeams && (
+          <Pressable onPress={onManageTeams} style={styles.infoEditBtn} hitSlop={8}>
+            <Text style={styles.infoEditBtnText}>Editar</Text>
+          </Pressable>
+        )}
+      </View>
+      <View style={styles.teamsDisplayRow}>
+        {/* Equipo A */}
+        <View style={styles.teamsDisplayCol}>
+          <Text style={styles.teamsDisplayHeader}>
+            Equipo A{" "}
+            <Text style={styles.teamsDisplayCounter}>
+              {teamACount}/{slotsPerTeam}
+            </Text>
+          </Text>
+          {teams.teamA.map((slot) => (
+            <View key={slot.slotIndex} style={styles.teamsDisplaySlot}>
+              <View
+                style={[
+                  styles.teamsDisplayDot,
+                  { backgroundColor: slot.userId ? "#1565c0" : "#ddd" },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.teamsDisplaySlotText,
+                  !slot.userId && styles.teamsDisplaySlotEmpty,
+                ]}
+                numberOfLines={1}
+              >
+                {slot.username ?? "—"}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.teamsDisplayDivider} />
+
+        {/* Equipo B */}
+        <View style={styles.teamsDisplayCol}>
+          <Text style={styles.teamsDisplayHeader}>
+            Equipo B{" "}
+            <Text style={styles.teamsDisplayCounter}>
+              {teamBCount}/{slotsPerTeam}
+            </Text>
+          </Text>
+          {teams.teamB.map((slot) => (
+            <View key={slot.slotIndex} style={styles.teamsDisplaySlot}>
+              <View
+                style={[
+                  styles.teamsDisplayDot,
+                  { backgroundColor: slot.userId ? "#b71c1c" : "#ddd" },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.teamsDisplaySlotText,
+                  !slot.userId && styles.teamsDisplaySlotEmpty,
+                ]}
+                numberOfLines={1}
+              >
+                {slot.username ?? "—"}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+      {(others.length > 0 || spectators.length > 0) && (
+        <OthersAccordion
+          others={others}
+          spectators={spectators}
+          creatorId={creatorId}
+          canManageAdmins={canManageAdmins}
+          canKick={canKick}
+          adminActionLoading={adminActionLoading}
+          kickLoading={kickLoading}
+          onPromote={onPromote}
+          onDemote={onDemote}
+          onKick={onKick}
+          onUserPress={onUserPress}
+        />
+      )}
+    </View>
+  );
+}
+
 function MatchActionsBar({
   visibleActions,
   canSpectator,
   isSpectator,
   canInvite,
-  canEdit,
   canToggleLock,
   isLocked,
-  canLeave,
-  canCancel,
   mutation,
   lockTogglePending,
   spectatorLoading,
-  leaveLoading,
-  cancelPending,
   rejectLoading,
   onAction,
   onSpectator,
   onInvite,
-  onEdit,
   onLockToggle,
-  onLeave,
-  onCancel,
 }: {
   visibleActions: string[];
   canSpectator: boolean;
   isSpectator: boolean;
   canInvite: boolean;
-  canEdit: boolean;
   canToggleLock: boolean;
   isLocked: boolean;
-  canLeave: boolean;
-  canCancel: boolean;
   mutation: { isPending: boolean };
   lockTogglePending: boolean;
   spectatorLoading: boolean;
-  leaveLoading: boolean;
-  cancelPending: boolean;
   rejectLoading: boolean;
   onAction: (action: string) => void;
   onSpectator: () => void;
   onInvite: () => void;
-  onEdit: () => void;
   onLockToggle: () => void;
-  onLeave: () => void;
-  onCancel: () => void;
 }) {
   const anyLoading = mutation.isPending || rejectLoading;
+  const hasActions =
+    visibleActions.includes("confirm") ||
+    visibleActions.includes("reject") ||
+    canSpectator ||
+    canInvite ||
+    canToggleLock;
+  if (!hasActions) return null;
   return (
     <View style={styles.actionsBar}>
       <View style={styles.actionsGrid}>
@@ -1509,14 +1735,6 @@ function MatchActionsBar({
             <Text style={styles.actionChipText}>INVITAR</Text>
           </Pressable>
         )}
-        {canEdit && (
-          <Pressable
-            style={[styles.actionChip, { backgroundColor: "#0277bd" }]}
-            onPress={onEdit}
-          >
-            <Text style={styles.actionChipText}>EDITAR</Text>
-          </Pressable>
-        )}
         {canToggleLock && (
           <Pressable
             style={[
@@ -1533,40 +1751,6 @@ function MatchActionsBar({
               <Text style={styles.actionChipText}>
                 {isLocked ? "DESBLOQUEAR" : "BLOQUEAR"}
               </Text>
-            )}
-          </Pressable>
-        )}
-        {canLeave && (
-          <Pressable
-            style={[
-              styles.actionChip,
-              { backgroundColor: "#d32f2f" },
-              leaveLoading && styles.btnDisabled,
-            ]}
-            onPress={onLeave}
-            disabled={leaveLoading}
-          >
-            {leaveLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.actionChipText}>ABANDONAR</Text>
-            )}
-          </Pressable>
-        )}
-        {canCancel && (
-          <Pressable
-            style={[
-              styles.actionChip,
-              { backgroundColor: "#b71c1c" },
-              cancelPending && styles.btnDisabled,
-            ]}
-            onPress={onCancel}
-            disabled={cancelPending}
-          >
-            {cancelPending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.actionChipText}>CANCELAR</Text>
             )}
           </Pressable>
         )}
@@ -1732,6 +1916,69 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyListText: { color: "#666", fontSize: 13, textAlign: "center", paddingVertical: 8 },
+
+  // Teams button
+  teamsBtn: {
+    backgroundColor: "#1976d2",
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginBottom: 12,
+    borderCurve: "continuous",
+  },
+  teamsBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  // Teams display card
+  teamsDisplayRow: {
+    flexDirection: "row",
+    marginTop: 8,
+  },
+  teamsDisplayCol: {
+    flex: 1,
+    paddingHorizontal: 4,
+  },
+  teamsDisplayDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: "#ddd",
+    marginHorizontal: 4,
+  },
+  teamsDisplayHeader: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#555",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  teamsDisplayCounter: {
+    fontWeight: "400",
+    color: "#999",
+  },
+  teamsDisplaySlot: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 5,
+  },
+  teamsDisplayDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  teamsDisplaySlotText: {
+    fontSize: 13,
+    color: "#222",
+    flex: 1,
+  },
+  teamsDisplaySlotEmpty: {
+    color: "#bbb",
+    fontStyle: "italic",
+  },
 
   // Player rows
   playerRow: {
@@ -1963,5 +2210,97 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#1976d2",
     fontWeight: "600" as const,
+  },
+
+  // View toggle (Equipos / Lista)
+  viewToggleRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  viewToggleBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#555",
+    backgroundColor: "transparent",
+  },
+  viewToggleBtnActive: {
+    borderColor: "#1976d2",
+    backgroundColor: "#1976d2",
+  },
+  viewToggleBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#aaa",
+  },
+  viewToggleBtnTextActive: {
+    color: "#fff",
+  },
+
+  // Info card header with edit button
+  infoCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  infoEditBtn: {
+    position: "absolute",
+    right: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#0277bd",
+  },
+  infoEditBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0277bd",
+  },
+
+  // Unified invite mode selector
+  inviteModeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  inviteModeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#555",
+  },
+  inviteModeBtnActive: {
+    borderColor: "#1976d2",
+    backgroundColor: "#1976d2",
+  },
+  inviteModeBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#aaa",
+  },
+  inviteModeBtnTextActive: {
+    color: "#fff",
+  },
+
+  // Destructive actions block (bottom)
+  destructiveActionsBlock: {
+    marginTop: 8,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#333",
+    gap: 4,
+  },
+  destructiveTextBtn: {
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  destructiveTextBtnLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#d32f2f",
   },
 });

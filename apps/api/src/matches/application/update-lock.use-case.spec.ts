@@ -486,28 +486,7 @@ describe('Confirm on locked match', () => {
     ).rejects.toThrow('MATCH_LOCKED');
   });
 
-  it('actor SPECTATOR on locked match -> 409 MATCH_LOCKED', async () => {
-    const { prisma, tx } = buildTxPrisma({ isLocked: true });
-    tx.matchParticipant.findUnique = jest
-      .fn()
-      .mockResolvedValue({ id: 'p-1', status: 'SPECTATOR' });
-    const useCase = new ConfirmParticipationUseCase(
-      prisma,
-      buildIdempotency(prisma),
-      mockAudit,
-    );
-
-    await expect(
-      useCase.execute({
-        matchId: 'match-1',
-        actorId: 'user-1',
-        expectedRevision: 1,
-        idempotencyKey: 'key-lock-dec',
-      }),
-    ).rejects.toThrow('MATCH_LOCKED');
-  });
-
-  it('actor SPECTATOR on locked match -> 409 MATCH_LOCKED', async () => {
+  it('actor SPECTATOR on locked match -> 409 SPECTATOR_MUST_TOGGLE', async () => {
     const { prisma, tx } = buildTxPrisma({ isLocked: true });
     tx.matchParticipant.findUnique = jest
       .fn()
@@ -525,7 +504,7 @@ describe('Confirm on locked match', () => {
         expectedRevision: 1,
         idempotencyKey: 'key-lock-spec',
       }),
-    ).rejects.toThrow('MATCH_LOCKED');
+    ).rejects.toThrow('SPECTATOR_MUST_TOGGLE');
   });
 
   it('actor INVITED on locked match -> confirm succeeds (CONFIRMED)', async () => {

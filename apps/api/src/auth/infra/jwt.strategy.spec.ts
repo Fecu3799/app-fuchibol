@@ -81,7 +81,7 @@ describe('JwtStrategy.validate', () => {
       role: 'user',
       sessionId: undefined,
     });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.authSession.findUnique).not.toHaveBeenCalled();
   });
 });

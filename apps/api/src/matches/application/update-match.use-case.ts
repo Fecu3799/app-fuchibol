@@ -218,6 +218,23 @@ export class UpdateMatchUseCase {
             reconfirmationCount: reconfirmResult.count,
           },
         );
+
+        // Major change invalidates teams entirely: slot structure may no longer match
+        // new capacity, and confirmed players have changed. Drop all slots so the
+        // creator reassigns cleanly.
+        if (match.teamsConfigured) {
+          await tx.matchTeamSlot.deleteMany({
+            where: { matchId: input.matchId },
+          });
+          data.teamsConfigured = false;
+          await this.audit.log(
+            tx,
+            input.matchId,
+            input.actorId,
+            AuditLogType.TEAMS_RESET,
+            { reason: 'major_change' },
+          );
+        }
       }
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);

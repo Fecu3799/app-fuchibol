@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { NotFoundException } from '@nestjs/common';
 import { AdminVenueService } from './admin-venue.service';
 import { AdminPitchService } from './admin-pitch.service';

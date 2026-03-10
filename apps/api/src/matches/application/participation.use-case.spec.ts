@@ -1,13 +1,14 @@
 import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
+import type { MatchAuditService } from './match-audit.service';
 import { PrismaService } from '../../infra/prisma/prisma.service';
-
-const mockAudit = { log: jest.fn() } as any;
 import {
   IdempotencyService,
   computeRequestHash,
 } from '../../common/idempotency/idempotency.service';
+
+const mockAudit = { log: jest.fn() } as unknown as MatchAuditService;
 
 const mockMatch = {
   id: 'match-1',
@@ -164,5 +165,32 @@ describe('ConfirmParticipationUseCase', () => {
 
     expect(result).toEqual(cachedResponse);
     expect(tx.match.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects SPECTATOR calling /confirm -> 409 SPECTATOR_MUST_TOGGLE', async () => {
+    const { prisma, tx } = buildTxPrisma();
+    tx.matchParticipant.findUnique = jest.fn().mockResolvedValue({
+      id: 'p-1',
+      status: 'SPECTATOR',
+      waitlistPosition: null,
+    });
+    const idempotency = buildIdempotency(prisma);
+    const useCase = new ConfirmParticipationUseCase(
+      prisma,
+      idempotency,
+      mockAudit,
+    );
+
+    await expect(
+      useCase.execute({
+        matchId: 'match-1',
+        actorId: 'spectator-user',
+        expectedRevision: 1,
+        idempotencyKey: 'key-spectator',
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'SPECTATOR_MUST_TOGGLE',
+    });
   });
 });

@@ -36,12 +36,11 @@ describe('RevokeSessionCommand', () => {
     const command = new RevokeSessionCommand(prisma, auditService);
     await command.execute('session-id', 'user-id');
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.authSession.update).toHaveBeenCalledWith({
       where: { id: 'session-id' },
       data: { revokedAt: expect.any(Date) },
     });
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'session_revoked',
@@ -63,9 +62,8 @@ describe('RevokeSessionCommand', () => {
     const command = new RevokeSessionCommand(prisma, auditService);
     await command.execute('session-id', 'user-id');
 
-    // eslint-disable-next-line @typescript-eslint/unbound-method
     expect(prisma.client.authSession.update).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.log).not.toHaveBeenCalled();
   });
 

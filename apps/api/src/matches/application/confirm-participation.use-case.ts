@@ -8,6 +8,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
 import { lockMatchRow } from './lock-match-row';
 import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { autoAssignTeamSlot } from './team-slot-sync';
 
 export interface ConfirmInput {
   matchId: string;
@@ -74,8 +75,15 @@ export class ConfirmParticipationUseCase {
         return buildMatchSnapshot(tx, input.matchId, input.actorId);
       }
 
+      // Spectators must use the toggle-spectator endpoint to re-enter as a participant.
+      // Allowing a direct confirm would skip the SPECTATOR→INVITED transition and
+      // bypass team-slot release/reassignment logic.
+      if (existing?.status === 'SPECTATOR') {
+        throw new ConflictException('SPECTATOR_MUST_TOGGLE');
+      }
+
       // Locked: only INVITED participants may confirm their invitation.
-      // New sign-ups (null, DECLINED, SPECTATOR) are blocked until unlock.
+      // New sign-ups (null) are blocked until unlock.
       if (match.isLocked && existing?.status !== 'INVITED') {
         throw new ConflictException('MATCH_LOCKED');
       }
@@ -131,6 +139,16 @@ export class ConfirmParticipationUseCase {
           newStatus,
         },
       );
+
+      if (newStatus === 'CONFIRMED' && match.teamsConfigured) {
+        await autoAssignTeamSlot(
+          tx,
+          input.matchId,
+          input.actorId,
+          input.actorId,
+          this.audit,
+        );
+      }
 
       return buildMatchSnapshot(tx, input.matchId, input.actorId);
     });

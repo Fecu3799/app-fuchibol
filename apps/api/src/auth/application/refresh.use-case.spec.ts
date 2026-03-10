@@ -73,7 +73,7 @@ describe('RefreshUseCase', () => {
 
     expect(result).toHaveProperty('accessToken', 'new-access-token');
     expect(result).toHaveProperty('refreshToken', 'session-id.new-secret');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.authSession.update).toHaveBeenCalled();
   });
 
@@ -164,13 +164,13 @@ describe('RefreshUseCase', () => {
       ((err as UnauthorizedException).getResponse() as Record<string, unknown>)
         .message,
     ).toBe('REFRESH_REUSED');
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(prisma.client.authSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ userId: 'user-id' }),
       }),
     );
-    // eslint-disable-next-line @typescript-eslint/unbound-method
+
     expect(auditService.log).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'refresh_reused_detected',
