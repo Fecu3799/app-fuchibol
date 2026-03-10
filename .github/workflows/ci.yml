@@ -46,6 +46,12 @@ jobs:
       SHADOW_DATABASE_URL: postgresql://app:app@localhost:5432/app_shadow_test?schema=public
       SHADOW_DATABASE_URL_TEST: postgresql://app:app@localhost:5432/app_shadow_test?schema=public
       TZ: UTC
+      # Dummy storage vars — no real S3 calls in tests; required by StorageService constructor
+      STORAGE_BUCKET: ci-test-bucket
+      STORAGE_REGION: us-east-1
+      STORAGE_ACCESS_KEY_ID: ci-key
+      STORAGE_SECRET_ACCESS_KEY: ci-secret
+      STORAGE_PUBLIC_BASE_URL: http://localhost:9000/ci-test-bucket
 
     steps:
       - uses: actions/checkout@v4
