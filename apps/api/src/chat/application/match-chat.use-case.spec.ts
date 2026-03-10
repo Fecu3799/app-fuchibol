@@ -29,6 +29,18 @@ function makeStorage(): StorageService {
   } as unknown as StorageService;
 }
 
+function makeGroupAccess() {
+  return {
+    checkAccess: jest.fn().mockResolvedValue(false),
+  } as unknown as import('./group-chat-access.service').GroupChatAccessService;
+}
+
+function makeDirectAccess() {
+  return {
+    checkAccess: jest.fn().mockResolvedValue(false),
+  } as unknown as import('./direct-chat-access.service').DirectChatAccessService;
+}
+
 // ---- MatchChatAccessService ----
 
 describe('MatchChatAccessService', () => {
@@ -221,7 +233,13 @@ describe('SendMessageUseCase', () => {
     (prisma.client.message.create as jest.Mock).mockResolvedValue(baseMessage);
     const access = new MatchChatAccessService(prisma);
     const storage = makeStorage();
-    const useCase = new SendMessageUseCase(prisma, access, storage);
+    const useCase = new SendMessageUseCase(
+      prisma,
+      access,
+      makeGroupAccess(),
+      makeDirectAccess(),
+      storage,
+    );
     const result = await useCase.execute({
       conversationId: 'conv-1',
       senderId: 'creator',
@@ -244,7 +262,13 @@ describe('SendMessageUseCase', () => {
     );
     const access = new MatchChatAccessService(prisma);
     const storage = makeStorage();
-    const useCase = new SendMessageUseCase(prisma, access, storage);
+    const useCase = new SendMessageUseCase(
+      prisma,
+      access,
+      makeGroupAccess(),
+      makeDirectAccess(),
+      storage,
+    );
     await useCase.execute({
       conversationId: 'conv-1',
       senderId: 'creator',
@@ -268,7 +292,13 @@ describe('SendMessageUseCase', () => {
     );
     const access = new MatchChatAccessService(prisma);
     const storage = makeStorage();
-    const useCase = new SendMessageUseCase(prisma, access, storage);
+    const useCase = new SendMessageUseCase(
+      prisma,
+      access,
+      makeGroupAccess(),
+      makeDirectAccess(),
+      storage,
+    );
     await expect(
       useCase.execute({
         conversationId: 'conv-1',
@@ -290,7 +320,13 @@ describe('SendMessageUseCase', () => {
     });
     const access = new MatchChatAccessService(prisma);
     const storage = makeStorage();
-    const useCase = new SendMessageUseCase(prisma, access, storage);
+    const useCase = new SendMessageUseCase(
+      prisma,
+      access,
+      makeGroupAccess(),
+      makeDirectAccess(),
+      storage,
+    );
     await expect(
       useCase.execute({
         conversationId: 'conv-1',
@@ -314,7 +350,13 @@ describe('SendMessageUseCase', () => {
     });
     const access = new MatchChatAccessService(prisma);
     const storage = makeStorage();
-    const useCase = new SendMessageUseCase(prisma, access, storage);
+    const useCase = new SendMessageUseCase(
+      prisma,
+      access,
+      makeGroupAccess(),
+      makeDirectAccess(),
+      storage,
+    );
     const result = await useCase.execute({
       conversationId: 'conv-1',
       senderId: 'creator',

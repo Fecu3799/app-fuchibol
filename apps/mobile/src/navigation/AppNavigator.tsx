@@ -3,7 +3,6 @@ import { BlurView } from 'expo-blur';
 import { Asset } from 'expo-asset';
 import { DefaultTheme, NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,6 +32,9 @@ import AdminVenuePitchesScreen from '../screens/AdminVenuePitchesScreen';
 import AdminPitchFormScreen from '../screens/AdminPitchFormScreen';
 import TeamAssemblyScreen from '../screens/TeamAssemblyScreen';
 import MatchChatScreen from '../screens/MatchChatScreen';
+import GroupChatScreen from '../screens/GroupChatScreen';
+import DirectChatScreen from '../screens/DirectChatScreen';
+import ChatsScreen from '../screens/ChatsScreen';
 
 // Preload and decode the auth background as soon as this module is imported,
 // so it's ready before the first AuthNavigator render.
@@ -52,7 +54,6 @@ export type AuthStackParamList = {
 export type TabParamList = {
   HomeTab: undefined;
   GroupsTab: undefined;
-  CreateTab: undefined;
   ProfileTab: undefined;
   SettingsTab: undefined;
 };
@@ -68,6 +69,7 @@ export type AdminStackParamList = {
 export type RootStackParamList = {
   MainTabs: NavigatorScreenParams<TabParamList>;
   AdminMain: undefined;
+  Chats: undefined;
   CreateMatch: undefined;
   MatchDetail: { matchId: string };
   EditMatch: { matchId: string };
@@ -80,6 +82,8 @@ export type RootStackParamList = {
   PublicUserProfile: { userId: string };
   TeamAssembly: { matchId: string };
   MatchChat: { matchId: string };
+  GroupChat: { groupId: string; groupName: string };
+  DirectChat: { conversationId: string; otherUsername: string };
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -94,12 +98,6 @@ const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 const AdminStack = createNativeStackNavigator<AdminStackParamList>();
-
-// ── Placeholder for Create tab (never rendered — intercepted by listener) ──
-
-function CreateTabPlaceholder() {
-  return null;
-}
 
 // ── Admin section navigator (stack inside each admin tab) ──
 
@@ -161,17 +159,6 @@ function MainTabs() {
         name="GroupsTab"
         component={GroupsScreen}
         options={{ tabBarLabel: 'Groups' }}
-      />
-      <Tab.Screen
-        name="CreateTab"
-        component={CreateTabPlaceholder}
-        options={{ tabBarLabel: 'Create' }}
-        listeners={({ navigation }) => ({
-          tabPress: (e) => {
-            e.preventDefault();
-            navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('CreateMatch');
-          },
-        })}
       />
       <Tab.Screen
         name="ProfileTab"
@@ -302,9 +289,24 @@ function AppNavigator() {
             options={{ title: 'Armar equipos' }}
           />
           <RootStack.Screen
+            name="Chats"
+            component={ChatsScreen}
+            options={{ title: 'Chats' }}
+          />
+          <RootStack.Screen
             name="MatchChat"
             component={MatchChatScreen}
             options={{ title: 'Chat' }}
+          />
+          <RootStack.Screen
+            name="GroupChat"
+            component={GroupChatScreen}
+            options={({ route }) => ({ title: route.params.groupName })}
+          />
+          <RootStack.Screen
+            name="DirectChat"
+            component={DirectChatScreen}
+            options={({ route }) => ({ title: route.params.otherUsername })}
           />
         </>
       )}

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import type { CompositeScreenProps } from '@react-navigation/native';
@@ -67,6 +68,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function ProfileScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const { user, refreshUser } = useAuth();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -143,123 +145,159 @@ export default function ProfileScreen({ navigation }: Props) {
       : null;
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.content}>
-      <Text style={s.title}>Perfil</Text>
+    <View style={s.container}>
+      {/* ── Header ── */}
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          style={s.headerBtn}
+          onPress={() => navigation.navigate('EditProfile')}
+          hitSlop={8}
+        >
+          <Text style={s.headerBtnText}>Editar</Text>
+        </Pressable>
 
-      {/* Completeness banner */}
-      {isProfileIncomplete && (
-        <View style={s.banner}>
-          <Text style={s.bannerText}>
-            ✦ Completá tu perfil — falta posición o nivel de juego
-          </Text>
-        </View>
-      )}
+        <Text style={s.headerTitle}>Perfil</Text>
 
-      {/* Avatar */}
-      <View style={s.avatarSection}>
-        <View style={s.avatarCircle}>
-          {user?.avatarUrl ? (
-            <Image source={{ uri: user.avatarUrl }} style={s.avatarImage} />
-          ) : (
-            <Text style={s.avatarInitial}>
-              {(user?.firstName ?? user?.username ?? '?')[0].toUpperCase()}
+        <Pressable
+          style={s.headerBtn}
+          onPress={() => navigation.navigate('MatchHistory')}
+          hitSlop={8}
+        >
+          <Text style={s.headerBtnText}>Historial</Text>
+        </Pressable>
+      </View>
+
+      <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+        {/* Completeness banner */}
+        {isProfileIncomplete && (
+          <View style={s.banner}>
+            <Text style={s.bannerText}>
+              ✦ Completá tu perfil — falta posición o nivel de juego
             </Text>
-          )}
-        </View>
-        {Platform.OS !== 'web' ? (
-          <TouchableOpacity
-            onPress={handlePickAvatar}
-            disabled={uploading}
-            activeOpacity={0.7}
-            style={s.changePhotoBtn}
-          >
-            {uploading ? (
-              <ActivityIndicator size="small" color="#1976d2" />
-            ) : (
-              <Text style={s.changePhotoText}>Cambiar foto</Text>
-            )}
-          </TouchableOpacity>
-        ) : (
-          <Text style={s.webNote}>Foto disponible en mobile</Text>
+          </View>
         )}
-        {uploadError ? <Text style={s.uploadError}>{uploadError}</Text> : null}
-      </View>
 
-      {/* Identity card */}
-      <View style={s.card}>
-        <View style={s.cardTitleRow}>
-          <Text style={s.cardTitle} numberOfLines={1}>
-            {displayName ?? user?.username ?? user?.email ?? '—'}
-          </Text>
-          {user?.age != null && (
-            <Text style={s.cardAge}>{user.age} años</Text>
+        {/* Avatar */}
+        <View style={s.avatarSection}>
+          <View style={s.avatarCircle}>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={s.avatarImage} />
+            ) : (
+              <Text style={s.avatarInitial}>
+                {(user?.firstName ?? user?.username ?? '?')[0].toUpperCase()}
+              </Text>
+            )}
+          </View>
+          {Platform.OS !== 'web' ? (
+            <TouchableOpacity
+              onPress={handlePickAvatar}
+              disabled={uploading}
+              activeOpacity={0.7}
+              style={s.changePhotoBtn}
+            >
+              {uploading ? (
+                <ActivityIndicator size="small" color="#1976d2" />
+              ) : (
+                <Text style={s.changePhotoText}>Cambiar foto</Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <Text style={s.webNote}>Foto disponible en mobile</Text>
           )}
+          {uploadError ? <Text style={s.uploadError}>{uploadError}</Text> : null}
         </View>
-        {displayName && user?.username ? (
-          <Text style={s.cardSubtitle}>@{user.username}</Text>
+
+        {/* Identity card */}
+        <View style={s.card}>
+          <View style={s.cardTitleRow}>
+            <Text style={s.cardTitle} numberOfLines={1}>
+              {displayName ?? user?.username ?? user?.email ?? '—'}
+            </Text>
+            {user?.age != null && (
+              <Text style={s.cardAge}>{user.age} años</Text>
+            )}
+          </View>
+          {displayName && user?.username ? (
+            <Text style={s.cardSubtitle}>@{user.username}</Text>
+          ) : null}
+
+          <View style={s.divider} />
+
+          <InfoRow label="Email" value={user?.email ?? '—'} />
+          <InfoRow label="Género" value={user?.gender ? GENDER_LABEL[user.gender] : '—'} />
+          <InfoRow label="Fecha de nacimiento" value={formatBirthDate(user?.birthDate)} />
+        </View>
+
+        {/* Football card */}
+        <View style={s.card}>
+          <Text style={s.cardHeader}>Datos de juego</Text>
+          <InfoRow
+            label="Posición"
+            value={user?.preferredPosition ? POSITION_LABEL[user.preferredPosition] : '—'}
+          />
+          <InfoRow
+            label="Nivel"
+            value={user?.skillLevel ? SKILL_LABEL[user.skillLevel] : '—'}
+          />
+        </View>
+
+        {/* Reliability card */}
+        {user?.suspendedUntil && new Date(user.suspendedUntil) > new Date() ? (
+          <View style={s.suspensionBanner}>
+            <Text style={s.suspensionText}>
+              Cuenta suspendida hasta{' '}
+              {new Date(user.suspendedUntil).toLocaleDateString('es-AR', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </Text>
+          </View>
         ) : null}
-
-        <View style={s.divider} />
-
-        <InfoRow label="Email" value={user?.email ?? '—'} />
-        <InfoRow label="Género" value={user?.gender ? GENDER_LABEL[user.gender] : '—'} />
-        <InfoRow label="Fecha de nacimiento" value={formatBirthDate(user?.birthDate)} />
-      </View>
-
-      {/* Football card */}
-      <View style={s.card}>
-        <Text style={s.cardHeader}>Datos de juego</Text>
-        <InfoRow
-          label="Posición"
-          value={user?.preferredPosition ? POSITION_LABEL[user.preferredPosition] : '—'}
-        />
-        <InfoRow
-          label="Nivel"
-          value={user?.skillLevel ? SKILL_LABEL[user.skillLevel] : '—'}
-        />
-      </View>
-
-      {/* Reliability card */}
-      {user?.suspendedUntil && new Date(user.suspendedUntil) > new Date() ? (
-        <View style={s.suspensionBanner}>
-          <Text style={s.suspensionText}>
-            Cuenta suspendida hasta{' '}
-            {new Date(user.suspendedUntil).toLocaleDateString('es-AR', {
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </Text>
+        <View style={s.card}>
+          <Text style={s.cardHeader}>Confiabilidad</Text>
+          <InfoRow
+            label={user?.reliabilityLabel ?? '—'}
+            value={`${user?.reliabilityScore ?? 100}/100`}
+          />
         </View>
-      ) : null}
-      <View style={s.card}>
-        <Text style={s.cardHeader}>Confiabilidad</Text>
-        <InfoRow
-          label={user?.reliabilityLabel ?? '—'}
-          value={`${user?.reliabilityScore ?? 100}/100`}
-        />
-      </View>
-
-      {/* Navigation */}
-      <Pressable style={s.menuRow} onPress={() => navigation.navigate('EditProfile')}>
-        <Text style={s.menuRowText}>Editar perfil</Text>
-        <Text style={s.chevron}>&gt;</Text>
-      </Pressable>
-
-      <Pressable style={s.menuRow} onPress={() => navigation.navigate('MatchHistory')}>
-        <Text style={s.menuRowText}>Historial de partidos</Text>
-        <Text style={s.chevron}>&gt;</Text>
-      </Pressable>
-
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  content: { paddingTop: 60, paddingHorizontal: 16, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingBottom: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerBtn: {
+    width: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  headerBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1976d2',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111',
+  },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
 
   avatarSection: { alignItems: 'center', marginBottom: 20 },
   avatarCircle: {
@@ -293,11 +331,7 @@ const s = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.04)',
   },
   cardTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
   cardTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 2, flexShrink: 1 },
@@ -316,18 +350,6 @@ const s = StyleSheet.create({
   },
   infoLabel: { fontSize: 13, color: '#888' },
   infoValue: { fontSize: 13, color: '#222', fontWeight: '500', flexShrink: 1, textAlign: 'right' },
-
-  menuRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 12,
-  },
-  menuRowText: { fontSize: 16, fontWeight: '500' },
-  chevron: { fontSize: 18, color: '#999' },
 
   suspensionBanner: {
     backgroundColor: '#fde8e8',

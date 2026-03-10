@@ -75,6 +75,8 @@ model User {
   auditLogs        MatchAuditLog[]    @relation("UserAuditLogs")
   avatar           UserAvatar?
   sentMessages     Message[]
+  directConvsAsA   Conversation[] @relation("ConversationUserA")
+  directConvsAsB   Conversation[] @relation("ConversationUserB")
   pushDevices      PushDevice[]
   authSessions        AuthSession[]
   emailTokens         EmailVerificationToken[]
@@ -200,13 +202,14 @@ model MatchParticipant {
 }
 
 model Group {
-  id        String        @id @default(uuid()) @db.Uuid
-  name      String
-  ownerId   String        @db.Uuid
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  owner     User          @relation("GroupOwner", fields: [ownerId], references: [id])
-  members   GroupMember[]
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  ownerId      String        @db.Uuid
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  owner        User          @relation("GroupOwner", fields: [ownerId], references: [id])
+  members      GroupMember[]
+  conversation Conversation?
 
   @@index([ownerId])
 }
@@ -338,12 +341,19 @@ model Conversation {
   id        String    @id @default(uuid()) @db.Uuid
   type      String    // 'MATCH' | 'GROUP' | 'DIRECT'
   matchId   String?   @unique @db.Uuid
+  groupId   String?   @unique @db.Uuid
+  userAId   String?   @db.Uuid  // DIRECT only — lexicographically smaller userId
+  userBId   String?   @db.Uuid  // DIRECT only — lexicographically larger userId
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
   match    Match?    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  group    Group?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userA    User?     @relation("ConversationUserA", fields: [userAId], references: [id])
+  userB    User?     @relation("ConversationUserB", fields: [userBId], references: [id])
   messages Message[]
 
+  @@unique([userAId, userBId])
   @@index([type])
 }
 

@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { MatchChatAccessService } from './match-chat-access.service';
+import { GroupChatAccessService } from './group-chat-access.service';
+import { DirectChatAccessService } from './direct-chat-access.service';
 import { StorageService } from '../../infra/storage/storage.service';
 import type { MessageView } from './list-messages.use-case';
 
@@ -21,13 +23,15 @@ export class SendMessageUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: MatchChatAccessService,
+    private readonly groupAccess: GroupChatAccessService,
+    private readonly directAccess: DirectChatAccessService,
     private readonly storage: StorageService,
   ) {}
 
   async execute(input: SendMessageInput): Promise<MessageView> {
     const conversation = await this.prisma.client.conversation.findUnique({
       where: { id: input.conversationId },
-      select: { type: true, matchId: true },
+      select: { type: true, matchId: true, groupId: true },
     });
 
     if (!conversation) {
@@ -39,9 +43,24 @@ export class SendMessageUseCase {
         conversation.matchId,
         input.senderId,
       );
-
       if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');
       if (isReadOnly) throw new UnprocessableEntityException('CHAT_READ_ONLY');
+    }
+
+    if (conversation.type === 'GROUP' && conversation.groupId) {
+      const allowed = await this.groupAccess.checkAccess(
+        conversation.groupId,
+        input.senderId,
+      );
+      if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');
+    }
+
+    if (conversation.type === 'DIRECT') {
+      const allowed = await this.directAccess.checkAccess(
+        input.conversationId,
+        input.senderId,
+      );
+      if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');
     }
 
     // Idempotency via DB unique constraint on (conversationId, senderId, clientMsgId)

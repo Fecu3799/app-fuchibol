@@ -141,10 +141,20 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{group.name}</Text>
-        <Text style={styles.memberCount}>
-          {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
-        </Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.title}>{group.name}</Text>
+            <Text style={styles.memberCount}>
+              {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
+            </Text>
+          </View>
+          <Pressable
+            style={styles.chatBtn}
+            onPress={() => navigation.navigate('GroupChat', { groupId, groupName: group.name })}
+          >
+            <Text style={styles.chatBtnText}>Chat</Text>
+          </Pressable>
+        </View>
       </View>
 
       {isOwner && (
@@ -205,8 +215,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   header: { padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 22, fontWeight: '700' },
   memberCount: { fontSize: 14, color: '#888', marginTop: 4 },
+  chatBtn: {
+    backgroundColor: '#1976d2',
+    borderRadius: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+  },
+  chatBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   list: { paddingHorizontal: 16, paddingTop: 8 },
 
   // Add member

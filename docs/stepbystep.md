@@ -48,6 +48,9 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 41. [Team Assembly Sprint 3: Roster integration (slot sync automático)](#41-team-assembly-sprint-3-roster-integration-slot-sync-automático)
 42. [Team Assembly Sprint 4: Auto-generación de equipos a T-30](#42-team-assembly-sprint-4-auto-generación-de-equipos-a-t-30)
 43. [Chat Sprint 1: Infraestructura de chat + Match chat end-to-end](#43-chat-sprint-1-infraestructura-de-chat--match-chat-end-to-end)
+44. [Chat Sprint 2: Home > Chats > Matches (lista de conversaciones)](#44-chat-sprint-2-home--chats--matches-lista-de-conversaciones)
+45. [Chat Sprint 3: Group Chat end-to-end](#45-chat-sprint-3-group-chat-end-to-end)
+46. [Chat Sprint 4: Direct Chat end-to-end](#46-chat-sprint-4-direct-chat-end-to-end)
 
 ---
 
@@ -1723,4 +1726,192 @@ apps/mobile/src/features/chat/useChatRealtime.ts (nuevo)
 apps/mobile/src/screens/MatchChatScreen.tsx (nuevo)
 apps/mobile/src/navigation/AppNavigator.tsx (+MatchChat route)
 apps/mobile/src/screens/MatchDetailScreen.tsx (+canChat, +Chat button)
+```
+
+---
+
+## 44. Chat Sprint 2: Home > Chats > Matches (lista de conversaciones)
+
+### Decisiones de diseño
+
+- **ChatsTab en bottom navigator**: se agrega como 6ta pestaña (`ChatsTab`) entre HomeTab y GroupsTab. React Navigation soporta >5 tabs sin "More" automático.
+- **Pestañas internas como pills**: Privados | Matches | Grupos implementadas como pills simples con `useState` (no nested navigator). Suficiente para MVP; facilita futura extensión.
+- **Solo Matches funcional en este sprint**: Privados y Grupos muestran placeholder "próximamente".
+- **Endpoint `GET /api/v1/conversations`**: devuelve solo MATCH por ahora. Extensible cuando existan GROUP y DIRECT.
+- **Sort por actividad**: use-case ordena por `lastMessage.createdAt` o `conversation.updatedAt` desc en JS (N pequeño — MVP).
+- **`isReadOnly` derivado en lista**: igual que en Sprint 1, calculado desde `match.status`.
+- **Acceso idéntico al chat individual**: filtra con el mismo criterio que `MatchChatAccessService` (creator OR CONFIRMED/WAITLISTED/SPECTATOR).
+
+### API
+
+- `GET /api/v1/conversations` → `MatchConversationListItem[]`
+  - Incluye: `id, type, isReadOnly, match{id,title,status,startsAt}, lastMessage{id,body,senderUsername,createdAt}|null, updatedAt`
+  - Solo retorna conversaciones MATCH donde el usuario es creator o participante activo
+
+### Mobile
+
+- `ChatsScreen` con pestañas Privados / Matches / Grupos
+- `MatchConversationItem`: título del partido, preview del último mensaje, timestamp (HH:mm si hoy, dd/mm si anterior), badge "Solo lectura" si aplica
+- Pull-to-refresh en lista de Matches
+- Al tocar → `navigation.navigate('MatchChat', { matchId })` → reutiliza `MatchChatScreen` existente
+- `useMatchConversations` hook con React Query (queryKey `['match-conversations']`)
+
+### Tests
+
+- 9 tests unitarios en `list-user-conversations.use-case.spec.ts`
+  - shape correcta, isReadOnly played/canceled, lastMessage incluido, sort por tiempo desc, filtro Prisma correcto, array vacío
+
+### Archivos creados / modificados
+
+```
+apps/api/src/chat/application/list-user-conversations.use-case.ts (nuevo)
+apps/api/src/chat/application/list-user-conversations.use-case.spec.ts (nuevo — 9 tests)
+apps/api/src/chat/api/chat.controller.ts (+GET conversations, +ListUserConversationsUseCase)
+apps/api/src/chat/chat.module.ts (+ListUserConversationsUseCase provider)
+apps/mobile/src/types/api.ts (+MatchConversationListItem)
+apps/mobile/src/features/chat/chatClient.ts (+listMatchConversations)
+apps/mobile/src/features/chat/useMatchConversations.ts (nuevo)
+apps/mobile/src/screens/ChatsScreen.tsx (nuevo)
+apps/mobile/src/navigation/AppNavigator.tsx (+ChatsTab en TabParamList y MainTabs)
+```
+
+## 45. Chat Sprint 3: Group Chat end-to-end
+
+### Decisiones de diseño
+
+- **Infraestructura compartida**: Se reutiliza el mismo `Conversation`/`Message` model, `ListMessagesUseCase`, `SendMessageUseCase` y WS gateway. Se agrega `groupId` a `Conversation` y se crea `GroupChatAccessService` que verifica `GroupMember` directamente — sin tabla `ConversationMember` separada.
+- **Conversación creada con el grupo**: `CreateGroupUseCase` crea la conversación GROUP en la misma `$transaction`. Data migration crea conversaciones para grupos existentes.
+- **Acceso derivado de membresía**: No hay sync periódico. El acceso se verifica en cada request contra `GroupMember`. Remover un miembro del grupo revoca el acceso al chat inmediatamente.
+- **`GroupChatScreen` independiente** (no abstracción prematura): Espeja `MatchChatScreen` pero usa `useGroupConversation(groupId)`. Sin concepto de `isReadOnly` (grupos siempre escribibles para miembros).
+- **Endpoint `GET /api/v1/groups/:groupId/conversation`**: Retorna `ConversationInfo` para que el cliente pueda obtener el `conversationId` y usar los endpoints de mensajes existentes.
+- **Endpoint `GET /api/v1/conversations/groups`**: Lista conversaciones GROUP del usuario con lastMessage preview. NestJS resuelve `groups` antes del param `:id` — sin conflicto.
+- **Partidos pasados no aparecen en Chats > Matches**: Se filtra `status: { notIn: ['played', 'canceled'] }` al nivel de Prisma query. Los chats de partidos pasados solo se acceden desde el historial del perfil.
+
+### API
+
+- `GET /api/v1/groups/:groupId/conversation` → `ConversationInfo { id, type, isReadOnly }`
+  - 403 `CHAT_ACCESS_DENIED` si el usuario no es miembro del grupo
+  - 404 `CONVERSATION_NOT_FOUND` si no existe la conversación
+- `GET /api/v1/conversations/groups` → `GroupConversationListItem[]`
+  - Incluye: `id, type, group{id,name}, lastMessage{id,body,senderUsername,createdAt}|null, updatedAt`
+  - Solo retorna grupos donde el usuario es miembro
+
+### DB
+
+- Migración `20260310160000_add_group_conversation`:
+  - `Conversation.groupId UUID? @unique` con FK a `Group` (CASCADE)
+  - Data migration: INSERT conversations para grupos existentes sin conversación
+
+### Mobile
+
+- `ChatsScreen` pestaña Grupos: lista `GroupConversationListItem`, `GroupConversationItem` mostrando nombre del grupo, last message, timestamp
+- Al tocar → `navigation.navigate('GroupChat', { groupId, groupName })`
+- `GroupChatScreen`: chat completo reutilizando `useMessages`, `useSendMessage`, `useChatRealtime`
+- `GroupDetailScreen`: botón "Chat" en el header → navega a `GroupChat`
+- Navegación: `GroupChat: { groupId, groupName }` en `RootStackParamList`
+
+### Tests
+
+- 10 tests en `group-chat.use-case.spec.ts`
+  - `GroupChatAccessService`: miembro accede, no-miembro bloqueado
+  - `GetGroupConversationUseCase`: retorna ConversationInfo, 403 no-miembro, 404 sin conversación
+  - `ListGroupConversationsUseCase`: vacío, shape correcta, sort desc, lastMessage null, filtro por usuario
+- `create-group.use-case.spec.ts` actualizado: mock tx incluye `conversation.create`
+- `match-chat.use-case.spec.ts` actualizado: `SendMessageUseCase` y `ListMessagesUseCase` reciben `GroupChatAccessService` stub
+
+### Archivos creados / modificados
+
+```
+apps/api/prisma/schema.prisma (+groupId en Conversation, +conversation en Group)
+apps/api/prisma/migrations/20260310160000_add_group_conversation/migration.sql (nuevo)
+apps/api/src/chat/application/group-chat-access.service.ts (nuevo)
+apps/api/src/chat/application/get-group-conversation.use-case.ts (nuevo)
+apps/api/src/chat/application/list-group-conversations.use-case.ts (nuevo)
+apps/api/src/chat/application/group-chat.use-case.spec.ts (nuevo — 10 tests)
+apps/api/src/chat/application/send-message.use-case.ts (+GroupChatAccessService, GROUP block)
+apps/api/src/chat/application/list-messages.use-case.ts (+GroupChatAccessService, GROUP block)
+apps/api/src/chat/application/match-chat.use-case.spec.ts (actualizado — GroupChatAccessService stub)
+apps/api/src/chat/application/list-user-conversations.use-case.ts (+filtro played/canceled)
+apps/api/src/chat/application/list-user-conversations.use-case.spec.ts (actualizado — 7 tests)
+apps/api/src/chat/api/chat.controller.ts (+GET conversations/groups, +GET groups/:groupId/conversation)
+apps/api/src/chat/realtime/chat.gateway.ts (+groupId select, GROUP membership check)
+apps/api/src/chat/chat.module.ts (+GroupChatAccessService, GetGroupConversationUseCase, ListGroupConversationsUseCase)
+apps/api/src/groups/application/create-group.use-case.ts (+conversation.create en tx)
+apps/api/src/groups/application/create-group.use-case.spec.ts (actualizado — mock tx con conversation)
+apps/mobile/src/types/api.ts (+GroupConversationListItem, +MatchConversationListItem)
+apps/mobile/src/features/chat/chatClient.ts (+listGroupConversations, +getGroupConversation)
+apps/mobile/src/features/chat/useGroupConversation.ts (nuevo)
+apps/mobile/src/features/chat/useGroupConversations.ts (nuevo)
+apps/mobile/src/screens/GroupChatScreen.tsx (nuevo)
+apps/mobile/src/screens/ChatsScreen.tsx (+Grupos tab, GroupConversationItem)
+apps/mobile/src/screens/GroupDetailScreen.tsx (+botón Chat)
+apps/mobile/src/navigation/AppNavigator.tsx (+GroupChat en RootStackParamList y stack)
+```
+
+## 46. Chat Sprint 4: Direct Chat end-to-end
+
+### Decisiones de diseño
+
+- **Infraestructura compartida**: DIRECT se implementa sobre el mismo `Conversation`/`Message` model, los mismos `ListMessagesUseCase` y `SendMessageUseCase`, y el mismo WS gateway. Sin sistema paralelo.
+- **Unicidad por par**: `userAId`/`userBId` almacenados en orden lexicográfico (menor UUID = userA). La unique constraint `@@unique([userAId, userBId])` garantiza que A→B y B→A resuelven a la misma fila.
+- **Creación on-demand (get-or-create)**: `GetOrCreateDirectConversationUseCase` busca primero, crea si no existe. Race condition cubierta: si la creación falla con P2002 (duplicate key), re-fetcha la conversación existente.
+- **`DirectChatAccessService`**: valida que el actor es `userAId` o `userBId` de la conversación. Sin tabla intermedia de membresía.
+- **`DirectChatScreen` recibe `conversationId`**: quien navega (lista o botón de perfil) ya tiene o acaba de obtener el ID. La pantalla no necesita un step adicional de "get conversation".
+- **Botón "Mensaje" en perfil público**: llama `POST /conversations/direct` con loading state en el botón, luego navega. Error silencioso (el usuario queda en el perfil y puede reintentar).
+- **No self-chat**: 422 `CANNOT_CHAT_WITH_SELF` si `requesterId === targetUserId`.
+
+### API
+
+- `POST /api/v1/conversations/direct` — body: `{ targetUserId: UUID }` → `ConversationInfo { id, type, isReadOnly }`
+  - 422 `CANNOT_CHAT_WITH_SELF` si es el mismo usuario
+  - 404 `USER_NOT_FOUND` si el target no existe
+  - Idempotente: devuelve la conversación existente si ya había una
+- `GET /api/v1/conversations/direct` → `DirectConversationListItem[]`
+  - Incluye: `id, type, otherUser{id,username,avatarUrl}, lastMessage{id,body,senderUsername,createdAt}|null, updatedAt`
+  - Solo retorna conversaciones donde el usuario es userA o userB
+
+### DB
+
+- Migración `20260310180000_add_direct_conversation`:
+  - `Conversation.userAId UUID?` y `Conversation.userBId UUID?` con FK a `User`
+  - Unique constraint `(userAId, userBId)` para garantizar unicidad del par
+  - `@@unique([userAId, userBId])` en schema Prisma
+
+### Mobile
+
+- `DirectChatScreen`: chat completo reutilizando `useMessages`, `useSendMessage`, `useChatRealtime`. Sin nombre del otro usuario en los bubbles (chat 1:1 — contexto implícito).
+- `ChatsScreen` pestaña Privados: funcional con `useDirectConversations`, `DirectConversationItem` mostrando username del otro usuario y último mensaje.
+- `PublicUserProfileScreen`: botón "Mensaje" con loading state → `getOrCreateDirectConversation` → navega a `DirectChat`.
+- `DirectChat: { conversationId, otherUsername }` en `RootStackParamList`; header muestra el username del otro.
+
+### Tests
+
+- 14 tests en `direct-chat.use-case.spec.ts`:
+  - `DirectChatAccessService` (4): userA, userB, tercero, conversación inexistente
+  - `GetOrCreateDirectConversationUseCase` (6): self-chat 422, USER_NOT_FOUND 404, retorna existente, crea nueva, orden canónico (B→A produce userA<userB), race condition P2002
+  - `ListDirectConversationsUseCase` (4): vacío, shape con otherUser siendo userB, otherUser siendo userA, sort desc, filtro Prisma
+- `match-chat.use-case.spec.ts` actualizado: `SendMessageUseCase` recibe `DirectChatAccessService` stub como 4º parámetro
+
+### Archivos creados / modificados
+
+```
+apps/api/prisma/schema.prisma (+userAId/userBId en Conversation, relations en User)
+apps/api/prisma/migrations/20260310180000_add_direct_conversation/migration.sql (nuevo)
+apps/api/src/chat/application/direct-chat-access.service.ts (nuevo)
+apps/api/src/chat/application/get-or-create-direct-conversation.use-case.ts (nuevo)
+apps/api/src/chat/application/list-direct-conversations.use-case.ts (nuevo)
+apps/api/src/chat/application/direct-chat.use-case.spec.ts (nuevo — 14 tests)
+apps/api/src/chat/application/send-message.use-case.ts (+DirectChatAccessService, DIRECT block)
+apps/api/src/chat/application/list-messages.use-case.ts (+DirectChatAccessService, DIRECT block)
+apps/api/src/chat/application/match-chat.use-case.spec.ts (actualizado — makeDirectAccess stub)
+apps/api/src/chat/realtime/chat.gateway.ts (+DIRECT subscription check, +userAId/userBId en select)
+apps/api/src/chat/api/chat.controller.ts (+POST/GET conversations/direct, StartDirectConversationDto)
+apps/api/src/chat/chat.module.ts (+DirectChatAccessService, GetOrCreateDirectConversationUseCase, ListDirectConversationsUseCase)
+apps/mobile/src/types/api.ts (+DirectConversationListItem)
+apps/mobile/src/features/chat/chatClient.ts (+listDirectConversations, +getOrCreateDirectConversation)
+apps/mobile/src/features/chat/useDirectConversations.ts (nuevo)
+apps/mobile/src/screens/DirectChatScreen.tsx (nuevo)
+apps/mobile/src/screens/ChatsScreen.tsx (+Privados tab, DirectConversationItem, useDirectConversations)
+apps/mobile/src/screens/PublicUserProfileScreen.tsx (+Mensaje button, handleMessage, startingChat state)
+apps/mobile/src/navigation/AppNavigator.tsx (+DirectChat en RootStackParamList y stack, import DirectChatScreen)
 ```

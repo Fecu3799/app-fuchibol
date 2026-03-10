@@ -19,6 +19,9 @@ function buildMockPrisma() {
         .fn()
         .mockResolvedValue({ groupId: 'group-1', userId: 'user-1' }),
     },
+    conversation: {
+      create: jest.fn().mockResolvedValue({ id: 'conv-1', type: 'GROUP' }),
+    },
   };
 
   const prisma = {

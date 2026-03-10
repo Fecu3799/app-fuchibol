@@ -33,6 +33,10 @@ export class CreateGroupUseCase {
         },
       });
 
+      await tx.conversation.create({
+        data: { type: 'GROUP', groupId: group.id },
+      });
+
       return {
         id: group.id,
         name: group.name,

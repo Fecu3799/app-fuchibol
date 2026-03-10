@@ -1,5 +1,40 @@
 import { buildUrl, fetchJson } from '../../lib/api';
-import type { ConversationInfo, ListMessagesResponse, MessageView } from '../../types/api';
+import type {
+  ConversationInfo,
+  DirectConversationListItem,
+  GroupConversationListItem,
+  ListMessagesResponse,
+  MatchConversationListItem,
+  MessageView,
+} from '../../types/api';
+
+export function listMatchConversations(
+  token: string,
+): Promise<MatchConversationListItem[]> {
+  return fetchJson<MatchConversationListItem[]>(
+    buildUrl('/api/v1/conversations'),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
+export function listGroupConversations(
+  token: string,
+): Promise<GroupConversationListItem[]> {
+  return fetchJson<GroupConversationListItem[]>(
+    buildUrl('/api/v1/conversations/groups'),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
+export function getGroupConversation(
+  token: string,
+  groupId: string,
+): Promise<ConversationInfo> {
+  return fetchJson<ConversationInfo>(
+    buildUrl(`/api/v1/groups/${groupId}/conversation`),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+}
 
 export function getMatchConversation(
   token: string,
@@ -8,6 +43,32 @@ export function getMatchConversation(
   return fetchJson<ConversationInfo>(
     buildUrl(`/api/v1/matches/${matchId}/conversation`),
     { headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
+export function listDirectConversations(
+  token: string,
+): Promise<DirectConversationListItem[]> {
+  return fetchJson<DirectConversationListItem[]>(
+    buildUrl('/api/v1/conversations/direct'),
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+}
+
+export function getOrCreateDirectConversation(
+  token: string,
+  targetUserId: string,
+): Promise<ConversationInfo> {
+  return fetchJson<ConversationInfo>(
+    buildUrl('/api/v1/conversations/direct'),
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ targetUserId }),
+    },
   );
 }
 

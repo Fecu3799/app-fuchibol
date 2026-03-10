@@ -66,7 +66,13 @@ export class ChatGateway
 
     const conversation = await this.prisma.client.conversation.findUnique({
       where: { id: data.conversationId },
-      select: { type: true, matchId: true },
+      select: {
+        type: true,
+        matchId: true,
+        groupId: true,
+        userAId: true,
+        userBId: true,
+      },
     });
 
     if (!conversation) {
@@ -104,6 +110,28 @@ export class ChatGateway
           );
           return;
         }
+      }
+    }
+
+    if (conversation.type === 'GROUP' && conversation.groupId) {
+      const member = await this.prisma.client.groupMember.findUnique({
+        where: { groupId_userId: { groupId: conversation.groupId, userId } },
+        select: { groupId: true },
+      });
+      if (!member) {
+        this.logger.warn(
+          `WS chat.subscribe: user ${userId} denied access to group conv ${data.conversationId}`,
+        );
+        return;
+      }
+    }
+
+    if (conversation.type === 'DIRECT') {
+      if (conversation.userAId !== userId && conversation.userBId !== userId) {
+        this.logger.warn(
+          `WS chat.subscribe: user ${userId} denied access to direct conv ${data.conversationId}`,
+        );
+        return;
       }
     }
 

@@ -353,6 +353,58 @@ export interface ListMessagesResponse {
   nextCursor: string | null;
 }
 
+export interface GroupConversationListItem {
+  id: string;
+  type: string;
+  group: {
+    id: string;
+    name: string;
+  };
+  lastMessage: {
+    id: string;
+    body: string;
+    senderUsername: string;
+    createdAt: string;
+  } | null;
+  updatedAt: string;
+}
+
+export interface DirectConversationListItem {
+  id: string;
+  type: string;
+  otherUser: {
+    id: string;
+    username: string;
+    avatarUrl: string | null;
+  };
+  lastMessage: {
+    id: string;
+    body: string;
+    senderUsername: string;
+    createdAt: string;
+  } | null;
+  updatedAt: string;
+}
+
+export interface MatchConversationListItem {
+  id: string;
+  type: string;
+  isReadOnly: boolean;
+  match: {
+    id: string;
+    title: string;
+    status: string;
+    startsAt: string;
+  };
+  lastMessage: {
+    id: string;
+    body: string;
+    senderUsername: string;
+    createdAt: string;
+  } | null;
+  updatedAt: string;
+}
+
 // ── Errors ──
 
 export interface ApiErrorBody {

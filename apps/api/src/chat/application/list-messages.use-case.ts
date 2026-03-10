@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { MatchChatAccessService } from './match-chat-access.service';
+import { GroupChatAccessService } from './group-chat-access.service';
+import { DirectChatAccessService } from './direct-chat-access.service';
 import { StorageService } from '../../infra/storage/storage.service';
 
 export interface MessageView {
@@ -39,6 +41,8 @@ export class ListMessagesUseCase {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: MatchChatAccessService,
+    private readonly groupAccess: GroupChatAccessService,
+    private readonly directAccess: DirectChatAccessService,
     private readonly storage: StorageService,
   ) {}
 
@@ -47,7 +51,7 @@ export class ListMessagesUseCase {
 
     const conversation = await this.prisma.client.conversation.findUnique({
       where: { id: input.conversationId },
-      select: { type: true, matchId: true },
+      select: { type: true, matchId: true, groupId: true },
     });
 
     if (!conversation) {
@@ -57,6 +61,22 @@ export class ListMessagesUseCase {
     if (conversation.type === 'MATCH' && conversation.matchId) {
       const { allowed } = await this.access.checkAccess(
         conversation.matchId,
+        input.actorId,
+      );
+      if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');
+    }
+
+    if (conversation.type === 'GROUP' && conversation.groupId) {
+      const allowed = await this.groupAccess.checkAccess(
+        conversation.groupId,
+        input.actorId,
+      );
+      if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');
+    }
+
+    if (conversation.type === 'DIRECT') {
+      const allowed = await this.directAccess.checkAccess(
+        input.conversationId,
         input.actorId,
       );
       if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');

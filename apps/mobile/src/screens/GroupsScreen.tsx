@@ -6,6 +6,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -44,25 +45,40 @@ function GroupCard({
 }
 
 export default function GroupsScreen() {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<Nav>();
   const { user } = useAuth();
   const { data, isLoading, error, refetch } = useGroups();
 
   if (isLoading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.headerBtn} />
+          <Text style={styles.headerTitle}>Groups</Text>
+          <View style={styles.headerBtn} />
+        </View>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" />
+        </View>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>Failed to load groups</Text>
-        <Pressable style={styles.retryBtn} onPress={() => refetch()}>
-          <Text style={styles.retryBtnText}>Retry</Text>
-        </Pressable>
+      <View style={styles.container}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.headerBtn} />
+          <Text style={styles.headerTitle}>Groups</Text>
+          <View style={styles.headerBtn} />
+        </View>
+        <View style={styles.center}>
+          <Text style={styles.errorText}>Failed to load groups</Text>
+          <Pressable style={styles.retryBtn} onPress={() => refetch()}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -77,14 +93,16 @@ export default function GroupsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Groups</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Pressable
-          style={styles.createBtn}
+          style={styles.headerBtn}
           onPress={() => navigation.navigate('CreateGroup')}
+          hitSlop={8}
         >
-          <Text style={styles.createBtnText}>+ Create</Text>
+          <Text style={styles.headerBtnPlus}>+</Text>
         </Pressable>
+        <Text style={styles.headerTitle}>Groups</Text>
+        <View style={styles.headerBtn} />
       </View>
 
       {isEmpty ? (
@@ -123,21 +141,32 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 60,
+    paddingHorizontal: 8,
     paddingBottom: 12,
     backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
-  title: { fontSize: 22, fontWeight: '700' },
-  createBtn: {
-    backgroundColor: '#1976d2',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  headerBtn: {
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
-  createBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  headerBtnPlus: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: '#1976d2',
+    lineHeight: 32,
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111',
+  },
   list: { padding: 16 },
   section: { marginBottom: 20 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#555', marginBottom: 8 },
@@ -146,11 +175,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 14,
     marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.05)',
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardName: { fontSize: 16, fontWeight: '600', flex: 1 },

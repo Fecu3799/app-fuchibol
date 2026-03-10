@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,8 +11,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { PublicUserProfile, UserGender, PreferredPosition, SkillLevel } from '../types/api';
 import { getPublicProfile } from '../features/auth/authClient';
+import { getOrCreateDirectConversation } from '../features/chat/chatClient';
 import { Avatar } from '../components/Avatar';
 import { ApiError } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PublicUserProfile'>;
 
@@ -45,11 +48,13 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function PublicUserProfileScreen({ route }: Props) {
+export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const { userId } = route.params;
+  const { token } = useAuth();
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [startingChat, setStartingChat] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +93,22 @@ export default function PublicUserProfileScreen({ route }: Props) {
       ? [profile.firstName, profile.lastName].filter(Boolean).join(' ')
       : null;
 
+  const handleMessage = () => {
+    if (!token || startingChat) return;
+    setStartingChat(true);
+    getOrCreateDirectConversation(token, userId)
+      .then((conv) => {
+        navigation.navigate('DirectChat', {
+          conversationId: conv.id,
+          otherUsername: profile.username ?? displayName ?? 'Usuario',
+        });
+      })
+      .catch(() => {
+        // no-op: navigation stays on profile; user can retry
+      })
+      .finally(() => setStartingChat(false));
+  };
+
   return (
     <ScrollView style={s.container} contentContainerStyle={s.content}>
       {/* Header */}
@@ -105,6 +126,17 @@ export default function PublicUserProfileScreen({ route }: Props) {
           {displayName && profile.username ? (
             <Text style={s.username}>@{profile.username}</Text>
           ) : null}
+          <Pressable
+            style={[s.msgBtn, startingChat && s.msgBtnDisabled]}
+            onPress={handleMessage}
+            disabled={startingChat}
+          >
+            {startingChat ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={s.msgBtnText}>Mensaje</Text>
+            )}
+          </Pressable>
         </View>
       </View>
 
@@ -162,6 +194,18 @@ const s = StyleSheet.create({
   displayName: { fontSize: 20, fontWeight: '700', color: '#111', flexShrink: 1 },
   age: { fontSize: 14, color: '#888', fontWeight: '500' },
   username: { fontSize: 13, color: '#888', marginTop: 2 },
+  msgBtn: {
+    marginTop: 10,
+    backgroundColor: '#1976d2',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    minWidth: 90,
+    alignItems: 'center',
+  },
+  msgBtnDisabled: { opacity: 0.6 },
+  msgBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 
   card: {
     backgroundColor: '#fff',

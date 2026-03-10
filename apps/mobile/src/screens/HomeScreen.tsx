@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
@@ -72,6 +75,7 @@ function MatchRow({ item, onPress }: { item: MatchHomeItem; onPress: () => void 
 }
 
 export default function HomeScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const query = useMatches();
   useLogoutOn401(query);
 
@@ -125,18 +129,47 @@ export default function HomeScreen({ navigation }: Props) {
     };
   }, [isFetching, isLoading, displayData]);
 
+  // ── Create menu ──
+  const handleCreatePress = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancelar', 'Crear partido', 'Crear grupo'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) navigation.navigate('CreateMatch');
+          if (buttonIndex === 2) navigation.navigate('CreateGroup');
+        },
+      );
+    } else {
+      // Web fallback (debug only)
+      navigation.navigate('CreateMatch');
+    }
+  }, [navigation]);
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Matches</Text>
-      </View>
+      {/* ── Header ── */}
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable
+          style={styles.headerBtn}
+          onPress={handleCreatePress}
+          hitSlop={8}
+        >
+          <Text style={styles.headerBtnPlus}>+</Text>
+        </Pressable>
 
-      <Pressable
-        style={styles.createBtn}
-        onPress={() => navigation.navigate('CreateMatch')}
-      >
-        <Text style={styles.createBtnText}>+ Create Match</Text>
-      </Pressable>
+        <Text style={styles.headerTitle}>Matches</Text>
+
+        <Pressable
+          style={styles.headerBtn}
+          onPress={() => navigation.navigate('Chats')}
+          hitSlop={8}
+        >
+          <Text style={styles.headerBtnChat}>Chats</Text>
+        </Pressable>
+      </View>
 
       {/* Refetch indicator (data visible underneath, debounced 250ms) */}
       {showUpdating && (
@@ -182,6 +215,39 @@ export default function HomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingBottom: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerBtn: {
+    width: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  headerBtnPlus: {
+    fontSize: 28,
+    fontWeight: '300',
+    color: '#1976d2',
+    lineHeight: 32,
+  },
+  headerBtnChat: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1976d2',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111',
+  },
   refreshBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -194,18 +260,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   refreshText: { fontSize: 12, color: '#1976d2' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 60,
-    paddingBottom: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  headerTitle: { fontSize: 22, fontWeight: '700' },
   loader: { marginTop: 40 },
   list: { padding: 12 },
   row: {
@@ -233,13 +287,4 @@ const styles = StyleSheet.create({
   },
   retryText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   requestIdText: { fontSize: 11, fontFamily: 'monospace', color: '#999', marginBottom: 8 },
-  createBtn: {
-    backgroundColor: '#1976d2',
-    marginHorizontal: 12,
-    marginTop: 10,
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-  },
-  createBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 });
