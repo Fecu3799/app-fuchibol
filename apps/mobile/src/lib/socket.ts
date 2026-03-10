@@ -29,3 +29,32 @@ export function disconnectMatchSocket(): void {
     currentToken = null;
   }
 }
+
+let chatSocket: Socket | null = null;
+let chatToken: string | null = null;
+
+export function getChatSocket(token: string): Socket {
+  if (chatSocket && chatToken === token) {
+    return chatSocket;
+  }
+  if (chatSocket) {
+    chatSocket.disconnect();
+  }
+  chatToken = token;
+  chatSocket = io(`${apiBaseUrl}/chat`, {
+    auth: { token },
+    transports: ['websocket'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionAttempts: Infinity,
+  });
+  return chatSocket;
+}
+
+export function disconnectChatSocket(): void {
+  if (chatSocket) {
+    chatSocket.disconnect();
+    chatSocket = null;
+    chatToken = null;
+  }
+}

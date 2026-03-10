@@ -328,6 +328,31 @@ export interface ListPitchesAdminResponse {
   items: PitchAdmin[];
 }
 
+// ── Chat ──
+
+export interface ConversationInfo {
+  id: string;
+  type: string;
+  isReadOnly: boolean;
+}
+
+export interface MessageView {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderUsername: string;
+  senderAvatarUrl: string | null;
+  body: string;
+  clientMsgId: string;
+  createdAt: string;
+}
+
+export interface ListMessagesResponse {
+  items: MessageView[];
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+
 // ── Errors ──
 
 export interface ApiErrorBody {

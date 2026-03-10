@@ -74,6 +74,7 @@ model User {
   groupMemberships GroupMember[]
   auditLogs        MatchAuditLog[]    @relation("UserAuditLogs")
   avatar           UserAvatar?
+  sentMessages     Message[]
   pushDevices      PushDevice[]
   authSessions        AuthSession[]
   emailTokens         EmailVerificationToken[]
@@ -149,6 +150,7 @@ model Match {
   participants MatchParticipant[]
   auditLogs    MatchAuditLog[]
   teamSlots    MatchTeamSlot[]
+  conversation Conversation?
 
   @@index([createdById], map: "Match_createdById_idx")
   @@index([startsAt], map: "Match_startsAt_idx")
@@ -328,6 +330,36 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id        String    @id @default(uuid()) @db.Uuid
+  type      String    // 'MATCH' | 'GROUP' | 'DIRECT'
+  matchId   String?   @unique @db.Uuid
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  match    Match?    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([type])
+}
+
+model Message {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @db.Uuid
+  senderId       String   @db.Uuid
+  body           String
+  clientMsgId    String
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+  createdAt    DateTime     @default(now())
+
+  @@unique([conversationId, senderId, clientMsgId])
+  @@index([conversationId, createdAt(sort: Desc)])
 }
 
 model AuthAuditEvent {

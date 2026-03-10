@@ -32,6 +32,7 @@ import AdminVenueFormScreen from '../screens/AdminVenueFormScreen';
 import AdminVenuePitchesScreen from '../screens/AdminVenuePitchesScreen';
 import AdminPitchFormScreen from '../screens/AdminPitchFormScreen';
 import TeamAssemblyScreen from '../screens/TeamAssemblyScreen';
+import MatchChatScreen from '../screens/MatchChatScreen';
 
 // Preload and decode the auth background as soon as this module is imported,
 // so it's ready before the first AuthNavigator render.
@@ -78,6 +79,7 @@ export type RootStackParamList = {
   EditProfile: undefined;
   PublicUserProfile: { userId: string };
   TeamAssembly: { matchId: string };
+  MatchChat: { matchId: string };
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -298,6 +300,11 @@ function AppNavigator() {
             name="TeamAssembly"
             component={TeamAssemblyScreen}
             options={{ title: 'Armar equipos' }}
+          />
+          <RootStack.Screen
+            name="MatchChat"
+            component={MatchChatScreen}
+            options={{ title: 'Chat' }}
           />
         </>
       )}

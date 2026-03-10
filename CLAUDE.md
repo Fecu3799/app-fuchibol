@@ -190,6 +190,7 @@ Throttle guards activos. Login tracker por `identifier`. Helmet + CORS + body li
 - `type String` (no enum Prisma) para tipos de audit log → evita migraciones al agregar eventos.
 - Data migrations dentro del SQL de migración (no scripts separados).
 - Constraints UNIQUE donde se requiera idempotencia (ej. `clientMsgId`).
+- **NUNCA editar un archivo de migración después de que fue aplicado.** Prisma guarda un checksum al aplicar; si el archivo cambia, `prisma migrate dev` falla con "migration was modified" y la única salida es `prisma migrate reset` — lo que destruye todos los datos de desarrollo. Si se necesita una data migration adicional o cualquier cambio post-apply, crear una **nueva** migración separada.
 
 ### Chat dedupe
 

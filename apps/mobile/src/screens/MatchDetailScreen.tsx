@@ -289,7 +289,7 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
   const [actividadExpanded, setActividadExpanded] = useState(false);
   const auditLogs = useMatchAuditLogs(matchId, { enabled: actividadExpanded });
 
-  const { token, logout } = useAuth();
+  const { token, logout, user } = useAuth();
   const qc = useQueryClient();
   const { data: match, isLoading, isFetching, error, refetch } = query;
 
@@ -662,6 +662,11 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
     displayMatch.matchStatus === "CANCELLED";
   const canKick = !isReadOnly && displayMatch.actionsAllowed.includes("manage_kick");
   const canManageTeams = displayMatch.actionsAllowed.includes("manage_teams");
+  const CHAT_STATUSES = ["CONFIRMED", "WAITLISTED", "SPECTATOR"];
+  const canChat =
+    user?.id === displayMatch.createdById ||
+    (displayMatch.myStatus != null &&
+      CHAT_STATUSES.includes(displayMatch.myStatus));
   const groups = deriveParticipantGroups(displayMatch);
 
   return (
@@ -819,6 +824,16 @@ export default function MatchDetailScreen({ route, navigation }: Props) {
           onPress={() => navigation.navigate("TeamAssembly", { matchId })}
         >
           <Text style={styles.teamsBtnText}>Armar equipos</Text>
+        </Pressable>
+      )}
+
+      {/* 3c. Chat button */}
+      {canChat && (
+        <Pressable
+          style={styles.chatBtn}
+          onPress={() => navigation.navigate("MatchChat", { matchId })}
+        >
+          <Text style={styles.chatBtnText}>Chat del partido</Text>
         </Pressable>
       )}
 
@@ -1916,6 +1931,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emptyListText: { color: "#666", fontSize: 13, textAlign: "center", paddingVertical: 8 },
+
+  // Chat button
+  chatBtn: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginBottom: 12,
+    borderCurve: "continuous",
+    borderWidth: 1,
+    borderColor: "#1976d2",
+  },
+  chatBtnText: {
+    color: "#1976d2",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 
   // Teams button
   teamsBtn: {

@@ -11,6 +11,7 @@ import { UsersModule } from './users/users.module';
 import { GroupsModule } from './groups/groups.module';
 import { PushModule } from './push/push.module';
 import { VenuesModule } from './venues/venues.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { VenuesModule } from './venues/venues.module';
     GroupsModule,
     PushModule,
     VenuesModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [],

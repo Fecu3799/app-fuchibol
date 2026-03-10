@@ -2,17 +2,29 @@ import { UnprocessableEntityException } from '@nestjs/common';
 import { CreateMatchUseCase } from './create-match.use-case';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 
-const buildPrisma = () =>
-  ({
+const buildPrisma = () => {
+  const prisma = {
     client: {
       match: {
-        create: jest.fn(),
+        create: jest.fn().mockResolvedValue({
+          id: 'match-default',
+          revision: 1,
+          status: 'scheduled',
+        }),
       },
-      venuePitch: {
-        findUnique: jest.fn(),
-      },
+      conversation: { create: jest.fn().mockResolvedValue({}) },
+      venuePitch: { findUnique: jest.fn() },
     },
-  }) as unknown as PrismaService;
+  } as unknown as PrismaService;
+  (prisma.client as Record<string, unknown>)['$transaction'] = jest.fn(
+    (cb: (tx: unknown) => Promise<unknown>) =>
+      cb({
+        match: prisma.client.match,
+        conversation: prisma.client.conversation,
+      }),
+  );
+  return prisma;
+};
 
 const FUTURE_STARTS_AT = new Date(Date.now() + 70_000).toISOString();
 

@@ -116,28 +116,38 @@ export class CreateMatchUseCase {
       };
     }
 
-    return this.prisma.client.match.create({
-      data: {
-        title: input.title,
-        startsAt,
-        capacity: input.capacity,
-        status: MatchStatus.scheduled,
-        revision: 1,
-        createdById: input.createdById,
-        venueId: input.venueId,
-        venuePitchId: input.venuePitchId,
-        ...(venueSnapshot
-          ? {
-              venueSnapshot: venueSnapshot as unknown as Prisma.InputJsonObject,
-              pitchSnapshot: pitchSnapshot as unknown as Prisma.InputJsonObject,
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        revision: true,
-        status: true,
-      },
+    return this.prisma.client.$transaction(async (tx) => {
+      const match = await tx.match.create({
+        data: {
+          title: input.title,
+          startsAt,
+          capacity: input.capacity,
+          status: MatchStatus.scheduled,
+          revision: 1,
+          createdById: input.createdById,
+          venueId: input.venueId,
+          venuePitchId: input.venuePitchId,
+          ...(venueSnapshot
+            ? {
+                venueSnapshot:
+                  venueSnapshot as unknown as Prisma.InputJsonObject,
+                pitchSnapshot:
+                  pitchSnapshot as unknown as Prisma.InputJsonObject,
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          revision: true,
+          status: true,
+        },
+      });
+
+      await tx.conversation.create({
+        data: { type: 'MATCH', matchId: match.id },
+      });
+
+      return match;
     });
   }
 }

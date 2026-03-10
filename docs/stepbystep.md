@@ -47,6 +47,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 40. [Match Lifecycle: IN_PROGRESS + PLAYED DB-driven](#40-match-lifecycle-in_progress--played-db-driven)
 41. [Team Assembly Sprint 3: Roster integration (slot sync automático)](#41-team-assembly-sprint-3-roster-integration-slot-sync-automático)
 42. [Team Assembly Sprint 4: Auto-generación de equipos a T-30](#42-team-assembly-sprint-4-auto-generación-de-equipos-a-t-30)
+43. [Chat Sprint 1: Infraestructura de chat + Match chat end-to-end](#43-chat-sprint-1-infraestructura-de-chat--match-chat-end-to-end)
 
 ---
 
@@ -1645,4 +1646,81 @@ apps/api/src/matches/matches.module.ts (+BlockTeamAutoGenUseCase)
 apps/api/src/matches/application/match-lifecycle.job.spec.ts (+5 tests auto-gen, +matchTeamSlot en mock tx, +teamsConfigured/teamsAutoGenBlocked en makeMatch)
 apps/mobile/src/features/matches/matchesClient.ts (+blockTeamAutoGen)
 apps/mobile/src/screens/TeamAssemblyScreen.tsx (useEffect on mount → blockTeamAutoGen)
+```
+
+## 43. Chat Sprint 1: Infraestructura de chat + Match chat end-to-end
+
+### Decisiones de diseño
+
+- **Sistema unificado**: un solo módulo `chat` para todos los tipos (MATCH, GROUP, DIRECT futuros). Scope MATCH primero.
+- **WS full payload**: el namespace `/chat` emite `message.new { conversationId, message }` con el mensaje completo (no signal-only). Justificado porque los mensajes son append-only — no hay revision conflicts.
+- **Chat WS separado del match WS**: `/matches` sigue emitiendo solo `{ matchId, revision }`. El chat tiene su propio namespace `/chat` con sus propios rooms `conv:{conversationId}`.
+- **`isReadOnly` derivado**: no se persiste en `Conversation`. Se calcula en cada request desde `match.status`. Si el match está `played` o `canceled`, el chat es read-only.
+- **Dedup via `clientMsgId`**: constraint UNIQUE `(conversationId, senderId, clientMsgId)` en DB. No se usa `Idempotency-Key` header para chat (patrón propio del dominio).
+- **Acceso**: creator OR MatchParticipant con status CONFIRMED/WAITLISTED/SPECTATOR. INVITED no puede chatear.
+- **Conversation creada junto con el Match**: en transacción dentro de `CreateMatchUseCase`.
+
+### Modelo de datos (migración 20260310032432_add_conversation_messages)
+
+```
+Conversation: id, type (MATCH|GROUP|DIRECT), matchId?, createdAt, updatedAt
+  - matchId UNIQUE → una conversation por match
+  - onDelete: Cascade desde Match
+
+Message: id, conversationId, senderId, body, clientMsgId, createdAt
+  - UNIQUE(conversationId, senderId, clientMsgId) → dedup
+  - INDEX(conversationId, createdAt DESC) → paginación eficiente
+```
+
+Data migration: crea Conversation para todos los Match existentes.
+
+### API
+
+- `GET /api/v1/matches/:matchId/conversation` → `{ id, type, isReadOnly }`
+- `GET /api/v1/conversations/:id/messages?limit=30&before=<cursor>` → `{ items[], hasMore, nextCursor }`
+- `POST /api/v1/conversations/:id/messages` → `{ body, clientMsgId }` → `MessageView`
+
+### Realtime
+
+- WS namespace `/chat`, JWT en `handshake.auth.token`
+- `chat.subscribe { conversationId }` → verifica membresía antes de `join(conv:{id})`
+- `chat.unsubscribe { conversationId }` → leave
+- `message.new { conversationId, message }` → emitido por `ChatRealtimePublisher` después de cada POST
+
+### Mobile
+
+- `useChatRealtime(conversationId)` prepend mensajes al cache con dedup por id
+- `useMessages` usa `useInfiniteQuery` con cursor para paginación hacia atrás
+- `useSendMessage` actualiza cache optimista en `onSuccess` (antes de que llegue el WS)
+- `MatchChatScreen` con FlatList invertida, input en footer, soporte read-only
+- Botón "Chat del partido" en `MatchDetailScreen` visible para creator + CONFIRMED/WAITLISTED/SPECTATOR
+
+### Archivos creados / modificados
+
+```
+apps/api/prisma/schema.prisma (+Conversation, +Message, +sentMessages en User, +conversation en Match)
+apps/api/prisma/migrations/20260310032432_add_conversation_messages/ (nuevo + data migration)
+apps/api/src/matches/application/create-match.use-case.ts ($transaction + tx.conversation.create)
+apps/api/src/chat/application/match-chat-access.service.ts (nuevo)
+apps/api/src/chat/application/get-match-conversation.use-case.ts (nuevo)
+apps/api/src/chat/application/list-messages.use-case.ts (nuevo)
+apps/api/src/chat/application/send-message.use-case.ts (nuevo)
+apps/api/src/chat/application/match-chat.use-case.spec.ts (nuevo — 17 tests)
+apps/api/src/chat/api/dto/send-message.dto.ts (nuevo)
+apps/api/src/chat/api/chat.controller.ts (nuevo)
+apps/api/src/chat/realtime/chat-realtime.publisher.ts (nuevo)
+apps/api/src/chat/realtime/chat.gateway.ts (nuevo)
+apps/api/src/chat/realtime/chat-realtime.module.ts (nuevo)
+apps/api/src/chat/chat.module.ts (nuevo)
+apps/api/src/app.module.ts (+ChatModule)
+apps/mobile/src/types/api.ts (+ConversationInfo, +MessageView, +ListMessagesResponse)
+apps/mobile/src/lib/socket.ts (+getChatSocket, +disconnectChatSocket)
+apps/mobile/src/features/chat/chatClient.ts (nuevo)
+apps/mobile/src/features/chat/useMatchConversation.ts (nuevo)
+apps/mobile/src/features/chat/useMessages.ts (nuevo)
+apps/mobile/src/features/chat/useSendMessage.ts (nuevo)
+apps/mobile/src/features/chat/useChatRealtime.ts (nuevo)
+apps/mobile/src/screens/MatchChatScreen.tsx (nuevo)
+apps/mobile/src/navigation/AppNavigator.tsx (+MatchChat route)
+apps/mobile/src/screens/MatchDetailScreen.tsx (+canChat, +Chat button)
 ```
