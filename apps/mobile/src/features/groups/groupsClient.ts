@@ -56,3 +56,27 @@ export function removeGroupMember(
     headers: { Authorization: `Bearer ${token}` },
   });
 }
+
+export function postGroupAvatarPrepare(
+  token: string,
+  groupId: string,
+  payload: { contentType: string; size: number },
+): Promise<{ uploadUrl: string; key: string; publicUrl: string }> {
+  return fetchJson(buildUrl(`/api/v1/groups/${groupId}/avatar/prepare`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function postGroupAvatarConfirm(
+  token: string,
+  groupId: string,
+  payload: { key: string; contentType: string; size: number },
+): Promise<{ avatarUrl: string }> {
+  return fetchJson(buildUrl(`/api/v1/groups/${groupId}/avatar/confirm`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+}

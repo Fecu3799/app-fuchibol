@@ -3,12 +3,12 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const logoLight = require('../../../../../docs/ui/templates/logo-light.png') as number;
 
@@ -78,11 +78,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 28,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    boxShadow: '0 6px 16px rgba(0,0,0,0.20)',
+    borderCurve: 'continuous',
   },
   cardTitle: {
     fontSize: 13,

@@ -83,8 +83,8 @@ export type RootStackParamList = {
   PublicUserProfile: { userId: string };
   TeamAssembly: { matchId: string };
   MatchChat: { matchId: string };
-  GroupChat: { groupId: string; groupName: string };
-  DirectChat: { conversationId?: string; targetUserId?: string; otherUsername: string };
+  GroupChat: { groupId: string; groupName: string; groupAvatarUrl?: string | null };
+  DirectChat: { conversationId?: string; targetUserId?: string; otherUsername: string; otherUserAvatarUrl?: string | null };
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -147,7 +147,7 @@ function MainTabs() {
         headerShown: false,
         tabBarActiveTintColor: '#1976d2',
         tabBarInactiveTintColor: '#999',
-        tabBarStyle: { paddingBottom: 4, height: 56 },
+        tabBarStyle: { paddingBottom: 4 },
         tabBarLabelStyle: { fontSize: 11 },
       }}
     >

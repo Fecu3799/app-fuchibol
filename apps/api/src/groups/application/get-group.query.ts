@@ -17,6 +17,7 @@ export interface GroupDetail {
   id: string;
   name: string;
   ownerId: string;
+  avatarUrl: string | null;
   memberCount: number;
   members: GroupMemberView[];
   createdAt: Date;
@@ -60,6 +61,7 @@ export class GetGroupQuery {
       id: group.id,
       name: group.name,
       ownerId: group.ownerId,
+      avatarUrl: group.avatarUrl ?? null,
       memberCount: group.members.length,
       members: group.members.map((m) => ({
         userId: m.userId,

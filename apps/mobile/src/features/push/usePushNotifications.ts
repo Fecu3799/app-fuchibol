@@ -76,14 +76,36 @@ export function usePushNotifications(): UsePushNotificationsResult {
     }
   }
 
-  // Check backend for registration status per user. Re-runs when userId changes.
+  // On user change: if push permissions are already granted, auto-register the
+  // device for the new account. This migrates the device immediately after
+  // login/account-switch and prevents the previous account from receiving pushes.
   useEffect(() => {
-    if (!isSupported || !user?.id) {
+    if (!isSupported || !user?.id || !authToken) {
       setStatus('idle');
       setExpoPushToken(null);
       return;
     }
-    void fetchAndSetStatus();
+    void (async () => {
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        if (existingStatus === 'granted') {
+          const pushToken = await getExpoPushToken();
+          const localDeviceId = await getOrCreateDeviceId();
+          await registerPushDevice(authToken, {
+            expoPushToken: pushToken,
+            platform: Platform.OS as 'ios' | 'android',
+            deviceName: Device.deviceName ?? undefined,
+            deviceId: localDeviceId,
+          });
+          setExpoPushToken(pushToken);
+          setStatus('registered');
+        } else {
+          await fetchAndSetStatus();
+        }
+      } catch {
+        void fetchAndSetStatus();
+      }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSupported, user?.id]);
 

@@ -208,6 +208,7 @@ export interface GroupSummary {
   id: string;
   name: string;
   ownerId: string;
+  avatarUrl: string | null;
   memberCount: number;
   createdAt: string;
 }
@@ -228,6 +229,7 @@ export interface GroupDetail {
   id: string;
   name: string;
   ownerId: string;
+  avatarUrl: string | null;
   memberCount: number;
   members: GroupMember[];
   createdAt: string;
@@ -360,6 +362,7 @@ export interface GroupConversationListItem {
   group: {
     id: string;
     name: string;
+    avatarUrl: string | null;
   };
   lastMessage: {
     id: string;

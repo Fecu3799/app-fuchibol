@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -23,13 +23,15 @@ import { findDirectConversation } from '../features/chat/chatClient';
 import { useAuth } from '../contexts/AuthContext';
 import type { MessageView } from '../types/api';
 import { ApiError } from '../lib/api';
+import { Avatar } from '../components/Avatar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'DirectChat'>;
 
-export default function DirectChatScreen({ route }: Props) {
+export default function DirectChatScreen({ route, navigation }: Props) {
   const { otherUsername } = route.params;
   const initialConversationId = route.params.conversationId;
   const targetUserId = route.params.targetUserId;
+  const otherUserAvatarUrl = route.params.otherUserAvatarUrl;
 
   const { user, token } = useAuth();
   const insets = useSafeAreaInsets();
@@ -42,6 +44,21 @@ export default function DirectChatScreen({ route }: Props) {
   const [resolving, setResolving] = useState(
     !initialConversationId && !!targetUserId,
   );
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => {
+            if (targetUserId) navigation.navigate('PublicUserProfile', { userId: targetUserId });
+          }}
+          disabled={!targetUserId}
+        >
+          <Avatar uri={otherUserAvatarUrl ?? null} size={32} fallbackText={otherUsername} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, otherUserAvatarUrl, otherUsername, targetUserId]);
 
   // On mount: if entered from profile (no conversationId), check if conversation already exists.
   // If found → live mode with existing messages. If not → draft mode.

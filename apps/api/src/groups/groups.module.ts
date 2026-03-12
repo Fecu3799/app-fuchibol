@@ -9,6 +9,8 @@ import { GetGroupQuery } from './application/get-group.query';
 import { AddMemberUseCase } from './application/add-member.use-case';
 import { RemoveMemberUseCase } from './application/remove-member.use-case';
 import { GroupNotificationService } from './application/group-notification.service';
+import { PrepareGroupAvatarUseCase } from './application/prepare-group-avatar.use-case';
+import { ConfirmGroupAvatarUseCase } from './application/confirm-group-avatar.use-case';
 
 @Module({
   imports: [PrismaModule, PushModule, StorageModule],
@@ -20,6 +22,8 @@ import { GroupNotificationService } from './application/group-notification.servi
     AddMemberUseCase,
     RemoveMemberUseCase,
     GroupNotificationService,
+    PrepareGroupAvatarUseCase,
+    ConfirmGroupAvatarUseCase,
   ],
 })
 export class GroupsModule {}

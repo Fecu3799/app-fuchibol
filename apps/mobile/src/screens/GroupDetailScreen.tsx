@@ -3,12 +3,15 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { GroupMember } from '../types/api';
@@ -18,6 +21,8 @@ import { useAddGroupMember } from '../features/groups/useAddGroupMember';
 import { useRemoveGroupMember } from '../features/groups/useRemoveGroupMember';
 import { useAuth } from '../contexts/AuthContext';
 import { ApiError } from '../lib/api';
+import { postGroupAvatarPrepare, postGroupAvatarConfirm } from '../features/groups/groupsClient';
+import { useQueryClient } from '@tanstack/react-query';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupDetail'>;
 
@@ -35,7 +40,8 @@ function formatAddError(err: unknown): string {
 
 export default function GroupDetailScreen({ route, navigation }: Props) {
   const { groupId } = route.params;
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const queryClient = useQueryClient();
   const { data: group, isLoading, error, refetch } = useGroup(groupId);
   const addMutation = useAddGroupMember(groupId);
   const removeMutation = useRemoveGroupMember(groupId);
@@ -43,6 +49,7 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
   const [addInput, setAddInput] = useState('');
   const [addMsg, setAddMsg] = useState('');
   const [addMsgType, setAddMsgType] = useState<'success' | 'error'>('success');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   if (isLoading) {
     return (
@@ -64,6 +71,41 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
   }
 
   const isOwner = group.ownerId === user?.id;
+
+  const handlePickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+    if (result.canceled || !token) return;
+
+    const asset = result.assets[0];
+    const contentType = asset.mimeType ?? 'image/jpeg';
+    let size = asset.fileSize ?? 0;
+    if (size === 0) {
+      const info = await FileSystem.getInfoAsync(asset.uri);
+      if (info.exists && 'size' in info) size = (info as { size: number }).size;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const { uploadUrl, key } = await postGroupAvatarPrepare(token, groupId, { contentType, size });
+      const blob = await (await fetch(asset.uri)).blob();
+      const putRes = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType }, body: blob });
+      if (putRes.status < 200 || putRes.status >= 300) throw new Error(`Upload failed: ${putRes.status}`);
+      await postGroupAvatarConfirm(token, groupId, { key, contentType, size });
+      await queryClient.invalidateQueries({ queryKey: ['group', groupId] });
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'No se pudo subir la imagen');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleAdd = () => {
     if (!addInput.trim()) return;
@@ -142,7 +184,21 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View>
+          <Pressable
+            onPress={isOwner ? handlePickAvatar : undefined}
+            disabled={uploadingAvatar}
+            style={styles.avatarWrap}
+          >
+            <Avatar uri={group.avatarUrl ?? null} size={56} fallbackText={group.name} />
+            {isOwner && (
+              <View style={styles.avatarEditBadge}>
+                <Text style={styles.avatarEditBadgeText}>
+                  {uploadingAvatar ? '…' : '✎'}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+          <View style={styles.headerInfo}>
             <Text style={styles.title}>{group.name}</Text>
             <Text style={styles.memberCount}>
               {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
@@ -150,7 +206,7 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
           </View>
           <Pressable
             style={styles.chatBtn}
-            onPress={() => navigation.navigate('GroupChat', { groupId, groupName: group.name })}
+            onPress={() => navigation.navigate('GroupChat', { groupId, groupName: group.name, groupAvatarUrl: group.avatarUrl })}
           >
             <Text style={styles.chatBtnText}>Chat</Text>
           </Pressable>
@@ -214,10 +270,24 @@ export default function GroupDetailScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  header: { padding: 20, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  title: { fontSize: 22, fontWeight: '700' },
-  memberCount: { fontSize: 14, color: '#888', marginTop: 4 },
+  header: { padding: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarWrap: { position: 'relative' },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#1976d2',
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditBadgeText: { color: '#fff', fontSize: 11 },
+  headerInfo: { flex: 1 },
+  title: { fontSize: 20, fontWeight: '700' },
+  memberCount: { fontSize: 13, color: '#888', marginTop: 2 },
   chatBtn: {
     backgroundColor: '#1976d2',
     borderRadius: 8,

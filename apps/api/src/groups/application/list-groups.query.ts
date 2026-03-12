@@ -5,6 +5,7 @@ export interface GroupSummary {
   id: string;
   name: string;
   ownerId: string;
+  avatarUrl: string | null;
   memberCount: number;
   createdAt: Date;
 }
@@ -38,6 +39,7 @@ export class ListGroupsQuery {
       id: g.id,
       name: g.name,
       ownerId: g.ownerId,
+      avatarUrl: g.avatarUrl,
       memberCount: g._count.members,
       createdAt: g.createdAt,
     });

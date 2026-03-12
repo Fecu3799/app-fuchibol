@@ -17,8 +17,14 @@ import { ListGroupsQuery } from '../application/list-groups.query';
 import { GetGroupQuery } from '../application/get-group.query';
 import { AddMemberUseCase } from '../application/add-member.use-case';
 import { RemoveMemberUseCase } from '../application/remove-member.use-case';
+import { PrepareGroupAvatarUseCase } from '../application/prepare-group-avatar.use-case';
+import { ConfirmGroupAvatarUseCase } from '../application/confirm-group-avatar.use-case';
 import { CreateGroupDto } from './dto/create-group.dto';
 import { AddMemberDto } from './dto/add-member.dto';
+import {
+  PrepareGroupAvatarDto,
+  ConfirmGroupAvatarDto,
+} from './dto/group-avatar.dto';
 
 @Controller('groups')
 export class GroupsController {
@@ -28,6 +34,8 @@ export class GroupsController {
     private readonly getGroupQuery: GetGroupQuery,
     private readonly addMemberUseCase: AddMemberUseCase,
     private readonly removeMemberUseCase: RemoveMemberUseCase,
+    private readonly prepareGroupAvatarUseCase: PrepareGroupAvatarUseCase,
+    private readonly confirmGroupAvatarUseCase: ConfirmGroupAvatarUseCase,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -83,5 +91,27 @@ export class GroupsController {
       targetUserId: userId,
       actorId: actor.userId,
     });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/avatar/prepare')
+  async prepareAvatar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PrepareGroupAvatarDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.prepareGroupAvatarUseCase.execute(id, actor.userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post(':id/avatar/confirm')
+  async confirmAvatar(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ConfirmGroupAvatarDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    return this.confirmGroupAvatarUseCase.execute(id, actor.userId, dto);
   }
 }

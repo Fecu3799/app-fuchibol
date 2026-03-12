@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Avatar } from '../components/Avatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { randomUUID } from 'expo-crypto';
@@ -90,15 +91,26 @@ export default function MatchChatScreen({ route }: Props) {
 
   function renderItem({ item }: { item: MessageView }) {
     const isMe = item.senderId === user?.id;
+    if (isMe) {
+      return (
+        <View style={[s.bubble, s.bubbleMe]}>
+          <Text style={[s.bodyText, s.bodyTextMe]}>{item.body}</Text>
+          <Text style={[s.timestamp, s.timestampMe]}>
+            {new Date(item.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
+      );
+    }
     return (
-      <View style={[s.bubble, isMe ? s.bubbleMe : s.bubbleThem]}>
-        {!isMe && (
+      <View style={s.rowThem}>
+        <Avatar uri={item.senderAvatarUrl} size={28} fallbackText={item.senderUsername} />
+        <View style={[s.bubble, s.bubbleThem]}>
           <Text style={s.senderName}>{item.senderUsername}</Text>
-        )}
-        <Text style={[s.bodyText, isMe && s.bodyTextMe]}>{item.body}</Text>
-        <Text style={[s.timestamp, isMe && s.timestampMe]}>
-          {new Date(item.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-        </Text>
+          <Text style={s.bodyText}>{item.body}</Text>
+          <Text style={s.timestamp}>
+            {new Date(item.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -175,21 +187,24 @@ const s = StyleSheet.create({
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 40 },
   emptyText: { color: '#999', fontSize: 14, textAlign: 'center' },
 
+  rowThem: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '82%',
+    marginVertical: 4,
+  },
   bubble: {
-    maxWidth: '75%',
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginVertical: 4,
     borderCurve: 'continuous',
   },
-  bubbleMe: {
-    backgroundColor: '#1976d2',
-    alignSelf: 'flex-end',
-  },
+  bubbleMe: { backgroundColor: '#1976d2', alignSelf: 'flex-end', maxWidth: '75%', marginVertical: 4 },
   bubbleThem: {
     backgroundColor: '#fff',
-    alignSelf: 'flex-start',
+    flex: 1,
     boxShadow: '0px 1px 2px rgba(0,0,0,0.08)',
   },
   senderName: { fontSize: 11, fontWeight: '600', color: '#555', marginBottom: 2 },

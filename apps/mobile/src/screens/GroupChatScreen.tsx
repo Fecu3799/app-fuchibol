@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,13 +21,24 @@ import { useChatRealtime } from '../features/chat/useChatRealtime';
 import { useAuth } from '../contexts/AuthContext';
 import type { MessageView } from '../types/api';
 import { ApiError } from '../lib/api';
+import { Avatar } from '../components/Avatar';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'GroupChat'>;
 
-export default function GroupChatScreen({ route }: Props) {
-  const { groupId } = route.params;
+export default function GroupChatScreen({ route, navigation }: Props) {
+  const { groupId, groupName, groupAvatarUrl } = route.params;
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable onPress={() => navigation.navigate('GroupDetail', { groupId })}>
+          <Avatar uri={groupAvatarUrl ?? null} size={32} fallbackText={groupName} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, groupAvatarUrl, groupName, groupId]);
 
   const { data: conv, isLoading: convLoading, error: convError } = useGroupConversation(groupId);
   const {
@@ -89,15 +100,26 @@ export default function GroupChatScreen({ route }: Props) {
 
   function renderItem({ item }: { item: MessageView }) {
     const isMe = item.senderId === user?.id;
+    if (isMe) {
+      return (
+        <View style={[s.bubble, s.bubbleMe]}>
+          <Text style={[s.bodyText, s.bodyTextMe]}>{item.body}</Text>
+          <Text style={[s.timestamp, s.timestampMe]}>
+            {new Date(item.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
+      );
+    }
     return (
-      <View style={[s.bubble, isMe ? s.bubbleMe : s.bubbleThem]}>
-        {!isMe && (
+      <View style={s.rowThem}>
+        <Avatar uri={item.senderAvatarUrl} size={28} fallbackText={item.senderUsername} />
+        <View style={[s.bubble, s.bubbleThem]}>
           <Text style={s.senderName}>{item.senderUsername}</Text>
-        )}
-        <Text style={[s.bodyText, isMe && s.bodyTextMe]}>{item.body}</Text>
-        <Text style={[s.timestamp, isMe && s.timestampMe]}>
-          {new Date(item.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-        </Text>
+          <Text style={s.bodyText}>{item.body}</Text>
+          <Text style={s.timestamp}>
+            {new Date(item.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -167,18 +189,24 @@ const s = StyleSheet.create({
   errorText: { color: '#d32f2f', fontSize: 15 },
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 40 },
   emptyText: { color: '#999', fontSize: 14, textAlign: 'center' },
+  rowThem: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '82%',
+    marginVertical: 4,
+  },
   bubble: {
-    maxWidth: '75%',
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginVertical: 4,
     borderCurve: 'continuous',
   },
-  bubbleMe: { backgroundColor: '#1976d2', alignSelf: 'flex-end' },
+  bubbleMe: { backgroundColor: '#1976d2', alignSelf: 'flex-end', maxWidth: '75%', marginVertical: 4 },
   bubbleThem: {
     backgroundColor: '#fff',
-    alignSelf: 'flex-start',
+    flex: 1,
     boxShadow: '0px 1px 2px rgba(0,0,0,0.08)',
   },
   senderName: { fontSize: 11, fontWeight: '600', color: '#555', marginBottom: 2 },

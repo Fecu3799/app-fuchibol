@@ -3,12 +3,19 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 
 function buildMockPrisma() {
   const upsert = jest.fn();
+  const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
+
+  // $transaction receives a callback and executes it with a tx client
+  const txClient = { pushDevice: { upsert, deleteMany } };
+  const $transaction = jest.fn((cb: (tx: typeof txClient) => unknown) =>
+    cb(txClient),
+  );
+
   const prisma = {
-    client: {
-      pushDevice: { upsert },
-    },
+    client: { $transaction },
   } as unknown as PrismaService;
-  return { prisma, upsert };
+
+  return { prisma, upsert, deleteMany, $transaction };
 }
 
 describe('RegisterDeviceUseCase', () => {
@@ -74,7 +81,6 @@ describe('RegisterDeviceUseCase', () => {
     });
 
     expect(upsert).toHaveBeenCalledTimes(2);
-    // Second call must include disabledAt: null to re-enable device
     const secondCall = upsert.mock.calls[1][0];
     expect(secondCall.update.disabledAt).toBeNull();
     expect(result.disabledAt).toBeNull();
@@ -103,5 +109,47 @@ describe('RegisterDeviceUseCase', () => {
         update: expect.objectContaining({ deviceName: 'My Phone' }),
       }),
     );
+  });
+
+  it('deletes stale push devices for other users on the same deviceId', async () => {
+    const { prisma, upsert, deleteMany } = buildMockPrisma();
+    upsert.mockResolvedValue({
+      id: 'dev-3',
+      expoPushToken: 'ExponentPushToken[new]',
+      platform: 'ios',
+      disabledAt: null,
+    });
+
+    const useCase = new RegisterDeviceUseCase(prisma);
+    await useCase.execute({
+      userId: 'user-b',
+      expoPushToken: 'ExponentPushToken[new]',
+      platform: 'ios',
+      deviceId: 'phone-abc',
+    });
+
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { deviceId: 'phone-abc', userId: { not: 'user-b' } },
+    });
+  });
+
+  it('skips cross-account cleanup when deviceId is not provided', async () => {
+    const { prisma, upsert, deleteMany } = buildMockPrisma();
+    upsert.mockResolvedValue({
+      id: 'dev-4',
+      expoPushToken: 'ExponentPushToken[no-dev]',
+      platform: 'ios',
+      disabledAt: null,
+    });
+
+    const useCase = new RegisterDeviceUseCase(prisma);
+    await useCase.execute({
+      userId: 'user-c',
+      expoPushToken: 'ExponentPushToken[no-dev]',
+      platform: 'ios',
+      // no deviceId
+    });
+
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 });

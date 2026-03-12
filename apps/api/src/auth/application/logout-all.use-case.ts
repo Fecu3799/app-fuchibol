@@ -16,6 +16,11 @@ export class LogoutAllUseCase {
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+
+    // Remove all push devices for this user — logging out from all sessions
+    // means no device should receive pushes for this account anymore.
+    await this.prisma.client.pushDevice.deleteMany({ where: { userId } });
+
     this.logger.log(`logout_all userId=${userId}`);
     void this.auditService
       .log({ eventType: 'logout_all', userId })

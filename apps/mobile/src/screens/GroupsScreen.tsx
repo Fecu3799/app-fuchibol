@@ -13,6 +13,7 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { GroupSummary } from '../types/api';
 import { useGroups } from '../features/groups/useGroups';
 import { useAuth } from '../contexts/AuthContext';
+import { Avatar } from '../components/Avatar';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -27,19 +28,24 @@ function GroupCard({
 }) {
   return (
     <Pressable style={styles.card} onPress={onPress}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardName} numberOfLines={1}>
-          {group.name}
-        </Text>
-        {isOwner && (
-          <View style={styles.ownerBadge}>
-            <Text style={styles.ownerBadgeText}>Owner</Text>
+      <View style={styles.cardRow}>
+        <Avatar uri={group.avatarUrl ?? null} size={40} fallbackText={group.name} />
+        <View style={styles.cardBody}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardName} numberOfLines={1}>
+              {group.name}
+            </Text>
+            {isOwner && (
+              <View style={styles.ownerBadge}>
+                <Text style={styles.ownerBadgeText}>Owner</Text>
+              </View>
+            )}
           </View>
-        )}
+          <Text style={styles.cardMembers}>
+            {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
+          </Text>
+        </View>
       </View>
-      <Text style={styles.cardMembers}>
-        {group.memberCount} {group.memberCount === 1 ? 'member' : 'members'}
-      </Text>
     </Pressable>
   );
 }
@@ -177,6 +183,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.05)',
   },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardBody: { flex: 1 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardName: { fontSize: 16, fontWeight: '600', flex: 1 },
   ownerBadge: {

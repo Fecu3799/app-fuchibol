@@ -8,6 +8,7 @@ export interface GroupConversationListItem {
   group: {
     id: string;
     name: string;
+    avatarUrl: string | null;
   };
   lastMessage: {
     id: string;
@@ -31,7 +32,7 @@ export class ListGroupConversationsUseCase {
         },
       },
       include: {
-        group: { select: { id: true, name: true } },
+        group: { select: { id: true, name: true, avatarUrl: true } },
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
@@ -63,7 +64,11 @@ export class ListGroupConversationsUseCase {
         id: conv.id,
         type: conv.type,
         hasUnread,
-        group: { id: group.id, name: group.name },
+        group: {
+          id: group.id,
+          name: group.name,
+          avatarUrl: group.avatarUrl ?? null,
+        },
         lastMessage: lastMsg
           ? {
               id: lastMsg.id,

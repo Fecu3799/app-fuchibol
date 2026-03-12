@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Avatar } from '../components/Avatar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { DirectConversationListItem, GroupConversationListItem, MatchConversationListItem } from '../types/api';
@@ -102,10 +103,11 @@ function DirectConversationItem({
 
   return (
     <TouchableOpacity style={s.item} onPress={onPress} activeOpacity={0.7}>
-      <View style={s.itemMain}>
+      <Avatar uri={item.otherUser.avatarUrl} size={44} fallbackText={item.otherUser.username} />
+      <View style={[s.itemMain, s.itemMainWithAvatar]}>
         <View style={s.itemHeader}>
           <Text style={[s.itemTitle, item.hasUnread && s.itemTitleUnread]} numberOfLines={1}>
-            @{item.otherUser.username}
+            {item.otherUser.username}
           </Text>
           <View style={s.itemHeaderRight}>
             <Text style={s.itemTime}>{timeStr}</Text>
@@ -139,7 +141,8 @@ function GroupConversationItem({
 
   return (
     <TouchableOpacity style={s.item} onPress={onPress} activeOpacity={0.7}>
-      <View style={s.itemMain}>
+      <Avatar uri={item.group.avatarUrl} size={44} fallbackText={item.group.name} />
+      <View style={[s.itemMain, s.itemMainWithAvatar]}>
         <View style={s.itemHeader}>
           <Text style={[s.itemTitle, item.hasUnread && s.itemTitleUnread]} numberOfLines={1}>
             {item.group.name}
@@ -273,7 +276,9 @@ export default function ChatsScreen({ navigation }: Props) {
             onPress={() =>
               navigation.navigate('DirectChat', {
                 conversationId: item.id,
+                targetUserId: item.otherUser.id,
                 otherUsername: item.otherUser.username,
+                otherUserAvatarUrl: item.otherUser.avatarUrl,
               })
             }
           />
@@ -325,6 +330,7 @@ export default function ChatsScreen({ navigation }: Props) {
               navigation.navigate('GroupChat', {
                 groupId: item.group.id,
                 groupName: item.group.name,
+                groupAvatarUrl: item.group.avatarUrl,
               })
             }
           />
@@ -449,6 +455,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   itemMain: { flex: 1 },
+  itemMainWithAvatar: { marginLeft: 12 },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
