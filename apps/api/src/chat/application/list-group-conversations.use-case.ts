@@ -4,6 +4,7 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 export interface GroupConversationListItem {
   id: string;
   type: string;
+  hasUnread: boolean;
   group: {
     id: string;
     name: string;
@@ -39,12 +40,29 @@ export class ListGroupConversationsUseCase {
       },
     });
 
+    if (conversations.length === 0) return [];
+
+    const readStates = await this.prisma.client.conversationReadState.findMany({
+      where: { userId, conversationId: { in: conversations.map((c) => c.id) } },
+      select: { conversationId: true, lastReadAt: true },
+    });
+    const readStateMap = new Map(
+      readStates.map((s) => [s.conversationId, s.lastReadAt]),
+    );
+
     const items: GroupConversationListItem[] = conversations.map((conv) => {
       const group = conv.group!;
       const lastMsg = conv.messages[0] ?? null;
+      const lastReadAt = readStateMap.get(conv.id) ?? null;
+      const hasUnread =
+        lastMsg !== null &&
+        lastMsg.senderId !== userId &&
+        (lastReadAt === null || lastMsg.createdAt > lastReadAt);
+
       return {
         id: conv.id,
         type: conv.type,
+        hasUnread,
         group: { id: group.id, name: group.name },
         lastMessage: lastMsg
           ? {

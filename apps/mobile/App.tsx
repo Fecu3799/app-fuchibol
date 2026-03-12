@@ -37,10 +37,46 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function navigateToMatchIfPresent(data?: Record<string, unknown> | null) {
-  const matchId = data?.matchId;
-  if (typeof matchId === 'string' && matchId && navigationRef.isReady()) {
-    navigationRef.navigate('MatchDetail', { matchId });
+function navigateWhenReady(
+  data: Record<string, unknown> | null,
+  attempt = 0,
+): void {
+  if (navigationRef.isReady()) {
+    handleNotificationTap(data);
+  } else if (attempt < 10) {
+    setTimeout(() => navigateWhenReady(data, attempt + 1), 150);
+  }
+}
+
+function handleNotificationTap(data?: Record<string, unknown> | null) {
+  if (!data || !navigationRef.isReady()) return;
+
+  if (data.type === 'chat_message') {
+    const convType = data.conversationType;
+    if (convType === 'MATCH' && typeof data.matchId === 'string') {
+      navigationRef.navigate('MatchChat', { matchId: data.matchId });
+    } else if (
+      convType === 'GROUP' &&
+      typeof data.groupId === 'string' &&
+      typeof data.groupName === 'string'
+    ) {
+      navigationRef.navigate('GroupChat', { groupId: data.groupId, groupName: data.groupName });
+    } else if (
+      convType === 'DIRECT' &&
+      typeof data.conversationId === 'string' &&
+      typeof data.otherUsername === 'string'
+    ) {
+      navigationRef.navigate('DirectChat', {
+        conversationId: data.conversationId,
+        otherUsername: data.otherUsername,
+      });
+    }
+    return;
+  }
+
+  // Legacy: match event notifications navigate to MatchDetail
+  if (typeof data.matchId === 'string' && data.matchId) {
+    navigationRef.navigate('MatchDetail', { matchId: data.matchId });
   }
 }
 
@@ -60,23 +96,23 @@ export default function App() {
       },
     );
 
-    // Tap: navigate to MatchDetail if payload includes matchId.
+    // Tap: navigate to the appropriate screen based on notification payload.
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
       (response: NotificationResponse) => {
         const data = response.notification.request.content.data as Record<string, unknown> | null;
         if (__DEV__) {
           console.log('[Push] Tapped notification, data:', JSON.stringify(data));
         }
-        navigateToMatchIfPresent(data);
+        handleNotificationTap(data);
       },
     );
 
     // Handle notification that launched the app (cold start tap).
+    // Poll until navigator is ready to avoid race condition on startup.
     Notifications.getLastNotificationResponseAsync().then((response) => {
-      if (response) {
-        const data = response.notification.request.content.data as Record<string, unknown> | null;
-        navigateToMatchIfPresent(data);
-      }
+      if (!response) return;
+      const data = response.notification.request.content.data as Record<string, unknown> | null;
+      navigateWhenReady(data);
     });
 
     return () => {

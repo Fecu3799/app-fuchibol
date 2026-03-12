@@ -16,6 +16,7 @@ import type { CompositeScreenProps } from '@react-navigation/native';
 import type { RootStackParamList, TabParamList } from '../navigation/AppNavigator';
 import type { MatchHomeItem } from '../types/api';
 import { useMatches } from '../features/matches/useMatches';
+import { useUnreadSummary } from '../features/chat/useUnreadSummary';
 import { useLogoutOn401 } from '../lib/use-api-query';
 import { ApiError } from '../lib/api';
 
@@ -78,6 +79,7 @@ export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const query = useMatches();
   useLogoutOn401(query);
+  const { total: unreadTotal } = useUnreadSummary();
 
   const { data, isLoading, isFetching, error, refetch } = query;
 
@@ -167,7 +169,16 @@ export default function HomeScreen({ navigation }: Props) {
           onPress={() => navigation.navigate('Chats')}
           hitSlop={8}
         >
-          <Text style={styles.headerBtnChat}>Chats</Text>
+          <View style={styles.chatBtnWrapper}>
+            <Text style={styles.headerBtnChat}>Chats</Text>
+            {unreadTotal > 0 && (
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>
+                  {unreadTotal > 99 ? '99+' : String(unreadTotal)}
+                </Text>
+              </View>
+            )}
+          </View>
         </Pressable>
       </View>
 
@@ -240,6 +251,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#1976d2',
+  },
+  chatBtnWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#d32f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  unreadBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   headerTitle: {
     flex: 1,

@@ -5,6 +5,7 @@ function makePrisma(): PrismaService {
   return {
     client: {
       conversation: { findMany: jest.fn() },
+      conversationReadState: { findMany: jest.fn().mockResolvedValue([]) },
     },
   } as unknown as PrismaService;
 }

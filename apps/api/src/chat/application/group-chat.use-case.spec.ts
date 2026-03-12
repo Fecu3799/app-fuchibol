@@ -11,6 +11,7 @@ function makePrisma(overrides: Record<string, unknown> = {}): PrismaService {
     client: {
       groupMember: { findUnique: jest.fn() },
       conversation: { findUnique: jest.fn(), findMany: jest.fn() },
+      conversationReadState: { findMany: jest.fn().mockResolvedValue([]) },
       ...overrides,
     },
   } as unknown as PrismaService;

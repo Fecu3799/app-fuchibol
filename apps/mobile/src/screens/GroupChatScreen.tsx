@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -47,12 +47,6 @@ export default function GroupChatScreen({ route }: Props) {
 
   const messages: MessageView[] = data?.pages.flatMap((p) => p.items) ?? [];
 
-  useEffect(() => {
-    if (messages.length > 0) {
-      flatListRef.current?.scrollToIndex({ index: 0, animated: false });
-    }
-  }, []);
-
   const handleSend = useCallback(() => {
     const body = input.trim();
     if (!body || sending) return;
@@ -62,6 +56,9 @@ export default function GroupChatScreen({ route }: Props) {
     send(
       { body, clientMsgId },
       {
+        onSuccess: () => {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        },
         onError: (err) => {
           setSendError(
             err instanceof ApiError
@@ -117,6 +114,7 @@ export default function GroupChatScreen({ route }: Props) {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         inverted
+        maintainVisibleContentPosition={{ minIndexForVisible: 1, autoscrollToTopThreshold: 10 }}
         contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8 }}
         onEndReached={() => {
           if (hasNextPage && !isFetchingNextPage) void fetchNextPage();

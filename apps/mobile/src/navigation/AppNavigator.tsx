@@ -35,6 +35,7 @@ import MatchChatScreen from '../screens/MatchChatScreen';
 import GroupChatScreen from '../screens/GroupChatScreen';
 import DirectChatScreen from '../screens/DirectChatScreen';
 import ChatsScreen from '../screens/ChatsScreen';
+import { useChatListRealtime } from '../features/chat/useChatListRealtime';
 
 // Preload and decode the auth background as soon as this module is imported,
 // so it's ready before the first AuthNavigator render.
@@ -83,7 +84,7 @@ export type RootStackParamList = {
   TeamAssembly: { matchId: string };
   MatchChat: { matchId: string };
   GroupChat: { groupId: string; groupName: string };
-  DirectChat: { conversationId: string; otherUsername: string };
+  DirectChat: { conversationId?: string; targetUserId?: string; otherUsername: string };
 };
 
 /** @deprecated Use RootStackParamList instead. Kept for backwards compat with screens. */
@@ -212,6 +213,11 @@ const authBgStyles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.38)' },
 });
 
+function ChatManager(): null {
+  useChatListRealtime();
+  return null;
+}
+
 // ── App Navigator (Root Stack wraps tabs + modal screens) ──
 
 function AppNavigator() {
@@ -219,6 +225,8 @@ function AppNavigator() {
   const isAdmin = user?.role === 'ADMIN';
 
   return (
+    <>
+      {!isAdmin && <ChatManager />}
     <RootStack.Navigator>
       {isAdmin ? (
         <RootStack.Screen
@@ -311,6 +319,7 @@ function AppNavigator() {
         </>
       )}
     </RootStack.Navigator>
+    </>
   );
 }
 

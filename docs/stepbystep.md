@@ -51,6 +51,10 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 44. [Chat Sprint 2: Home > Chats > Matches (lista de conversaciones)](#44-chat-sprint-2-home--chats--matches-lista-de-conversaciones)
 45. [Chat Sprint 3: Group Chat end-to-end](#45-chat-sprint-3-group-chat-end-to-end)
 46. [Chat Sprint 4: Direct Chat end-to-end](#46-chat-sprint-4-direct-chat-end-to-end)
+47. [Chat Polish: Unread/listas en tiempo real, errores, lifecycle, robustez](#47-chat-polish-unreadlistas-en-tiempo-real-errores-lifecycle-robustez)
+48. [Chat Push Notifications Sprint 1: fanout unificado por conversación](#48-chat-push-notifications-sprint-1-fanout-unificado-por-conversación)
+49. [Chat Push Notifications Sprint 2: unread tracking, push suppression, deep link robusto](#49-chat-push-notifications-sprint-2-unread-tracking-push-suppression-deep-link-robusto)
+50. [Chat UX: Unread badge en Home, tab por defecto, realtime FlatList fix](#50-chat-ux-unread-badge-en-home-tab-por-defecto-realtime-flatlist-fix)
 
 ---
 
@@ -1914,4 +1918,208 @@ apps/mobile/src/screens/DirectChatScreen.tsx (nuevo)
 apps/mobile/src/screens/ChatsScreen.tsx (+Privados tab, DirectConversationItem, useDirectConversations)
 apps/mobile/src/screens/PublicUserProfileScreen.tsx (+Mensaje button, handleMessage, startingChat state)
 apps/mobile/src/navigation/AppNavigator.tsx (+DirectChat en RootStackParamList y stack, import DirectChatScreen)
+```
+
+---
+
+## 47. Chat Polish: Unread/listas en tiempo real, errores, lifecycle, robustez
+
+Sprint de pulido post-chat antes de push notifications. Sin features nuevas: corrección de bugs reales y consistencia.
+
+### Bugs corregidos
+
+**Backend:**
+- Sin cambios en el filtro de `list-user-conversations` — los partidos played/canceled no aparecen en la lista de chats (comportamiento intencional).
+
+**Mobile:**
+- `ChatsScreen`: `refreshing={matchLoading}` → `refreshing={matchRefetching}`. `isLoading` es true solo en la carga inicial; `isRefetching` es true durante pull-to-refresh. El spinner nunca aparecía en refetch.
+- `ChatsScreen`: agregados estados de error con botón "Reintentar" en las tres pestañas. Antes mostraba estado vacío cuando la API fallaba.
+- `MatchChatScreen` / `GroupChatScreen`: eliminado `useEffect` con `scrollToIndex(0)` en mount. Se ejecutaba cuando messages estaba vacío (carga async), podía lanzar excepciones, y era innecesario: el `inverted FlatList` ya posiciona el scroll en el mensaje más reciente.
+- `DirectChatScreen`: agregado estado de error con botón "Reintentar". Antes no tenía ningún manejo de `isError`.
+
+### Mejoras realtime
+
+- `useChatRealtime`: al recibir `message.new` via WS, ahora también actualiza en-caché las listas de conversaciones (`match-conversations`, `group-conversations`, `direct-conversations`) actualizando `lastMessage` y re-ordenando. Zero-network: solo el cache de la lista que contiene la conversación cambia; las otras son no-ops.
+- `useSendMessage`: tras envío exitoso, invalida las tres listas de conversaciones. Backup para cuando el WS está temporalmente desconectado.
+- Resultado: ChatsScreen se actualiza en tiempo real cuando llega un mensaje (sin pull-to-refresh).
+
+### Tests
+
+- `list-user-conversations.use-case.spec.ts`: actualizado test de filtro Prisma (eliminada aserción de `status: notIn`), añadidos 2 tests nuevos: `marks played match as isReadOnly` y `marks canceled match as isReadOnly`. Total chat suite: 52 tests ✓, suite completa API: 361 tests ✓.
+
+### Archivos modificados
+
+```
+apps/api/src/chat/application/list-user-conversations.use-case.ts (eliminado filtro status notIn)
+apps/api/src/chat/application/list-user-conversations.use-case.spec.ts (test filtro + 2 tests isReadOnly)
+apps/mobile/src/features/chat/useChatRealtime.ts (update conversation list caches on new message)
+apps/mobile/src/features/chat/useSendMessage.ts (invalidate conversation lists on success)
+apps/mobile/src/screens/ChatsScreen.tsx (refreshing fix, error states con retry)
+apps/mobile/src/screens/MatchChatScreen.tsx (eliminado scrollToIndex useEffect)
+apps/mobile/src/screens/GroupChatScreen.tsx (eliminado scrollToIndex useEffect)
+apps/mobile/src/screens/DirectChatScreen.tsx (error state con retry)
+```
+
+---
+
+## 48. Chat Push Notifications Sprint 1: fanout unificado por conversación
+
+### Qué se hizo
+
+Integración de push notifications para mensajes de chat sobre la infraestructura existente de `PushModule` / `NotificationProvider`. Arquitectura unificada: un solo servicio maneja MATCH, GROUP y DIRECT sin lógica por tipo fuera del fanout de destinatarios y la construcción del payload.
+
+### Decisiones de diseño
+
+- **Fuente de destinatarios**: Para MATCH se usa `MatchParticipant` con `status IN [CONFIRMED, WAITLISTED, SPECTATOR]` — consistente con los statuses que otorgan acceso al chat. Para GROUP se usa `GroupMember`. Para DIRECT los dos campos `userAId`/`userBId` de la conversación.
+- **Sin ConversationMember table**: La membresía ya existe en las tablas nativas; agregar una tabla denormalizada para MVP sería complejidad sin beneficio real.
+- **Dedup natural**: `SendMessageUseCase` ahora retorna `{ message, created: boolean }`. El controller solo dispara push cuando `created === true`, evitando reenviar en retries idempotentes.
+- **Fire-and-forget**: `void chatNotifications.onMessageCreated(message).catch(...)` desde el controller, post-WS-emit.
+- **Deep link payload**: `data.type === 'chat_message'` discrimina de notificaciones legacy. `conversationType` indica el tipo, más los ids/nombres necesarios para navegar directo al chat correcto.
+
+### Payload de push por tipo
+
+| Tipo  | title          | body                        | data                                                              |
+|-------|----------------|-----------------------------|-------------------------------------------------------------------|
+| MATCH | match.title    | `{username}: {msg}`         | `{ type, conversationType:'MATCH', matchId }`                    |
+| GROUP | group.name     | `{username}: {msg}`         | `{ type, conversationType:'GROUP', groupId, groupName }`          |
+| DIRECT| senderUsername | `{msg}` (sin prefijo)       | `{ type, conversationType:'DIRECT', conversationId, otherUsername }` |
+
+- Cuerpos > 100 chars se truncan con `…`.
+
+### Mobile deep link
+
+`handleNotificationTap()` en `App.tsx` discrimina por `data.type`:
+- `chat_message + MATCH` → `MatchChat { matchId }`
+- `chat_message + GROUP` → `GroupChat { groupId, groupName }`
+- `chat_message + DIRECT` → `DirectChat { conversationId, otherUsername }`
+- Cualquier otra notificación (legacy) → `MatchDetail { matchId }` si tiene `matchId`.
+
+### Tests
+
+12 tests en `chat-notification.service.spec.ts`: fanout por tipo, exclusión del sender, payload correcto, truncación, conversación no encontrada.
+
+### Archivos modificados/creados
+
+```
+apps/api/src/chat/application/chat-notification.service.ts (NUEVO)
+apps/api/src/chat/application/chat-notification.service.spec.ts (NUEVO — 12 tests)
+apps/api/src/chat/application/send-message.use-case.ts (retorna { message, created })
+apps/api/src/chat/application/match-chat.use-case.spec.ts (actualizar assertions por nuevo return type)
+apps/api/src/chat/api/chat.controller.ts (+ChatNotificationService, fire-and-forget, Logger)
+apps/api/src/chat/chat.module.ts (+PushModule import, +ChatNotificationService)
+apps/mobile/App.tsx (handleNotificationTap con deep link a chats)
+```
+
+---
+
+## 49. Chat Push Notifications Sprint 2: unread tracking, push suppression, deep link robusto
+
+### Qué se hizo
+
+Sprint de pulido de notificaciones de chat: supresión de push cuando el usuario está viendo el chat, unread indicators en la lista de conversaciones, mark-as-read automático y fix de deep link en cold start.
+
+### Decisiones de diseño
+
+- **ConversationReadState**: tabla simple `(userId, conversationId, lastReadAt)` con PK compuesta. Upsert en cada mark-as-read. Base limpia para mute/preferencias futuras sin complejidad prematura.
+- **hasUnread**: computed server-side en los list use cases. Estrategia: `lastMessage existe && lastMessage.senderId != userId && (lastReadAt is null || lastMessage.createdAt > lastReadAt)`. Un check O(1) por conversación con una sola query extra (`findMany` de read states).
+- **Push suppression vía Redis**: `chat:viewing:{conversationId}:{userId}` con TTL 90s. Set en `chat.subscribe`, del en `chat.unsubscribe` y disconnect. `ChatNotificationService.filterViewingUsers()` usa `MGET` para filtrar en batch. Fail-open si Redis es null.
+- **Mark-as-read integrado en useChatRealtime**: al subscribir (montar pantalla) y al recibir cada mensaje nuevo. Cache update optimista en las listas (`hasUnread: false`) sin invalidar ni re-fetchear la red.
+- **Cold start deep link**: `navigateWhenReady()` reintentar hasta 10 veces cada 150ms hasta que `navigationRef.isReady()`. Elimina la race condition donde la navegación se silenciaba porque el stack aún no estaba montado.
+
+### Flujo completo
+
+```
+Usuario abre DirectChatScreen
+  → useChatRealtime monta → chat.subscribe WS
+  → ChatGateway: Redis SETEX chat:viewing:{convId}:{userId} 90 1
+  → useChatRealtime: markConversationRead(convId) [fire-and-forget]
+    → POST /conversations/:id/read → ConversationReadState upsert
+    → cache: match/group/direct-conversations[convId].hasUnread = false
+
+Mensaje nuevo llega mientras está en pantalla
+  → message.new WS → onMessage handler
+  → cache messages + lista actualizada (hasUnread: false)
+  → markConversationRead(convId) [fire-and-forget]
+  → ChatNotificationService.onMessageCreated():
+    → resolveRecipients()
+    → filterViewingUsers(): MGET → user está viewing → excluido
+    → NO push enviada
+
+Usuario sale de la pantalla
+  → chat.unsubscribe WS
+  → ChatGateway: Redis DEL chat:viewing:{convId}:{userId}
+
+Próximo mensaje → push enviada normalmente
+```
+
+### Unread dots en ChatsScreen
+
+- Punto azul (8px) junto al timestamp en items con `hasUnread: true`
+- Título y preview en bold cuando hay mensajes no leídos
+- `updateListLastMessage` (en useChatRealtime) setea `hasUnread: false` inline al actualizar el cache de lista mientras se está viendo la conversación
+
+### Tests
+
+- `mark-conversation-read.use-case.spec.ts`: 2 tests (upsert, 404 si no existe)
+- `chat-notification.service.spec.ts`: +3 tests Redis (viewing suppresses, not viewing sends, null Redis fails open)
+- Total API suite: **376 tests ✓**
+
+### Archivos modificados/creados
+
+```
+apps/api/prisma/migrations/20260311120000_add_conversation_read_state/migration.sql (NUEVO)
+apps/api/prisma/schema.prisma (+ConversationReadState model, back-relations)
+apps/api/src/chat/application/mark-conversation-read.use-case.ts (NUEVO)
+apps/api/src/chat/application/mark-conversation-read.use-case.spec.ts (NUEVO — 2 tests)
+apps/api/src/chat/application/list-user-conversations.use-case.ts (+hasUnread, +readStates query)
+apps/api/src/chat/application/list-group-conversations.use-case.ts (+hasUnread, +readStates query)
+apps/api/src/chat/application/list-direct-conversations.use-case.ts (+hasUnread, +readStates query)
+apps/api/src/chat/application/chat-notification.service.ts (+REDIS_CLIENT, filterViewingUsers)
+apps/api/src/chat/application/chat-notification.service.spec.ts (+3 Redis suppression tests)
+apps/api/src/chat/realtime/chat.gateway.ts (+REDIS_CLIENT, SETEX on subscribe, DEL on unsubscribe/disconnect)
+apps/api/src/chat/api/chat.controller.ts (+POST /conversations/:id/read, +MarkConversationReadUseCase)
+apps/api/src/chat/chat.module.ts (+MarkConversationReadUseCase)
+apps/api/src/chat/application/list-user-conversations.use-case.spec.ts (+conversationReadState mock)
+apps/api/src/chat/application/group-chat.use-case.spec.ts (+conversationReadState mock)
+apps/api/src/chat/application/direct-chat.use-case.spec.ts (+conversationReadState mock)
+apps/mobile/src/types/api.ts (+hasUnread en 3 list item interfaces)
+apps/mobile/src/features/chat/chatClient.ts (+markConversationRead)
+apps/mobile/src/features/chat/useChatRealtime.ts (+markRead on subscribe/message, +hasUnread: false en cache)
+apps/mobile/src/screens/ChatsScreen.tsx (+UnreadDot, unread styles, itemTitleUnread, itemPreviewUnread)
+apps/mobile/App.tsx (+navigateWhenReady cold start fix)
+```
+
+## 50. Chat UX: Unread badge en Home, tab por defecto, realtime FlatList fix
+
+### Qué se hizo
+
+**Badge de no leídos en Home:**
+- Nuevo use case `GetUnreadCountUseCase` (4 queries paralelas — match/group/direct — mismo patrón hasUnread que listas existentes).
+- Nuevo endpoint `GET /api/v1/conversations/unread-count` → `{ total: number }`.
+- Hook `useUnreadCount()` en mobile (React Query, polling 60s, staleTime 30s).
+- Badge rojo con número sobre el botón "Chats" en HomeScreen. Se invalida al marcar conversaciones leídas.
+
+**Tab por defecto en ChatsScreen:**
+- Cambio de `useState('matches')` → `useState('privados')`.
+
+**Realtime FlatList fix:**
+- `maintainVisibleContentPosition={{ minIndexForVisible: 1, autoscrollToTopThreshold: 10 }}` en los tres FlatList de chat (Match/Group/Direct). Evita el salto de scroll al prepender mensajes en modo `inverted`.
+- `scrollToOffset({ offset: 0 })` al enviar un mensaje (retorna el viewport al mensaje más nuevo).
+- Fix en `useChatRealtime.onMessage`: si el cache no está inicializado aún (`old === undefined`), seed la primera página con el mensaje recibido en lugar de descartarlo silenciosamente.
+- `invalidateQueries(['unread-count'])` en `markRead` para que el badge refleje el estado real.
+
+### Archivos modificados
+
+```
+apps/api/src/chat/application/get-unread-count.use-case.ts (nuevo)
+apps/api/src/chat/chat.module.ts (+GetUnreadCountUseCase)
+apps/api/src/chat/api/chat.controller.ts (+GET conversations/unread-count)
+apps/mobile/src/features/chat/chatClient.ts (+getUnreadConversationCount)
+apps/mobile/src/features/chat/useUnreadCount.ts (nuevo)
+apps/mobile/src/screens/HomeScreen.tsx (+useUnreadCount, badge sobre Chats btn)
+apps/mobile/src/screens/ChatsScreen.tsx (default tab 'privados')
+apps/mobile/src/features/chat/useChatRealtime.ts (seed cache, invalidate unread-count)
+apps/mobile/src/screens/MatchChatScreen.tsx (maintainVisibleContentPosition, scrollToOffset on send)
+apps/mobile/src/screens/GroupChatScreen.tsx (idem)
+apps/mobile/src/screens/DirectChatScreen.tsx (idem)
 ```

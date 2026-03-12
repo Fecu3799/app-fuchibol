@@ -13,6 +13,7 @@ import type { DirectConversationListItem, GroupConversationListItem, MatchConver
 import { useMatchConversations } from '../features/chat/useMatchConversations';
 import { useGroupConversations } from '../features/chat/useGroupConversations';
 import { useDirectConversations } from '../features/chat/useDirectConversations';
+import { useUnreadSummary } from '../features/chat/useUnreadSummary';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chats'>;
 
@@ -41,6 +42,10 @@ function formatChatTime(iso: string): string {
   return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
 }
 
+function UnreadDot() {
+  return <View style={s.unreadDot} />;
+}
+
 function MatchConversationItem({
   item,
   onPress,
@@ -56,14 +61,17 @@ function MatchConversationItem({
     <TouchableOpacity style={s.item} onPress={onPress} activeOpacity={0.7}>
       <View style={s.itemMain}>
         <View style={s.itemHeader}>
-          <Text style={s.itemTitle} numberOfLines={1}>
+          <Text style={[s.itemTitle, item.hasUnread && s.itemTitleUnread]} numberOfLines={1}>
             {item.match.title}
           </Text>
-          <Text style={s.itemTime}>{timeStr}</Text>
+          <View style={s.itemHeaderRight}>
+            <Text style={s.itemTime}>{timeStr}</Text>
+            {item.hasUnread && <UnreadDot />}
+          </View>
         </View>
         <View style={s.itemFooter}>
           {item.lastMessage ? (
-            <Text style={s.itemPreview} numberOfLines={1}>
+            <Text style={[s.itemPreview, item.hasUnread && s.itemPreviewUnread]} numberOfLines={1}>
               <Text style={s.itemSender}>{item.lastMessage.senderUsername}: </Text>
               {item.lastMessage.body}
             </Text>
@@ -96,14 +104,17 @@ function DirectConversationItem({
     <TouchableOpacity style={s.item} onPress={onPress} activeOpacity={0.7}>
       <View style={s.itemMain}>
         <View style={s.itemHeader}>
-          <Text style={s.itemTitle} numberOfLines={1}>
+          <Text style={[s.itemTitle, item.hasUnread && s.itemTitleUnread]} numberOfLines={1}>
             @{item.otherUser.username}
           </Text>
-          <Text style={s.itemTime}>{timeStr}</Text>
+          <View style={s.itemHeaderRight}>
+            <Text style={s.itemTime}>{timeStr}</Text>
+            {item.hasUnread && <UnreadDot />}
+          </View>
         </View>
         <View style={s.itemFooter}>
           {item.lastMessage ? (
-            <Text style={s.itemPreview} numberOfLines={1}>
+            <Text style={[s.itemPreview, item.hasUnread && s.itemPreviewUnread]} numberOfLines={1}>
               {item.lastMessage.body}
             </Text>
           ) : (
@@ -130,14 +141,17 @@ function GroupConversationItem({
     <TouchableOpacity style={s.item} onPress={onPress} activeOpacity={0.7}>
       <View style={s.itemMain}>
         <View style={s.itemHeader}>
-          <Text style={s.itemTitle} numberOfLines={1}>
+          <Text style={[s.itemTitle, item.hasUnread && s.itemTitleUnread]} numberOfLines={1}>
             {item.group.name}
           </Text>
-          <Text style={s.itemTime}>{timeStr}</Text>
+          <View style={s.itemHeaderRight}>
+            <Text style={s.itemTime}>{timeStr}</Text>
+            {item.hasUnread && <UnreadDot />}
+          </View>
         </View>
         <View style={s.itemFooter}>
           {item.lastMessage ? (
-            <Text style={s.itemPreview} numberOfLines={1}>
+            <Text style={[s.itemPreview, item.hasUnread && s.itemPreviewUnread]} numberOfLines={1}>
               <Text style={s.itemSender}>{item.lastMessage.senderUsername}: </Text>
               {item.lastMessage.body}
             </Text>
@@ -151,16 +165,46 @@ function GroupConversationItem({
 }
 
 export default function ChatsScreen({ navigation }: Props) {
-  const [activeTab, setActiveTab] = useState<ChatTab>('matches');
-  const { data: matchConversations, isLoading: matchLoading, refetch: refetchMatches } = useMatchConversations();
-  const { data: groupConversations, isLoading: groupLoading, refetch: refetchGroups } = useGroupConversations();
-  const { data: directConversations, isLoading: directLoading, refetch: refetchDirect } = useDirectConversations();
+  const [activeTab, setActiveTab] = useState<ChatTab>('privados');
+  const { match: matchUnread, group: groupUnread, direct: directUnread } = useUnreadSummary();
+  const {
+    data: matchConversations,
+    isLoading: matchLoading,
+    isRefetching: matchRefetching,
+    isError: matchError,
+    refetch: refetchMatches,
+  } = useMatchConversations();
+  const {
+    data: groupConversations,
+    isLoading: groupLoading,
+    isRefetching: groupRefetching,
+    isError: groupError,
+    refetch: refetchGroups,
+  } = useGroupConversations();
+  const {
+    data: directConversations,
+    isLoading: directLoading,
+    isRefetching: directRefetching,
+    isError: directError,
+    refetch: refetchDirect,
+  } = useDirectConversations();
 
   function renderMatchesTab() {
     if (matchLoading) {
       return (
         <View style={s.center}>
           <ActivityIndicator size="large" color="#1976d2" />
+        </View>
+      );
+    }
+
+    if (matchError) {
+      return (
+        <View style={s.center}>
+          <Text style={s.errorText}>No se pudieron cargar los chats.</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => void refetchMatches()}>
+            <Text style={s.retryText}>Reintentar</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -184,7 +228,7 @@ export default function ChatsScreen({ navigation }: Props) {
           />
         )}
         onRefresh={() => void refetchMatches()}
-        refreshing={matchLoading}
+        refreshing={matchRefetching}
         contentInsetAdjustmentBehavior="automatic"
         ItemSeparatorComponent={() => <View style={s.separator} />}
       />
@@ -196,6 +240,17 @@ export default function ChatsScreen({ navigation }: Props) {
       return (
         <View style={s.center}>
           <ActivityIndicator size="large" color="#1976d2" />
+        </View>
+      );
+    }
+
+    if (directError) {
+      return (
+        <View style={s.center}>
+          <Text style={s.errorText}>No se pudieron cargar los chats.</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => void refetchDirect()}>
+            <Text style={s.retryText}>Reintentar</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -224,7 +279,7 @@ export default function ChatsScreen({ navigation }: Props) {
           />
         )}
         onRefresh={() => void refetchDirect()}
-        refreshing={directLoading}
+        refreshing={directRefetching}
         contentInsetAdjustmentBehavior="automatic"
         ItemSeparatorComponent={() => <View style={s.separator} />}
       />
@@ -236,6 +291,17 @@ export default function ChatsScreen({ navigation }: Props) {
       return (
         <View style={s.center}>
           <ActivityIndicator size="large" color="#1976d2" />
+        </View>
+      );
+    }
+
+    if (groupError) {
+      return (
+        <View style={s.center}>
+          <Text style={s.errorText}>No se pudieron cargar los chats.</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => void refetchGroups()}>
+            <Text style={s.retryText}>Reintentar</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -264,7 +330,7 @@ export default function ChatsScreen({ navigation }: Props) {
           />
         )}
         onRefresh={() => void refetchGroups()}
-        refreshing={groupLoading}
+        refreshing={groupRefetching}
         contentInsetAdjustmentBehavior="automatic"
         ItemSeparatorComponent={() => <View style={s.separator} />}
       />
@@ -274,18 +340,33 @@ export default function ChatsScreen({ navigation }: Props) {
   return (
     <View style={s.root}>
       <View style={s.tabBar}>
-        {TABS.map((tab) => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[s.tabItem, activeTab === tab.key && s.tabItemActive]}
-            onPress={() => setActiveTab(tab.key)}
-            activeOpacity={0.7}
-          >
-            <Text style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {TABS.map((tab) => {
+          const tabUnread =
+            tab.key === 'privados' ? directUnread :
+            tab.key === 'matches' ? matchUnread :
+            groupUnread;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[s.tabItem, activeTab === tab.key && s.tabItemActive]}
+              onPress={() => setActiveTab(tab.key)}
+              activeOpacity={0.7}
+            >
+              <View style={s.tabItemInner}>
+                <Text style={[s.tabLabel, activeTab === tab.key && s.tabLabelActive]}>
+                  {tab.label}
+                </Text>
+                {tabUnread > 0 && (
+                  <View style={[s.tabBadge, activeTab === tab.key && s.tabBadgeOnActive]}>
+                    <Text style={[s.tabBadgeText, activeTab === tab.key && s.tabBadgeTextOnActive]}>
+                      {tabUnread > 99 ? '99+' : String(tabUnread)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
       <View style={s.content}>
         {activeTab === 'matches' && renderMatchesTab()}
@@ -324,9 +405,43 @@ const s = StyleSheet.create({
   tabLabelActive: {
     color: '#fff',
   },
+  tabItemInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  tabBadge: {
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#d32f2f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  tabBadgeOnActive: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+  },
+  tabBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  tabBadgeTextOnActive: {
+    color: '#d32f2f',
+  },
   content: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
   emptyText: { fontSize: 15, color: '#888', textAlign: 'center' },
+  errorText: { fontSize: 15, color: '#d32f2f', textAlign: 'center', marginBottom: 12 },
+  retryBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1976d2',
+  },
+  retryText: { color: '#fff', fontWeight: '600', fontSize: 14 },
   item: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -340,6 +455,12 @@ const s = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
+  itemHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
   itemTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -347,13 +468,24 @@ const s = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
+  itemTitleUnread: {
+    color: '#000',
+    fontWeight: '700',
+  },
   itemTime: { fontSize: 12, color: '#999', fontVariant: ['tabular-nums'] },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#1976d2',
+  },
   itemFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   itemPreview: { fontSize: 14, color: '#555', flex: 1 },
+  itemPreviewUnread: { color: '#111', fontWeight: '500' },
   itemSender: { fontWeight: '500', color: '#444' },
   itemNoMessages: { fontSize: 14, color: '#bbb', fontStyle: 'italic' },
   readOnlyBadge: {

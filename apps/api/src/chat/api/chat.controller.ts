@@ -2,13 +2,15 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
@@ -21,16 +23,37 @@ import { ListUserConversationsUseCase } from '../application/list-user-conversat
 import { ListGroupConversationsUseCase } from '../application/list-group-conversations.use-case';
 import { GetOrCreateDirectConversationUseCase } from '../application/get-or-create-direct-conversation.use-case';
 import { ListDirectConversationsUseCase } from '../application/list-direct-conversations.use-case';
+import { FindDirectConversationUseCase } from '../application/find-direct-conversation.use-case';
+import { SendFirstDirectMessageUseCase } from '../application/send-first-direct-message.use-case';
 import { ChatRealtimePublisher } from '../realtime/chat-realtime.publisher';
+import { ChatNotificationService } from '../application/chat-notification.service';
+import { MarkConversationReadUseCase } from '../application/mark-conversation-read.use-case';
+import { GetUnreadCountUseCase } from '../application/get-unread-count.use-case';
 import { SendMessageDto } from './dto/send-message.dto';
+import type { MessageView } from '../application/list-messages.use-case';
 
 class StartDirectConversationDto {
   @IsUUID()
   targetUserId!: string;
 }
 
+class SendFirstDirectMessageDto {
+  @IsUUID()
+  targetUserId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
+  body!: string;
+
+  @IsUUID()
+  clientMsgId!: string;
+}
+
 @Controller()
 export class ChatController {
+  private readonly logger = new Logger(ChatController.name);
+
   constructor(
     private readonly getMatchConversation: GetMatchConversationUseCase,
     private readonly getGroupConversationUC: GetGroupConversationUseCase,
@@ -40,8 +63,22 @@ export class ChatController {
     private readonly listGroupConversations: ListGroupConversationsUseCase,
     private readonly getOrCreateDirectConv: GetOrCreateDirectConversationUseCase,
     private readonly listDirectConversations: ListDirectConversationsUseCase,
+    private readonly findDirectConv: FindDirectConversationUseCase,
+    private readonly sendFirstDirectMsg: SendFirstDirectMessageUseCase,
     private readonly realtimePublisher: ChatRealtimePublisher,
+    private readonly chatNotifications: ChatNotificationService,
+    private readonly markRead: MarkConversationReadUseCase,
+    private readonly getUnreadCount: GetUnreadCountUseCase,
   ) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('conversations/unread-count')
+  async getUnreadConversationCount(
+    @Actor() actor: ActorPayload,
+  ): Promise<{ total: number }> {
+    const total = await this.getUnreadCount.execute(actor.userId);
+    return { total };
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('conversations')
@@ -59,6 +96,49 @@ export class ChatController {
   @Get('conversations/direct')
   async getDirectConversations(@Actor() actor: ActorPayload) {
     return this.listDirectConversations.execute(actor.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('conversations/direct/find')
+  async findDirectConversation(
+    @Query('targetUserId', new ParseUUIDPipe()) targetUserId: string,
+    @Actor() actor: ActorPayload,
+  ): Promise<{ id: string }> {
+    const result = await this.findDirectConv.execute(
+      actor.userId,
+      targetUserId,
+    );
+    if (!result) throw new NotFoundException('CONVERSATION_NOT_FOUND');
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ mutations: {} })
+  @Post('conversations/direct/first-message')
+  async sendFirstDirectMessage(
+    @Body() body: SendFirstDirectMessageDto,
+    @Actor() actor: ActorPayload,
+  ): Promise<{ conversationId: string; message: MessageView }> {
+    const { conversationId, message, created } =
+      await this.sendFirstDirectMsg.execute({
+        senderId: actor.userId,
+        targetUserId: body.targetUserId,
+        body: body.body,
+        clientMsgId: body.clientMsgId,
+      });
+
+    void this.realtimePublisher.notifyNewMessage(conversationId, message);
+
+    if (created) {
+      void this.chatNotifications.onMessageCreated(message).catch((err) =>
+        this.logger.warn('chat push notification failed', {
+          err,
+          conversationId,
+        }),
+      );
+    }
+
+    return { conversationId, message };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -112,7 +192,7 @@ export class ChatController {
     @Body() body: SendMessageDto,
     @Actor() actor: ActorPayload,
   ) {
-    const message = await this.sendMessage.execute({
+    const { message, created } = await this.sendMessage.execute({
       conversationId: id,
       senderId: actor.userId,
       body: body.body,
@@ -121,6 +201,24 @@ export class ChatController {
 
     void this.realtimePublisher.notifyNewMessage(id, message);
 
+    if (created) {
+      void this.chatNotifications.onMessageCreated(message).catch((err) =>
+        this.logger.warn('chat push notification failed', {
+          err,
+          conversationId: id,
+        }),
+      );
+    }
+
     return message;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('conversations/:id/read')
+  async markConversationRead(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Actor() actor: ActorPayload,
+  ): Promise<void> {
+    await this.markRead.execute(id, actor.userId);
   }
 }

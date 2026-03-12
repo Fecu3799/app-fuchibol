@@ -240,15 +240,15 @@ describe('SendMessageUseCase', () => {
       makeDirectAccess(),
       storage,
     );
-    const result = await useCase.execute({
+    const { message } = await useCase.execute({
       conversationId: 'conv-1',
       senderId: 'creator',
       body: 'Hello',
       clientMsgId: 'client-uuid',
     });
-    expect(result.id).toBe('msg-1');
-    expect(result.body).toBe('Hello');
-    expect(result.senderAvatarUrl).toBeNull();
+    expect(message.id).toBe('msg-1');
+    expect(message.body).toBe('Hello');
+    expect(message.senderAvatarUrl).toBeNull();
   });
 
   it('returns existing message (idempotency)', async () => {
@@ -357,13 +357,13 @@ describe('SendMessageUseCase', () => {
       makeDirectAccess(),
       storage,
     );
-    const result = await useCase.execute({
+    const { message } = await useCase.execute({
       conversationId: 'conv-1',
       senderId: 'creator',
       body: 'Hello',
       clientMsgId: 'client-uuid-2',
     });
-    expect(result.senderAvatarUrl).toBe(
+    expect(message.senderAvatarUrl).toBe(
       'https://cdn.example.com/avatars/abc.jpg',
     );
   });

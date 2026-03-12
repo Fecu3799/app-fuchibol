@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -10,9 +10,19 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
+import type Redis from 'ioredis';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../infra/prisma/prisma.service';
+import { REDIS_CLIENT } from '../../infra/redis/redis.module';
 import { ChatRealtimePublisher } from './chat-realtime.publisher';
+
+// TTL in seconds: how long we consider a user as "actively viewing" a conversation.
+// Set generously to cover WS reconnect windows without unnecessary push delivery.
+const VIEWING_TTL_SECONDS = 90;
+
+function viewingKey(conversationId: string, userId: string): string {
+  return `chat:viewing:${conversationId}:${userId}`;
+}
 
 @WebSocketGateway({ namespace: '/chat', cors: { origin: '*' } })
 export class ChatGateway
@@ -27,6 +37,7 @@ export class ChatGateway
     private readonly publisher: ChatRealtimePublisher,
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
   ) {}
 
   afterInit(server: Server): void {
@@ -44,13 +55,22 @@ export class ChatGateway
         token,
       );
       client.data.userId = payload.sub;
+      void client.join(`user:${payload.sub}`);
     } catch {
       client.disconnect();
     }
   }
 
-  handleDisconnect(_client: Socket): void {
-    // rooms cleaned up automatically by socket.io
+  handleDisconnect(client: Socket): void {
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !this.redis) return;
+    // Clear active-viewing keys for all conv rooms this socket was in
+    for (const room of client.rooms) {
+      if (room.startsWith('conv:')) {
+        const conversationId = room.slice('conv:'.length);
+        void this.redis.del(viewingKey(conversationId, userId));
+      }
+    }
   }
 
   @SubscribeMessage('chat.subscribe')
@@ -95,10 +115,7 @@ export class ChatGateway
         const participant =
           await this.prisma.client.matchParticipant.findUnique({
             where: {
-              matchId_userId: {
-                matchId: conversation.matchId,
-                userId,
-              },
+              matchId_userId: { matchId: conversation.matchId, userId },
             },
             select: { status: true },
           });
@@ -136,6 +153,15 @@ export class ChatGateway
     }
 
     await client.join(`conv:${data.conversationId}`);
+
+    // Mark user as actively viewing this conversation for push suppression
+    if (this.redis) {
+      void this.redis.setex(
+        viewingKey(data.conversationId, userId),
+        VIEWING_TTL_SECONDS,
+        '1',
+      );
+    }
   }
 
   @SubscribeMessage('chat.unsubscribe')
@@ -144,5 +170,9 @@ export class ChatGateway
     @MessageBody() data: { conversationId: string },
   ): Promise<void> {
     await client.leave(`conv:${data.conversationId}`);
+    const userId = client.data.userId as string | undefined;
+    if (userId && this.redis) {
+      void this.redis.del(viewingKey(data.conversationId, userId));
+    }
   }
 }

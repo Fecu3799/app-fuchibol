@@ -28,7 +28,9 @@ export class SendMessageUseCase {
     private readonly storage: StorageService,
   ) {}
 
-  async execute(input: SendMessageInput): Promise<MessageView> {
+  async execute(
+    input: SendMessageInput,
+  ): Promise<{ message: MessageView; created: boolean }> {
     const conversation = await this.prisma.client.conversation.findUnique({
       where: { id: input.conversationId },
       select: { type: true, matchId: true, groupId: true },
@@ -79,6 +81,7 @@ export class SendMessageUseCase {
       },
     });
 
+    let created = false;
     if (!message) {
       message = await this.prisma.client.message.create({
         data: {
@@ -93,19 +96,23 @@ export class SendMessageUseCase {
           },
         },
       });
+      created = true;
     }
 
     return {
-      id: message.id,
-      conversationId: message.conversationId,
-      senderId: message.senderId,
-      senderUsername: message.sender.username,
-      senderAvatarUrl: message.sender.avatar?.key
-        ? this.storage.buildPublicUrl(message.sender.avatar.key)
-        : null,
-      body: message.body,
-      clientMsgId: message.clientMsgId,
-      createdAt: message.createdAt,
+      message: {
+        id: message.id,
+        conversationId: message.conversationId,
+        senderId: message.senderId,
+        senderUsername: message.sender.username,
+        senderAvatarUrl: message.sender.avatar?.key
+          ? this.storage.buildPublicUrl(message.sender.avatar.key)
+          : null,
+        body: message.body,
+        clientMsgId: message.clientMsgId,
+        createdAt: message.createdAt,
+      },
+      created,
     };
   }
 }

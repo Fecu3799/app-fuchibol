@@ -5,6 +5,7 @@ import { StorageService } from '../../infra/storage/storage.service';
 export interface DirectConversationListItem {
   id: string;
   type: string;
+  hasUnread: boolean;
   otherUser: {
     id: string;
     username: string;
@@ -55,12 +56,29 @@ export class ListDirectConversationsUseCase {
       },
     });
 
+    if (conversations.length === 0) return [];
+
+    const readStates = await this.prisma.client.conversationReadState.findMany({
+      where: { userId, conversationId: { in: conversations.map((c) => c.id) } },
+      select: { conversationId: true, lastReadAt: true },
+    });
+    const readStateMap = new Map(
+      readStates.map((s) => [s.conversationId, s.lastReadAt]),
+    );
+
     const items: DirectConversationListItem[] = conversations.map((conv) => {
       const other = conv.userAId === userId ? conv.userB! : conv.userA!;
       const lastMsg = conv.messages[0] ?? null;
+      const lastReadAt = readStateMap.get(conv.id) ?? null;
+      const hasUnread =
+        lastMsg !== null &&
+        lastMsg.senderId !== userId &&
+        (lastReadAt === null || lastMsg.createdAt > lastReadAt);
+
       return {
         id: conv.id,
         type: conv.type,
+        hasUnread,
         otherUser: {
           id: other.id,
           username: other.username,

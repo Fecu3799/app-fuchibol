@@ -356,6 +356,7 @@ export interface ListMessagesResponse {
 export interface GroupConversationListItem {
   id: string;
   type: string;
+  hasUnread: boolean;
   group: {
     id: string;
     name: string;
@@ -372,6 +373,7 @@ export interface GroupConversationListItem {
 export interface DirectConversationListItem {
   id: string;
   type: string;
+  hasUnread: boolean;
   otherUser: {
     id: string;
     username: string;
@@ -390,6 +392,7 @@ export interface MatchConversationListItem {
   id: string;
   type: string;
   isReadOnly: boolean;
+  hasUnread: boolean;
   match: {
     id: string;
     title: string;

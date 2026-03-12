@@ -8,6 +8,7 @@ export interface MatchConversationListItem {
   id: string;
   type: string;
   isReadOnly: boolean;
+  hasUnread: boolean;
   match: {
     id: string;
     title: string;
@@ -65,17 +66,34 @@ export class ListUserConversationsUseCase {
       },
     });
 
+    if (conversations.length === 0) return [];
+
+    // Fetch read states for all conversations in one query
+    const readStates = await this.prisma.client.conversationReadState.findMany({
+      where: { userId, conversationId: { in: conversations.map((c) => c.id) } },
+      select: { conversationId: true, lastReadAt: true },
+    });
+    const readStateMap = new Map(
+      readStates.map((s) => [s.conversationId, s.lastReadAt]),
+    );
+
     const items: MatchConversationListItem[] = conversations.map((conv) => {
       const match = conv.match!;
       const lastMsg = conv.messages[0] ?? null;
       const isReadOnly = (READONLY_STATUSES as readonly string[]).includes(
         match.status as string,
       );
+      const lastReadAt = readStateMap.get(conv.id) ?? null;
+      const hasUnread =
+        lastMsg !== null &&
+        lastMsg.senderId !== userId &&
+        (lastReadAt === null || lastMsg.createdAt > lastReadAt);
 
       return {
         id: conv.id,
         type: conv.type,
         isReadOnly,
+        hasUnread,
         match: {
           id: match.id,
           title: match.title,

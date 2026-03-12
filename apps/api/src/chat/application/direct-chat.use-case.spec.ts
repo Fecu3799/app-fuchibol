@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { DirectChatAccessService } from './direct-chat-access.service';
 import { GetOrCreateDirectConversationUseCase } from './get-or-create-direct-conversation.use-case';
+import { FindDirectConversationUseCase } from './find-direct-conversation.use-case';
+import { SendFirstDirectMessageUseCase } from './send-first-direct-message.use-case';
 import { ListDirectConversationsUseCase } from './list-direct-conversations.use-case';
 import type { PrismaService } from '../../infra/prisma/prisma.service';
 import type { StorageService } from '../../infra/storage/storage.service';
@@ -20,6 +22,7 @@ function makePrisma(overrides: Record<string, unknown> = {}): PrismaService {
         create: jest.fn(),
       },
       user: { findUnique: jest.fn() },
+      conversationReadState: { findMany: jest.fn().mockResolvedValue([]) },
       ...overrides,
     },
   } as unknown as PrismaService;
@@ -294,5 +297,265 @@ describe('ListDirectConversationsUseCase', () => {
       type: 'DIRECT',
       OR: expect.arrayContaining([{ userAId: USER_A }, { userBId: USER_A }]),
     });
+  });
+});
+
+// ── FindDirectConversationUseCase ──
+
+describe('FindDirectConversationUseCase', () => {
+  it('throws CANNOT_CHAT_WITH_SELF', async () => {
+    const prisma = makePrisma();
+    const uc = new FindDirectConversationUseCase(prisma);
+    await expect(uc.execute(USER_A, USER_A)).rejects.toThrow(
+      UnprocessableEntityException,
+    );
+  });
+
+  it('returns null when no conversation exists', async () => {
+    const prisma = makePrisma();
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue(
+      null,
+    );
+    const uc = new FindDirectConversationUseCase(prisma);
+    expect(await uc.execute(USER_A, USER_B)).toBeNull();
+  });
+
+  it('returns { id } when conversation exists', async () => {
+    const prisma = makePrisma();
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue({
+      id: CONV_ID,
+    });
+    const uc = new FindDirectConversationUseCase(prisma);
+    expect(await uc.execute(USER_A, USER_B)).toEqual({ id: CONV_ID });
+  });
+
+  it('does not create conversation', async () => {
+    const prisma = makePrisma();
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue(
+      null,
+    );
+    const uc = new FindDirectConversationUseCase(prisma);
+    await uc.execute(USER_A, USER_B);
+    expect(prisma.client.conversation.create).not.toHaveBeenCalled();
+  });
+
+  it('uses canonical ordering regardless of who calls', async () => {
+    const prisma = makePrisma();
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue(
+      null,
+    );
+    const uc = new FindDirectConversationUseCase(prisma);
+    await uc.execute(USER_B, USER_A); // B initiates, looking for A
+    const [[callArgs]] = (prisma.client.conversation.findUnique as jest.Mock)
+      .mock.calls;
+    expect(callArgs.where.userAId_userBId).toEqual({
+      userAId: USER_A,
+      userBId: USER_B,
+    });
+  });
+});
+
+// ── SendFirstDirectMessageUseCase ──
+
+function makePrismaForFirstMsg(
+  overrides: Record<string, unknown> = {},
+): PrismaService {
+  return {
+    client: {
+      conversation: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
+      user: { findUnique: jest.fn() },
+      message: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
+      ...overrides,
+    },
+  } as unknown as PrismaService;
+}
+
+const MSG_ID = 'msg00000-0000-0000-0000-000000000001';
+
+function makeMessageRow(convId = CONV_ID) {
+  return {
+    id: MSG_ID,
+    conversationId: convId,
+    senderId: USER_A,
+    body: 'Hola!',
+    clientMsgId: 'client-uuid-1',
+    createdAt: NOW,
+    sender: { username: 'alice', avatar: null },
+  };
+}
+
+describe('SendFirstDirectMessageUseCase', () => {
+  it('throws CANNOT_CHAT_WITH_SELF', async () => {
+    const prisma = makePrismaForFirstMsg();
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    await expect(
+      uc.execute({
+        senderId: USER_A,
+        targetUserId: USER_A,
+        body: 'hi',
+        clientMsgId: 'c1',
+      }),
+    ).rejects.toThrow(UnprocessableEntityException);
+  });
+
+  it('throws USER_NOT_FOUND when target does not exist', async () => {
+    const prisma = makePrismaForFirstMsg();
+    (prisma.client.user.findUnique as jest.Mock).mockResolvedValue(null);
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    await expect(
+      uc.execute({
+        senderId: USER_A,
+        targetUserId: USER_B,
+        body: 'hi',
+        clientMsgId: 'c1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('creates conversation and message when neither exists', async () => {
+    const prisma = makePrismaForFirstMsg();
+    (prisma.client.user.findUnique as jest.Mock).mockResolvedValue({
+      id: USER_B,
+    });
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue(
+      null,
+    );
+    (prisma.client.conversation.create as jest.Mock).mockResolvedValue({
+      id: CONV_ID,
+    });
+    (prisma.client.message.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.client.message.create as jest.Mock).mockResolvedValue(
+      makeMessageRow(),
+    );
+
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    const result = await uc.execute({
+      senderId: USER_A,
+      targetUserId: USER_B,
+      body: 'Hola!',
+      clientMsgId: 'client-uuid-1',
+    });
+
+    expect(result.conversationId).toBe(CONV_ID);
+    expect(result.message.id).toBe(MSG_ID);
+    expect(result.created).toBe(true);
+    expect(prisma.client.conversation.create).toHaveBeenCalled();
+    expect(prisma.client.message.create).toHaveBeenCalled();
+  });
+
+  it('reuses existing conversation when already created', async () => {
+    const prisma = makePrismaForFirstMsg();
+    (prisma.client.user.findUnique as jest.Mock).mockResolvedValue({
+      id: USER_B,
+    });
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue({
+      id: CONV_ID,
+    });
+    (prisma.client.message.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.client.message.create as jest.Mock).mockResolvedValue(
+      makeMessageRow(),
+    );
+
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    const result = await uc.execute({
+      senderId: USER_A,
+      targetUserId: USER_B,
+      body: 'Hola!',
+      clientMsgId: 'client-uuid-1',
+    });
+
+    expect(result.conversationId).toBe(CONV_ID);
+    expect(prisma.client.conversation.create).not.toHaveBeenCalled();
+    expect(result.created).toBe(true);
+  });
+
+  it('returns idempotent result when clientMsgId already seen', async () => {
+    const prisma = makePrismaForFirstMsg();
+    (prisma.client.user.findUnique as jest.Mock).mockResolvedValue({
+      id: USER_B,
+    });
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue({
+      id: CONV_ID,
+    });
+    (prisma.client.message.findUnique as jest.Mock).mockResolvedValue(
+      makeMessageRow(),
+    );
+
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    const result = await uc.execute({
+      senderId: USER_A,
+      targetUserId: USER_B,
+      body: 'Hola!',
+      clientMsgId: 'client-uuid-1',
+    });
+
+    expect(result.created).toBe(false);
+    expect(result.message.id).toBe(MSG_ID);
+    expect(prisma.client.message.create).not.toHaveBeenCalled();
+  });
+
+  it('handles race condition on conversation creation (P2002)', async () => {
+    const prisma = makePrismaForFirstMsg();
+    (prisma.client.user.findUnique as jest.Mock).mockResolvedValue({
+      id: USER_B,
+    });
+    (prisma.client.conversation.findUnique as jest.Mock)
+      .mockResolvedValueOnce(null) // first find: no existing
+      .mockResolvedValueOnce({ id: CONV_ID }); // re-fetch after race
+    (prisma.client.conversation.create as jest.Mock).mockRejectedValue({
+      code: 'P2002',
+    });
+    (prisma.client.message.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.client.message.create as jest.Mock).mockResolvedValue(
+      makeMessageRow(),
+    );
+
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    const result = await uc.execute({
+      senderId: USER_A,
+      targetUserId: USER_B,
+      body: 'Hola!',
+      clientMsgId: 'client-uuid-1',
+    });
+
+    expect(result.conversationId).toBe(CONV_ID);
+    expect(result.created).toBe(true);
+  });
+
+  it('stores userA as lexicographically smaller regardless of sender', async () => {
+    const prisma = makePrismaForFirstMsg();
+    (prisma.client.user.findUnique as jest.Mock).mockResolvedValue({
+      id: USER_A,
+    });
+    (prisma.client.conversation.findUnique as jest.Mock).mockResolvedValue(
+      null,
+    );
+    (prisma.client.conversation.create as jest.Mock).mockResolvedValue({
+      id: CONV_ID,
+    });
+    (prisma.client.message.findUnique as jest.Mock).mockResolvedValue(null);
+    (prisma.client.message.create as jest.Mock).mockResolvedValue(
+      makeMessageRow(CONV_ID),
+    );
+
+    const uc = new SendFirstDirectMessageUseCase(prisma, makeStorage());
+    // USER_B initiates, targeting USER_A
+    await uc.execute({
+      senderId: USER_B,
+      targetUserId: USER_A,
+      body: 'hi',
+      clientMsgId: 'c1',
+    });
+
+    const createCall = (prisma.client.conversation.create as jest.Mock).mock
+      .calls[0][0];
+    expect(createCall.data.userAId).toBe(USER_A);
+    expect(createCall.data.userBId).toBe(USER_B);
   });
 });

@@ -11,7 +11,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { PublicUserProfile, UserGender, PreferredPosition, SkillLevel } from '../types/api';
 import { getPublicProfile } from '../features/auth/authClient';
-import { getOrCreateDirectConversation } from '../features/chat/chatClient';
 import { Avatar } from '../components/Avatar';
 import { ApiError } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -50,11 +49,11 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 export default function PublicUserProfileScreen({ route, navigation }: Props) {
   const { userId } = route.params;
-  const { token } = useAuth();
+  const { user } = useAuth();
+  const isSelf = user?.id === userId;
   const [profile, setProfile] = useState<PublicUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [startingChat, setStartingChat] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,19 +93,12 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
       : null;
 
   const handleMessage = () => {
-    if (!token || startingChat) return;
-    setStartingChat(true);
-    getOrCreateDirectConversation(token, userId)
-      .then((conv) => {
-        navigation.navigate('DirectChat', {
-          conversationId: conv.id,
-          otherUsername: profile.username ?? displayName ?? 'Usuario',
-        });
-      })
-      .catch(() => {
-        // no-op: navigation stays on profile; user can retry
-      })
-      .finally(() => setStartingChat(false));
+    // Navigate instantly — DirectChatScreen resolves the conversation on mount.
+    // No conversation is created until the first message is sent.
+    navigation.navigate('DirectChat', {
+      targetUserId: userId,
+      otherUsername: profile.username ?? displayName ?? 'Usuario',
+    });
   };
 
   return (
@@ -126,17 +118,14 @@ export default function PublicUserProfileScreen({ route, navigation }: Props) {
           {displayName && profile.username ? (
             <Text style={s.username}>@{profile.username}</Text>
           ) : null}
-          <Pressable
-            style={[s.msgBtn, startingChat && s.msgBtnDisabled]}
-            onPress={handleMessage}
-            disabled={startingChat}
-          >
-            {startingChat ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
+          {!isSelf && (
+            <Pressable
+              style={s.msgBtn}
+              onPress={handleMessage}
+            >
               <Text style={s.msgBtnText}>Mensaje</Text>
-            )}
-          </Pressable>
+            </Pressable>
+          )}
         </View>
       </View>
 
