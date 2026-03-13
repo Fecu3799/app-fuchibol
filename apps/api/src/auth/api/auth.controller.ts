@@ -9,11 +9,11 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request as ExpressRequest } from 'express';
-import { RegisterUseCase } from '../application/register.use-case';
-import { LoginUseCase } from '../application/login.use-case';
-import { RefreshUseCase } from '../application/refresh.use-case';
-import { LogoutUseCase } from '../application/logout.use-case';
-import { LogoutAllUseCase } from '../application/logout-all.use-case';
+import { RegisterUseCase } from '../application/profile/register.use-case';
+import { LoginUseCase } from '../application/sessions/login.use-case';
+import { RefreshUseCase } from '../application/sessions/refresh.use-case';
+import { LogoutUseCase } from '../application/sessions/logout.use-case';
+import { LogoutAllUseCase } from '../application/sessions/logout-all.use-case';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { Actor } from '../decorators/actor.decorator';
 import type { ActorPayload } from '../interfaces/actor-payload.interface';

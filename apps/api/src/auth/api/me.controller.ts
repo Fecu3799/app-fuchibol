@@ -2,11 +2,11 @@ import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { Actor } from '../decorators/actor.decorator';
 import type { ActorPayload } from '../interfaces/actor-payload.interface';
-import { GetMeUseCase } from '../application/get-me.use-case';
-import { UpdateMeUseCase } from '../application/update-me.use-case';
+import { GetMeUseCase } from '../application/profile/get-me.use-case';
+import { UpdateMeUseCase } from '../application/profile/update-me.use-case';
 import { UpdateMeDto } from './dto/update-me.dto';
-import { PrepareAvatarUseCase } from '../application/prepare-avatar.use-case';
-import { ConfirmAvatarUseCase } from '../application/confirm-avatar.use-case';
+import { PrepareAvatarUseCase } from '../application/profile/prepare-avatar.use-case';
+import { ConfirmAvatarUseCase } from '../application/profile/confirm-avatar.use-case';
 import { PrepareAvatarDto } from './dto/prepare-avatar.dto';
 import { ConfirmAvatarDto } from './dto/confirm-avatar.dto';
 

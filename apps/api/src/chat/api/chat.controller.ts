@@ -15,22 +15,22 @@ import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Actor } from '../../auth/decorators/actor.decorator';
 import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
-import { GetMatchConversationUseCase } from '../application/get-match-conversation.use-case';
-import { GetGroupConversationUseCase } from '../application/get-group-conversation.use-case';
-import { ListMessagesUseCase } from '../application/list-messages.use-case';
-import { SendMessageUseCase } from '../application/send-message.use-case';
-import { ListUserConversationsUseCase } from '../application/list-user-conversations.use-case';
-import { ListGroupConversationsUseCase } from '../application/list-group-conversations.use-case';
-import { GetOrCreateDirectConversationUseCase } from '../application/get-or-create-direct-conversation.use-case';
-import { ListDirectConversationsUseCase } from '../application/list-direct-conversations.use-case';
-import { FindDirectConversationUseCase } from '../application/find-direct-conversation.use-case';
-import { SendFirstDirectMessageUseCase } from '../application/send-first-direct-message.use-case';
+import { GetMatchConversationUseCase } from '../application/conversations/get-match-conversation.use-case';
+import { GetGroupConversationUseCase } from '../application/conversations/get-group-conversation.use-case';
+import { ListMessagesUseCase } from '../application/messages/list-messages.use-case';
+import { SendMessageUseCase } from '../application/messages/send-message.use-case';
+import { ListUserConversationsUseCase } from '../application/conversations/list-user-conversations.use-case';
+import { ListGroupConversationsUseCase } from '../application/conversations/list-group-conversations.use-case';
+import { GetOrCreateDirectConversationUseCase } from '../application/conversations/get-or-create-direct-conversation.use-case';
+import { ListDirectConversationsUseCase } from '../application/conversations/list-direct-conversations.use-case';
+import { FindDirectConversationUseCase } from '../application/conversations/find-direct-conversation.use-case';
+import { SendFirstDirectMessageUseCase } from '../application/conversations/send-first-direct-message.use-case';
 import { ChatRealtimePublisher } from '../realtime/chat-realtime.publisher';
-import { ChatNotificationService } from '../application/chat-notification.service';
-import { MarkConversationReadUseCase } from '../application/mark-conversation-read.use-case';
-import { GetUnreadCountUseCase } from '../application/get-unread-count.use-case';
+import { ChatNotificationService } from '../application/notifications/chat-notification.service';
+import { MarkConversationReadUseCase } from '../application/read/mark-conversation-read.use-case';
+import { GetUnreadCountUseCase } from '../application/read/get-unread-count.use-case';
 import { SendMessageDto } from './dto/send-message.dto';
-import type { MessageView } from '../application/list-messages.use-case';
+import type { MessageView } from '../application/messages/list-messages.use-case';
 
 class StartDirectConversationDto {
   @IsUUID()

@@ -1,7 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { RequestEmailVerifyUseCase } from '../application/request-email-verify.use-case';
-import { ConfirmEmailVerifyUseCase } from '../application/confirm-email-verify.use-case';
+import { RequestEmailVerifyUseCase } from '../application/email/request-email-verify.use-case';
+import { ConfirmEmailVerifyUseCase } from '../application/email/confirm-email-verify.use-case';
 import { RequestEmailVerifyDto } from './dto/request-email-verify.dto';
 import { ConfirmEmailVerifyDto } from './dto/confirm-email-verify.dto';
 

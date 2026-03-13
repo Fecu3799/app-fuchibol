@@ -10,8 +10,8 @@ import {
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { Actor } from '../decorators/actor.decorator';
 import type { ActorPayload } from '../interfaces/actor-payload.interface';
-import { ListSessionsQuery } from '../application/list-sessions.query';
-import { RevokeSessionCommand } from '../application/revoke-session.command';
+import { ListSessionsQuery } from '../application/sessions/list-sessions.query';
+import { RevokeSessionCommand } from '../application/sessions/revoke-session.command';
 
 @Controller('auth/sessions')
 @UseGuards(JwtAuthGuard)

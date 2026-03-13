@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Server } from 'socket.io';
-import type { MessageView } from '../application/list-messages.use-case';
+import type { MessageView } from '../application/messages/list-messages.use-case';
 
 export interface ConversationUpdatedPayload {
   conversationId: string;
