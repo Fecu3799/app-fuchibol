@@ -1,20 +1,10 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { type Prisma, MatchStatus } from '@prisma/client';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-
-export interface VenueSnapshot {
-  name: string;
-  addressText: string | null;
-  mapsUrl: string | null;
-  latitude: number | null;
-  longitude: number | null;
-}
-
-export interface PitchSnapshot {
-  name: string;
-  pitchType: string;
-  price: number | null;
-}
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import type {
+  VenueSnapshot,
+  PitchSnapshot,
+} from '../shared/match-snapshot.service';
 
 export interface CreateMatchInput {
   title: string;

@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { MatchStatus } from '@prisma/client';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { computeMatchStatusView } from '../domain/compute-match-status-view';
-import type { MatchStatusView } from '../domain/compute-match-status-view';
-import { computeMatchGender } from '../domain/compute-match-gender';
-import type { MatchGender } from '../domain/compute-match-gender';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { computeMatchStatusView } from '../../domain/compute-match-status-view';
+import type { MatchStatusView } from '../../domain/compute-match-status-view';
+import { computeMatchGender } from '../../domain/compute-match-gender';
+import type { MatchGender } from '../../domain/compute-match-gender';
 
 export interface ListMatchesInput {
   actorId: string;

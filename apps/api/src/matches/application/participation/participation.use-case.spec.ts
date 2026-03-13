@@ -1,14 +1,76 @@
 import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
-import type { MatchAuditService } from './match-audit.service';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import type { MatchAuditService } from '../audit/match-audit.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 import {
   IdempotencyService,
   computeRequestHash,
-} from '../../common/idempotency/idempotency.service';
+} from '../../../common/idempotency/idempotency.service';
 
 const mockAudit = { log: jest.fn() } as unknown as MatchAuditService;
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 
 const mockMatch = {
   id: 'match-1',
@@ -76,6 +138,7 @@ describe('ConfirmParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
     );
@@ -101,6 +164,7 @@ describe('ConfirmParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
     );
@@ -124,6 +188,7 @@ describe('ConfirmParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
     );
@@ -152,6 +217,7 @@ describe('ConfirmParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
     );
@@ -177,6 +243,7 @@ describe('ConfirmParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
     );

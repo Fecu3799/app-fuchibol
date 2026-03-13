@@ -7,12 +7,16 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { type Prisma } from '@prisma/client';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { MatchNotificationService } from './match-notification.service';
-import type { VenueSnapshot, PitchSnapshot } from './create-match.use-case';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { MatchNotificationService } from '../notifications/match-notification.service';
+import type {
+  VenueSnapshot,
+  PitchSnapshot,
+} from '../shared/match-snapshot.service';
 
 export interface UpdateMatchInput {
   matchId: string;
@@ -32,6 +36,7 @@ export class UpdateMatchUseCase {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
   ) {}
@@ -162,7 +167,7 @@ export class UpdateMatchUseCase {
 
       // Nothing actually changed
       if (Object.keys(data).length === 0) {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
       const capacityDecreased =
@@ -237,7 +242,7 @@ export class UpdateMatchUseCase {
         }
       }
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
 
     if (reconfirmUserIds.length > 0) {

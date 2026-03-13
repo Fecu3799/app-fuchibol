@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
 
 type TransactionClient = Omit<
   PrismaClient,

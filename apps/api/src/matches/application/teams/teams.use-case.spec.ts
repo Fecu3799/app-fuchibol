@@ -7,12 +7,75 @@ import { SaveTeamsUseCase } from './save-teams.use-case';
 import { GenerateRandomTeamsUseCase } from './generate-random-teams.use-case';
 import { GenerateBalancedTeamsUseCase } from './generate-balanced-teams.use-case';
 import { MoveTeamPlayerUseCase } from './move-team-player.use-case';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { MatchAuditService } from './match-audit.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { MatchAuditService } from '../audit/match-audit.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 
 function makeMatch(overrides: Record<string, unknown> = {}) {
   return {
@@ -138,7 +201,7 @@ describe('SaveTeamsUseCase', () => {
     );
     const prisma = buildPrisma(makeMatch(), participants);
     const audit = buildAudit();
-    const useCase = new SaveTeamsUseCase(prisma, audit);
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, audit);
 
     await useCase.execute(baseInput);
 
@@ -161,7 +224,7 @@ describe('SaveTeamsUseCase', () => {
 
   it('throws FORBIDDEN if actor is not creator', async () => {
     const prisma = buildPrisma(makeMatch({ createdById: 'other-user' }));
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -169,7 +232,7 @@ describe('SaveTeamsUseCase', () => {
 
   it('throws REVISION_CONFLICT if revision mismatch', async () => {
     const prisma = buildPrisma(makeMatch({ revision: 99 }));
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -177,7 +240,7 @@ describe('SaveTeamsUseCase', () => {
 
   it('throws MATCH_CANCELLED if match is canceled', async () => {
     const prisma = buildPrisma(makeMatch({ status: 'canceled' }));
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -185,7 +248,7 @@ describe('SaveTeamsUseCase', () => {
 
   it('throws INVALID_TEAM_SIZE if teamA length does not match capacity/2', async () => {
     const prisma = buildPrisma(makeMatch()); // capacity=10 → slotsPerTeam=5
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
     await expect(
       useCase.execute({ ...baseInput, teamA: ['u1', 'u2'] }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
@@ -196,7 +259,7 @@ describe('SaveTeamsUseCase', () => {
       makeParticipant(`u${i + 1}`),
     );
     const prisma = buildPrisma(makeMatch(), participants);
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
     await expect(
       useCase.execute({
         ...baseInput,
@@ -214,7 +277,7 @@ describe('SaveTeamsUseCase', () => {
     const prisma = buildPrisma(makeMatch(), participants);
     const tx = (prisma as any)._tx;
     tx.matchParticipant.count = jest.fn().mockResolvedValue(9); // one short
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
@@ -225,7 +288,7 @@ describe('SaveTeamsUseCase', () => {
     const prisma = buildPrisma(makeMatch(), participants);
     const tx = (prisma as any)._tx;
     tx.matchParticipant.count = jest.fn().mockResolvedValue(1);
-    const useCase = new SaveTeamsUseCase(prisma, buildAudit());
+    const useCase = new SaveTeamsUseCase(prisma, mockSnapshot, buildAudit());
 
     await expect(
       useCase.execute({
@@ -253,7 +316,11 @@ describe('GenerateRandomTeamsUseCase', () => {
       makeParticipant(`u${i + 1}`),
     );
     const prisma = buildPrisma(makeMatch(), participants);
-    const useCase = new GenerateRandomTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateRandomTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
 
     await useCase.execute(baseInput);
 
@@ -274,7 +341,11 @@ describe('GenerateRandomTeamsUseCase', () => {
 
   it('throws FORBIDDEN if actor is not creator', async () => {
     const prisma = buildPrisma(makeMatch({ createdById: 'other' }));
-    const useCase = new GenerateRandomTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateRandomTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -282,7 +353,11 @@ describe('GenerateRandomTeamsUseCase', () => {
 
   it('throws REVISION_CONFLICT on mismatch', async () => {
     const prisma = buildPrisma(makeMatch({ revision: 5 }));
-    const useCase = new GenerateRandomTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateRandomTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -290,7 +365,11 @@ describe('GenerateRandomTeamsUseCase', () => {
 
   it('throws NO_CONFIRMED_PLAYERS when no confirmed participants', async () => {
     const prisma = buildPrisma(makeMatch(), []); // empty
-    const useCase = new GenerateRandomTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateRandomTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
@@ -301,7 +380,11 @@ describe('GenerateRandomTeamsUseCase', () => {
       makeParticipant(`u${i + 1}`),
     );
     const prisma = buildPrisma(makeMatch({ capacity: 6 }), participants);
-    const useCase = new GenerateRandomTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateRandomTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
 
     await useCase.execute(baseInput);
 
@@ -335,7 +418,11 @@ describe('GenerateBalancedTeamsUseCase', () => {
     const tx = (prisma as any)._tx;
     tx.matchParticipant.findMany = jest.fn().mockResolvedValue(participants);
 
-    const useCase = new GenerateBalancedTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateBalancedTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await useCase.execute(baseInput);
 
     const callData = tx.matchTeamSlot.createMany.mock.calls[0][0].data as any[];
@@ -355,7 +442,11 @@ describe('GenerateBalancedTeamsUseCase', () => {
 
   it('throws NO_CONFIRMED_PLAYERS when empty', async () => {
     const prisma = buildPrisma(makeMatch(), []);
-    const useCase = new GenerateBalancedTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateBalancedTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
@@ -363,7 +454,11 @@ describe('GenerateBalancedTeamsUseCase', () => {
 
   it('throws FORBIDDEN if not creator', async () => {
     const prisma = buildPrisma(makeMatch({ createdById: 'other' }));
-    const useCase = new GenerateBalancedTeamsUseCase(prisma, buildAudit());
+    const useCase = new GenerateBalancedTeamsUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -446,7 +541,11 @@ describe('MoveTeamPlayerUseCase', () => {
       { userId: 'u1' },
       { userId: 'u2' },
     );
-    const useCase = new MoveTeamPlayerUseCase(prisma, buildAudit());
+    const useCase = new MoveTeamPlayerUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
 
     await useCase.execute(baseInput);
 
@@ -469,7 +568,11 @@ describe('MoveTeamPlayerUseCase', () => {
       { userId: 'u1' },
       { userId: null },
     );
-    const useCase = new MoveTeamPlayerUseCase(prisma, buildAudit());
+    const useCase = new MoveTeamPlayerUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
 
     await useCase.execute(baseInput);
 
@@ -486,7 +589,11 @@ describe('MoveTeamPlayerUseCase', () => {
       { userId: 'u1' },
       { userId: 'u2' },
     );
-    const useCase = new MoveTeamPlayerUseCase(prisma, buildAudit());
+    const useCase = new MoveTeamPlayerUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       UnprocessableEntityException,
     );
@@ -499,7 +606,11 @@ describe('MoveTeamPlayerUseCase', () => {
       { userId: 'u1' },
       { userId: 'u2' },
     );
-    const useCase = new MoveTeamPlayerUseCase(prisma, buildAudit());
+    const useCase = new MoveTeamPlayerUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
@@ -512,7 +623,11 @@ describe('MoveTeamPlayerUseCase', () => {
       { userId: 'u1' },
       { userId: 'u2' },
     );
-    const useCase = new MoveTeamPlayerUseCase(prisma, buildAudit());
+    const useCase = new MoveTeamPlayerUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
     await expect(useCase.execute(baseInput)).rejects.toBeInstanceOf(
       ConflictException,
     );
@@ -525,7 +640,11 @@ describe('MoveTeamPlayerUseCase', () => {
       { userId: 'u1' },
       { userId: 'u2' },
     );
-    const useCase = new MoveTeamPlayerUseCase(prisma, buildAudit());
+    const useCase = new MoveTeamPlayerUseCase(
+      prisma,
+      mockSnapshot,
+      buildAudit(),
+    );
 
     await useCase.execute(baseInput);
 

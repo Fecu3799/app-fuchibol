@@ -3,7 +3,7 @@ import {
   releaseTeamSlotsBatch,
   autoAssignTeamSlot,
 } from './team-slot-sync';
-import { MatchAuditService } from './match-audit.service';
+import { MatchAuditService } from '../audit/match-audit.service';
 
 // ---------------------------------------------------------------------------
 // Helpers

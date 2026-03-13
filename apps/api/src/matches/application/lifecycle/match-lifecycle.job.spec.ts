@@ -1,5 +1,5 @@
 import { MatchLifecycleJob } from './match-lifecycle.job';
-import type { PrismaService } from '../../infra/prisma/prisma.service';
+import type { PrismaService } from '../../../infra/prisma/prisma.service';
 
 const MATCH_ID = 'match-1';
 const CREATOR_ID = 'creator-1';

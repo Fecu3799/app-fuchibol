@@ -5,14 +5,15 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { resolveUser } from '../../common/helpers/resolve-user.helper';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { isCreatorOrMatchAdmin } from './match-permissions';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { MatchNotificationService } from './match-notification.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
+import { resolveUser } from '../../../common/helpers/resolve-user.helper';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { isCreatorOrMatchAdmin } from '../shared/match-permissions';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { MatchNotificationService } from '../notifications/match-notification.service';
 
 export interface InviteInput {
   matchId: string;
@@ -29,6 +30,7 @@ export class InviteParticipationUseCase {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
@@ -117,7 +119,7 @@ export class InviteParticipationUseCase {
       if (existing) {
         // Already a participant — idempotent for INVITED, reinvite spectators, conflict for others
         if (existing.status === 'INVITED') {
-          return buildMatchSnapshot(tx, input.matchId, input.actorId);
+          return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
         }
         if (existing.status === 'SPECTATOR') {
           await tx.matchParticipant.update({
@@ -135,7 +137,7 @@ export class InviteParticipationUseCase {
             AuditLogType.INVITE_SENT,
             { targetUserId, identifier: input.identifier },
           );
-          return buildMatchSnapshot(tx, input.matchId, input.actorId);
+          return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
         }
         throw new ConflictException('ALREADY_PARTICIPANT');
       }
@@ -161,7 +163,7 @@ export class InviteParticipationUseCase {
         { targetUserId, identifier: input.identifier },
       );
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
   }
 }

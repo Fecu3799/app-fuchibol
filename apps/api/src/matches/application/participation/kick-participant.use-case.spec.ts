@@ -5,7 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { KickParticipantUseCase } from './kick-participant.use-case';
-import type { PrismaService } from '../../infra/prisma/prisma.service';
+import type { PrismaService } from '../../../infra/prisma/prisma.service';
 
 const MATCH_ID = 'match-1';
 const CREATOR_ID = 'creator-1';
@@ -40,6 +40,68 @@ const mockParticipant = {
 };
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) } as any;
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 const mockNotification = {
   onMissingPlayersAlert: jest.fn().mockResolvedValue(undefined),
 } as any;
@@ -103,6 +165,7 @@ describe('KickParticipantUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );
@@ -144,6 +207,7 @@ describe('KickParticipantUseCase', () => {
     });
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );
@@ -171,6 +235,7 @@ describe('KickParticipantUseCase', () => {
     });
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );
@@ -189,6 +254,7 @@ describe('KickParticipantUseCase', () => {
     const { prisma } = buildTxPrisma();
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );
@@ -228,6 +294,7 @@ describe('KickParticipantUseCase', () => {
     );
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );
@@ -248,6 +315,7 @@ describe('KickParticipantUseCase', () => {
     });
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );
@@ -266,6 +334,7 @@ describe('KickParticipantUseCase', () => {
     const { prisma } = buildTxPrisma();
     const useCase = new KickParticipantUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockNotification,
     );

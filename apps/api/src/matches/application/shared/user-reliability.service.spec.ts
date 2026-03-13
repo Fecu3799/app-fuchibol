@@ -3,7 +3,7 @@ import {
   UserReliabilityService,
   getLateLeavePenaltyPoints,
 } from './user-reliability.service';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 const mockTx = () => ({
   user: {

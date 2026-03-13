@@ -1,10 +1,72 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InviteParticipationUseCase } from './invite-participation.use-case';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 const mockMatchNotification = {
   onInvited: jest.fn().mockResolvedValue(undefined),
   onPromoted: jest.fn().mockResolvedValue(undefined),
@@ -74,6 +136,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -104,6 +167,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -136,6 +200,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -163,6 +228,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -187,6 +253,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -208,6 +275,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -233,6 +301,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -258,6 +327,7 @@ describe('InviteParticipationUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new InviteParticipationUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,

@@ -6,12 +6,13 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { MatchNotificationService } from './match-notification.service';
-import { releaseTeamSlot, autoAssignTeamSlot } from './team-slot-sync';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { MatchNotificationService } from '../notifications/match-notification.service';
+import { releaseTeamSlot, autoAssignTeamSlot } from '../teams/team-slot-sync';
 
 export interface KickParticipantInput {
   matchId: string;
@@ -26,6 +27,7 @@ export class KickParticipantUseCase {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
   ) {}
@@ -152,7 +154,7 @@ export class KickParticipantUseCase {
         };
       }
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
 
     if (alertContext) {

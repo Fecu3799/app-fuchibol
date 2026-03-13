@@ -1,5 +1,5 @@
 import { ListMatchesQuery } from './list-matches.query';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 const now = new Date('2026-06-01T18:00:00Z');
 const later = new Date('2026-06-02T18:00:00Z');

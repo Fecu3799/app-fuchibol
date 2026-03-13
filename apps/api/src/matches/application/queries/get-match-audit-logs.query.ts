@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 export interface GetMatchAuditLogsInput {
   matchId: string;

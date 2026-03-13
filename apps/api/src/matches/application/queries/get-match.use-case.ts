@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { StorageService } from '../../infra/storage/storage.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
 
 export { type MatchSnapshot };
 
@@ -9,7 +9,7 @@ export { type MatchSnapshot };
 export class GetMatchUseCase {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly storage: StorageService,
+    private readonly snapshot: MatchSnapshotService,
   ) {}
 
   async execute(matchId: string, actorId?: string): Promise<MatchSnapshot> {
@@ -21,11 +21,6 @@ export class GetMatchUseCase {
       throw new NotFoundException('Match not found');
     }
 
-    return buildMatchSnapshot(
-      this.prisma.client,
-      matchId,
-      actorId ?? '',
-      (key) => this.storage.buildPublicUrl(key),
-    );
+    return this.snapshot.build(matchId, actorId ?? '');
   }
 }

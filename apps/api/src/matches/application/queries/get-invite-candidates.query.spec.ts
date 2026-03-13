@@ -1,6 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { GetInviteCandidatesQuery } from './get-invite-candidates.query';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 const MATCH_ID = 'match-1';
 const GROUP_ID = 'group-1';

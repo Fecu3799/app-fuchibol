@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { PrismaClient } from '@prisma/client';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 type TransactionClient = Omit<
   PrismaClient,

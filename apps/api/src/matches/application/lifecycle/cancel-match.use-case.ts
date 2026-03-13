@@ -5,12 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { MatchNotificationService } from './match-notification.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { MatchNotificationService } from '../notifications/match-notification.service';
 
 export interface CancelMatchInput {
   matchId: string;
@@ -25,6 +26,7 @@ export class CancelMatchUseCase {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
@@ -100,7 +102,7 @@ export class CancelMatchUseCase {
 
       // Idempotent: already canceled -> return snapshot
       if (match.status === 'canceled') {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
       // Cannot cancel a match that has already started
@@ -124,7 +126,7 @@ export class CancelMatchUseCase {
         {},
       );
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
   }
 }

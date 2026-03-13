@@ -4,11 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { isCreatorOrMatchAdmin } from './match-permissions';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { isCreatorOrMatchAdmin } from '../shared/match-permissions';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
 
 export interface LockMatchInput {
   matchId: string;
@@ -20,6 +21,7 @@ export interface LockMatchInput {
 export class LockMatchUseCase {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly audit: MatchAuditService,
   ) {}
 
@@ -51,7 +53,7 @@ export class LockMatchUseCase {
 
       // Idempotent: already locked -> return snapshot without changing anything
       if (match.isLocked) {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
       await tx.match.update({
@@ -72,7 +74,7 @@ export class LockMatchUseCase {
         {},
       );
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
   }
 }

@@ -4,11 +4,11 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { UnprocessableEntityException } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { buildMatchSnapshot } from './build-match-snapshot';
-import type { MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
 
 export interface GenerateRandomTeamsInput {
   matchId: string;
@@ -20,6 +20,7 @@ export interface GenerateRandomTeamsInput {
 export class GenerateRandomTeamsUseCase {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly audit: MatchAuditService,
   ) {}
 
@@ -106,6 +107,6 @@ export class GenerateRandomTeamsUseCase {
       );
     });
 
-    return buildMatchSnapshot(this.prisma.client, matchId, actorId);
+    return this.snapshot.build(matchId, actorId);
   }
 }

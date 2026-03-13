@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infra/prisma/prisma.service';
 import { StorageService } from '../../infra/storage/storage.service';
-import { computeReliabilityLabel } from '../../matches/application/user-reliability.service';
+import { computeReliabilityLabel } from '../../matches/application/shared/user-reliability.service';
 import { calculateAge } from '../../common/utils/calculate-age';
 
 @Injectable()

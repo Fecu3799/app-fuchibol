@@ -1,13 +1,75 @@
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UpdateMatchUseCase } from './update-match.use-case';
+import { UpdateMatchUseCase } from '../editing/update-match.use-case';
 import { LockMatchUseCase } from './lock-match.use-case';
 import { UnlockMatchUseCase } from './unlock-match.use-case';
-import { ConfirmParticipationUseCase } from './confirm-participation.use-case';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
+import { ConfirmParticipationUseCase } from '../participation/confirm-participation.use-case';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 const mockMatchNotification = {
   onInvited: jest.fn().mockResolvedValue(undefined),
   onPromoted: jest.fn().mockResolvedValue(undefined),
@@ -82,6 +144,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -100,6 +163,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -119,6 +183,7 @@ describe('UpdateMatchUseCase', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(2);
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -144,6 +209,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -169,6 +235,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -195,6 +262,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -213,6 +281,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -233,6 +302,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -251,6 +321,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -271,6 +342,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -290,6 +362,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma } = buildTxPrisma({ isLocked: true });
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -308,6 +381,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -338,6 +412,7 @@ describe('UpdateMatchUseCase', () => {
     const { prisma, tx } = buildTxPrisma();
     const useCase = new UpdateMatchUseCase(
       prisma,
+      mockSnapshot,
       mockAudit,
       mockMatchNotification,
     );
@@ -362,7 +437,7 @@ describe('UpdateMatchUseCase', () => {
 describe('LockMatchUseCase', () => {
   it('locks match and increments revision', async () => {
     const { prisma, tx } = buildTxPrisma();
-    const useCase = new LockMatchUseCase(prisma, mockAudit);
+    const useCase = new LockMatchUseCase(prisma, mockSnapshot, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -382,7 +457,7 @@ describe('LockMatchUseCase', () => {
 
   it('already locked -> idempotent (no update)', async () => {
     const { prisma, tx } = buildTxPrisma({ isLocked: true });
-    const useCase = new LockMatchUseCase(prisma, mockAudit);
+    const useCase = new LockMatchUseCase(prisma, mockSnapshot, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -395,7 +470,7 @@ describe('LockMatchUseCase', () => {
 
   it('rejects wrong expectedRevision -> 409', async () => {
     const { prisma } = buildTxPrisma();
-    const useCase = new LockMatchUseCase(prisma, mockAudit);
+    const useCase = new LockMatchUseCase(prisma, mockSnapshot, mockAudit);
 
     await expect(
       useCase.execute({
@@ -408,7 +483,7 @@ describe('LockMatchUseCase', () => {
 
   it('rejects non-admin -> 403', async () => {
     const { prisma } = buildTxPrisma();
-    const useCase = new LockMatchUseCase(prisma, mockAudit);
+    const useCase = new LockMatchUseCase(prisma, mockSnapshot, mockAudit);
 
     await expect(
       useCase.execute({
@@ -425,7 +500,7 @@ describe('LockMatchUseCase', () => {
 describe('UnlockMatchUseCase', () => {
   it('unlocks match and increments revision', async () => {
     const { prisma, tx } = buildTxPrisma({ isLocked: true });
-    const useCase = new UnlockMatchUseCase(prisma, mockAudit);
+    const useCase = new UnlockMatchUseCase(prisma, mockSnapshot, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -445,7 +520,7 @@ describe('UnlockMatchUseCase', () => {
 
   it('already unlocked -> idempotent (no update)', async () => {
     const { prisma, tx } = buildTxPrisma({ isLocked: false });
-    const useCase = new UnlockMatchUseCase(prisma, mockAudit);
+    const useCase = new UnlockMatchUseCase(prisma, mockSnapshot, mockAudit);
 
     await useCase.execute({
       matchId: 'match-1',
@@ -472,6 +547,7 @@ describe('Confirm on locked match', () => {
     const { prisma } = buildTxPrisma({ isLocked: true });
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       buildIdempotency(prisma),
       mockAudit,
     );
@@ -493,6 +569,7 @@ describe('Confirm on locked match', () => {
       .mockResolvedValue({ id: 'p-1', status: 'SPECTATOR' });
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       buildIdempotency(prisma),
       mockAudit,
     );
@@ -516,6 +593,7 @@ describe('Confirm on locked match', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(0);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       buildIdempotency(prisma),
       mockAudit,
     );
@@ -551,6 +629,7 @@ describe('Confirm on locked match', () => {
     tx.matchParticipant.count = jest.fn().mockResolvedValue(1);
     const useCase = new ConfirmParticipationUseCase(
       prisma,
+      mockSnapshot,
       buildIdempotency(prisma),
       mockAudit,
     );

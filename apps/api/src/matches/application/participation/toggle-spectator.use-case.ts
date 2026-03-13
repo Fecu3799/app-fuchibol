@@ -4,13 +4,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { MatchNotificationService } from './match-notification.service';
-import { releaseTeamSlot, autoAssignTeamSlot } from './team-slot-sync';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { MatchNotificationService } from '../notifications/match-notification.service';
+import { releaseTeamSlot, autoAssignTeamSlot } from '../teams/team-slot-sync';
 
 export interface ToggleSpectatorInput {
   matchId: string;
@@ -25,6 +26,7 @@ export class ToggleSpectatorUseCase {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
@@ -197,7 +199,11 @@ export class ToggleSpectatorUseCase {
       }
 
       return {
-        snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
+        snapshot: await this.snapshot.buildInTx(
+          tx,
+          input.matchId,
+          input.actorId,
+        ),
         promotedUserId,
       };
     });

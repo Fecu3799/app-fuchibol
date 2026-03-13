@@ -5,14 +5,15 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { MatchNotificationService } from './match-notification.service';
-import { UserReliabilityService } from './user-reliability.service';
-import { releaseTeamSlot, autoAssignTeamSlot } from './team-slot-sync';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { MatchNotificationService } from '../notifications/match-notification.service';
+import { UserReliabilityService } from '../shared/user-reliability.service';
+import { releaseTeamSlot, autoAssignTeamSlot } from '../teams/team-slot-sync';
 
 const LATE_LEAVE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -38,6 +39,7 @@ export class LeaveMatchUseCase {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
@@ -164,7 +166,11 @@ export class LeaveMatchUseCase {
           });
         }
         return {
-          snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
+          snapshot: await this.snapshot.buildInTx(
+            tx,
+            input.matchId,
+            input.actorId,
+          ),
           promotedUserId: null,
           wasConfirmed: false,
           isLocked: match.isLocked,
@@ -266,7 +272,11 @@ export class LeaveMatchUseCase {
       });
 
       return {
-        snapshot: await buildMatchSnapshot(tx, input.matchId, input.actorId),
+        snapshot: await this.snapshot.buildInTx(
+          tx,
+          input.matchId,
+          input.actorId,
+        ),
         promotedUserId,
         wasConfirmed,
         isLocked: match.isLocked,

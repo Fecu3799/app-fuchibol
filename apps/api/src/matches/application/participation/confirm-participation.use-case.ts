@@ -3,12 +3,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
-import { buildMatchSnapshot, type MatchSnapshot } from './build-match-snapshot';
-import { lockMatchRow } from './lock-match-row';
-import { MatchAuditService, AuditLogType } from './match-audit.service';
-import { autoAssignTeamSlot } from './team-slot-sync';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
+import type { MatchSnapshot } from '../shared/match-snapshot.service';
+import { MatchSnapshotService } from '../shared/match-snapshot.service';
+import { lockMatchRow } from '../shared/lock-match-row';
+import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
+import { autoAssignTeamSlot } from '../teams/team-slot-sync';
 
 export interface ConfirmInput {
   matchId: string;
@@ -21,6 +22,7 @@ export interface ConfirmInput {
 export class ConfirmParticipationUseCase {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly snapshot: MatchSnapshotService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
   ) {}
@@ -68,11 +70,11 @@ export class ConfirmParticipationUseCase {
       // Idempotent: already in a terminal participation state → return snapshot
       // (bypass lock check — no state change needed)
       if (existing?.status === 'CONFIRMED') {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
       if (existing?.status === 'WAITLISTED') {
-        return buildMatchSnapshot(tx, input.matchId, input.actorId);
+        return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
       // Spectators must use the toggle-spectator endpoint to re-enter as a participant.
@@ -150,7 +152,7 @@ export class ConfirmParticipationUseCase {
         );
       }
 
-      return buildMatchSnapshot(tx, input.matchId, input.actorId);
+      return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
   }
 }

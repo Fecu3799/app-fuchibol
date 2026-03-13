@@ -1,11 +1,69 @@
 import { NotFoundException } from '@nestjs/common';
 import { GetMatchUseCase } from './get-match.use-case';
-import { PrismaService } from '../../infra/prisma/prisma.service';
-import type { StorageService } from '../../infra/storage/storage.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
-const mockStorage = {
-  buildPublicUrl: jest.fn((key: string) => `http://cdn/${key}`),
-} as unknown as StorageService;
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: ['confirm', 'invite'],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 
 const mockMatch = {
   id: 'match-1',
@@ -40,7 +98,7 @@ describe('GetMatchUseCase', () => {
   it('throws when match does not exist', async () => {
     const prisma = buildPrisma();
     prisma.client.match.findUnique = jest.fn().mockResolvedValue(null);
-    const useCase = new GetMatchUseCase(prisma, mockStorage);
+    const useCase = new GetMatchUseCase(prisma, mockSnapshot);
 
     await expect(useCase.execute('missing-id')).rejects.toBeInstanceOf(
       NotFoundException,
@@ -53,7 +111,7 @@ describe('GetMatchUseCase', () => {
     prisma.client.match.findUniqueOrThrow = jest
       .fn()
       .mockResolvedValue(mockMatch);
-    const useCase = new GetMatchUseCase(prisma, mockStorage);
+    const useCase = new GetMatchUseCase(prisma, mockSnapshot);
 
     const result = await useCase.execute('match-1', 'user-1');
     expect(result.id).toBe('match-1');

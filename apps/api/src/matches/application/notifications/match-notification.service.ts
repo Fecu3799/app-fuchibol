@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 import {
   NOTIFICATION_PROVIDER,
   type NotificationProvider,
-} from '../../push/notification-provider.interface';
+} from '../../../push/notification-provider.interface';
 
 export type MatchNotificationType =
   | 'invited'

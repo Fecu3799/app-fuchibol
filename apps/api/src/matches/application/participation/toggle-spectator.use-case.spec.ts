@@ -2,9 +2,71 @@ import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ToggleSpectatorUseCase } from './toggle-spectator.use-case';
 import { LeaveMatchUseCase } from './leave-match.use-case';
-import { PrismaService } from '../../infra/prisma/prisma.service';
+import { PrismaService } from '../../../infra/prisma/prisma.service';
 
 const mockAudit = { log: jest.fn() } as any;
+const mockSnapshot = {
+  build: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+  buildInTx: jest.fn().mockResolvedValue({
+    id: 'match-1',
+    revision: 2,
+    title: 'Test',
+    confirmedCount: 0,
+    participants: [],
+    waitlist: [],
+    spectators: [],
+    spectatorCount: 0,
+    myStatus: null,
+    actionsAllowed: [],
+    teamsConfigured: false,
+    teams: null,
+    capacity: 10,
+    status: 'scheduled',
+    matchStatus: 'scheduled',
+    matchGender: 'MIXED',
+    isLocked: false,
+    lockedAt: null,
+    lockedBy: null,
+    createdById: 'admin-1',
+    venueId: null,
+    venuePitchId: null,
+    venueSnapshot: null,
+    pitchSnapshot: null,
+    location: null,
+    startsAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }),
+} as any;
 const mockUserReliability = {
   applyLateLeavePenalty: jest.fn().mockResolvedValue(undefined),
 } as any;
@@ -17,7 +79,7 @@ const mockMatchNotification = {
 import {
   IdempotencyService,
   computeRequestHash,
-} from '../../common/idempotency/idempotency.service';
+} from '../../../common/idempotency/idempotency.service';
 
 const mockMatch = {
   id: 'match-1',
@@ -95,6 +157,7 @@ describe('ToggleSpectatorUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ToggleSpectatorUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -123,6 +186,7 @@ describe('ToggleSpectatorUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ToggleSpectatorUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -155,6 +219,7 @@ describe('ToggleSpectatorUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ToggleSpectatorUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -190,6 +255,7 @@ describe('ToggleSpectatorUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ToggleSpectatorUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -215,6 +281,7 @@ describe('ToggleSpectatorUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ToggleSpectatorUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -238,6 +305,7 @@ describe('ToggleSpectatorUseCase', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new ToggleSpectatorUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -271,6 +339,7 @@ describe('LeaveMatchUseCase — creator without participation row', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new LeaveMatchUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -309,6 +378,7 @@ describe('LeaveMatchUseCase — creator without participation row', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new LeaveMatchUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -343,6 +413,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new LeaveMatchUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -381,6 +452,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new LeaveMatchUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,
@@ -414,6 +486,7 @@ describe('LeaveMatchUseCase — late-leave penalty', () => {
     const idempotency = buildIdempotency(prisma);
     const useCase = new LeaveMatchUseCase(
       prisma,
+      mockSnapshot,
       idempotency,
       mockAudit,
       mockMatchNotification,

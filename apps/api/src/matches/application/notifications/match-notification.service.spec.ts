@@ -1,6 +1,6 @@
 import { MatchNotificationService } from './match-notification.service';
-import type { PrismaService } from '../../infra/prisma/prisma.service';
-import type { NotificationProvider } from '../../push/notification-provider.interface';
+import type { PrismaService } from '../../../infra/prisma/prisma.service';
+import type { NotificationProvider } from '../../../push/notification-provider.interface';
 
 function buildService(prismaOverrides: Record<string, unknown> = {}) {
   const prisma = {

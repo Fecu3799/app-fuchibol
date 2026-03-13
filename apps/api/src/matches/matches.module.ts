@@ -5,32 +5,33 @@ import { MatchRealtimeModule } from './realtime/match-realtime.module';
 import { PushModule } from '../push/push.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { MatchesController } from './api/matches.controller';
-import { CreateMatchUseCase } from './application/create-match.use-case';
-import { GetMatchUseCase } from './application/get-match.use-case';
-import { ListMatchesQuery } from './application/list-matches.query';
-import { UpdateMatchUseCase } from './application/update-match.use-case';
-import { LockMatchUseCase } from './application/lock-match.use-case';
-import { UnlockMatchUseCase } from './application/unlock-match.use-case';
-import { CancelMatchUseCase } from './application/cancel-match.use-case';
-import { ConfirmParticipationUseCase } from './application/confirm-participation.use-case';
-import { RejectInviteUseCase } from './application/reject-invite.use-case';
-import { ToggleSpectatorUseCase } from './application/toggle-spectator.use-case';
-import { InviteParticipationUseCase } from './application/invite-participation.use-case';
-import { LeaveMatchUseCase } from './application/leave-match.use-case';
-import { PromoteAdminUseCase } from './application/promote-admin.use-case';
-import { DemoteAdminUseCase } from './application/demote-admin.use-case';
-import { MatchAuditService } from './application/match-audit.service';
-import { GetMatchAuditLogsQuery } from './application/get-match-audit-logs.query';
-import { MatchNotificationService } from './application/match-notification.service';
-import { GetInviteCandidatesQuery } from './application/get-invite-candidates.query';
-import { KickParticipantUseCase } from './application/kick-participant.use-case';
-import { SaveTeamsUseCase } from './application/save-teams.use-case';
-import { GenerateRandomTeamsUseCase } from './application/generate-random-teams.use-case';
-import { GenerateBalancedTeamsUseCase } from './application/generate-balanced-teams.use-case';
-import { MoveTeamPlayerUseCase } from './application/move-team-player.use-case';
-import { BlockTeamAutoGenUseCase } from './application/block-team-autogen.use-case';
-import { MatchLifecycleJob } from './application/match-lifecycle.job';
-import { UserReliabilityService } from './application/user-reliability.service';
+import { CreateMatchUseCase } from './application/editing/create-match.use-case';
+import { GetMatchUseCase } from './application/queries/get-match.use-case';
+import { ListMatchesQuery } from './application/queries/list-matches.query';
+import { UpdateMatchUseCase } from './application/editing/update-match.use-case';
+import { LockMatchUseCase } from './application/lifecycle/lock-match.use-case';
+import { UnlockMatchUseCase } from './application/lifecycle/unlock-match.use-case';
+import { CancelMatchUseCase } from './application/lifecycle/cancel-match.use-case';
+import { ConfirmParticipationUseCase } from './application/participation/confirm-participation.use-case';
+import { RejectInviteUseCase } from './application/participation/reject-invite.use-case';
+import { ToggleSpectatorUseCase } from './application/participation/toggle-spectator.use-case';
+import { InviteParticipationUseCase } from './application/participation/invite-participation.use-case';
+import { LeaveMatchUseCase } from './application/participation/leave-match.use-case';
+import { PromoteAdminUseCase } from './application/participation/promote-admin.use-case';
+import { DemoteAdminUseCase } from './application/participation/demote-admin.use-case';
+import { MatchAuditService } from './application/audit/match-audit.service';
+import { GetMatchAuditLogsQuery } from './application/queries/get-match-audit-logs.query';
+import { MatchNotificationService } from './application/notifications/match-notification.service';
+import { GetInviteCandidatesQuery } from './application/queries/get-invite-candidates.query';
+import { KickParticipantUseCase } from './application/participation/kick-participant.use-case';
+import { SaveTeamsUseCase } from './application/teams/save-teams.use-case';
+import { GenerateRandomTeamsUseCase } from './application/teams/generate-random-teams.use-case';
+import { GenerateBalancedTeamsUseCase } from './application/teams/generate-balanced-teams.use-case';
+import { MoveTeamPlayerUseCase } from './application/teams/move-team-player.use-case';
+import { BlockTeamAutoGenUseCase } from './application/teams/block-team-autogen.use-case';
+import { MatchLifecycleJob } from './application/lifecycle/match-lifecycle.job';
+import { UserReliabilityService } from './application/shared/user-reliability.service';
+import { MatchSnapshotService } from './application/shared/match-snapshot.service';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { UserReliabilityService } from './application/user-reliability.service';
   ],
   controllers: [MatchesController],
   providers: [
+    MatchSnapshotService,
     CreateMatchUseCase,
     GetMatchUseCase,
     ListMatchesQuery,
