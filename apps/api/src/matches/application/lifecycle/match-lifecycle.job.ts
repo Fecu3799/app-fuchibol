@@ -47,50 +47,89 @@ export class MatchLifecycleJob {
     const now = new Date();
     const upcomingWindowEnd = new Date(now.getTime() + 60 * 60 * 1000);
 
-    const [upcomingMatches, overdueMatches, inProgressMatches] =
-      await Promise.all([
-        // Future matches within the next 60min: candidates for auto-lock and reminders.
-        // Lower bound is now (exclusive) so only pre-start matches are included.
-        this.prisma.client.match.findMany({
-          where: {
-            startsAt: { gt: now, lte: upcomingWindowEnd },
-            status: { in: ['scheduled', 'locked'] },
-          },
-          include: {
-            participants: {
-              select: { userId: true, status: true, isMatchAdmin: true },
-            },
-          },
-        }),
+    // T-24h window: 23–25h before start (2h wide to ensure full coverage at 1-min cadence)
+    const window24hStart = new Date(now.getTime() + 23 * 60 * 60 * 1000);
+    const window24hEnd = new Date(now.getTime() + 25 * 60 * 60 * 1000);
 
-        // Overdue matches: startsAt is in the past, still scheduled/locked.
-        // NO lower bound — catches ALL stale matches regardless of age.
-        // Ordered oldest-first so the backlog clears consistently.
-        // Batch-limited to avoid thundering-herd on first run after a long gap.
-        this.prisma.client.match.findMany({
-          where: {
-            startsAt: { lte: now },
-            status: { in: ['scheduled', 'locked'] },
-          },
-          orderBy: { startsAt: 'asc' },
-          take: OVERDUE_BATCH_LIMIT,
-          include: {
-            participants: {
-              select: { userId: true, status: true, isMatchAdmin: true },
-            },
-          },
-        }),
+    // T-2h window: 1.5–2.5h before start
+    const window2hStart = new Date(now.getTime() + 90 * 60 * 1000);
+    const window2hEnd = new Date(now.getTime() + 150 * 60 * 1000);
 
-        // In-progress matches that may be ready to finalize as played.
-        this.prisma.client.match.findMany({
-          where: { status: 'in_progress' },
-          include: {
-            participants: {
-              select: { userId: true, status: true, isMatchAdmin: true },
-            },
+    const [
+      upcomingMatches,
+      overdueMatches,
+      inProgressMatches,
+      reminder24hMatches,
+      reminder2hMatches,
+    ] = await Promise.all([
+      // Future matches within the next 60min: candidates for auto-lock and reminders.
+      // Lower bound is now (exclusive) so only pre-start matches are included.
+      this.prisma.client.match.findMany({
+        where: {
+          startsAt: { gt: now, lte: upcomingWindowEnd },
+          status: { in: ['scheduled', 'locked'] },
+        },
+        include: {
+          participants: {
+            select: { userId: true, status: true, isMatchAdmin: true },
           },
-        }),
-      ]);
+        },
+      }),
+
+      // Overdue matches: startsAt is in the past, still scheduled/locked.
+      // NO lower bound — catches ALL stale matches regardless of age.
+      // Ordered oldest-first so the backlog clears consistently.
+      // Batch-limited to avoid thundering-herd on first run after a long gap.
+      this.prisma.client.match.findMany({
+        where: {
+          startsAt: { lte: now },
+          status: { in: ['scheduled', 'locked'] },
+        },
+        orderBy: { startsAt: 'asc' },
+        take: OVERDUE_BATCH_LIMIT,
+        include: {
+          participants: {
+            select: { userId: true, status: true, isMatchAdmin: true },
+          },
+        },
+      }),
+
+      // In-progress matches that may be ready to finalize as played.
+      this.prisma.client.match.findMany({
+        where: { status: 'in_progress' },
+        include: {
+          participants: {
+            select: { userId: true, status: true, isMatchAdmin: true },
+          },
+        },
+      }),
+
+      // T-24h reminder window: matches starting in 23–25h.
+      this.prisma.client.match.findMany({
+        where: {
+          startsAt: { gt: window24hStart, lte: window24hEnd },
+          status: { in: ['scheduled', 'locked'] },
+        },
+        include: {
+          participants: {
+            select: { userId: true, status: true, isMatchAdmin: true },
+          },
+        },
+      }),
+
+      // T-2h reminder window: matches starting in 1.5–2.5h.
+      this.prisma.client.match.findMany({
+        where: {
+          startsAt: { gt: window2hStart, lte: window2hEnd },
+          status: { in: ['scheduled', 'locked'] },
+        },
+        include: {
+          participants: {
+            select: { userId: true, status: true, isMatchAdmin: true },
+          },
+        },
+      }),
+    ]);
 
     await Promise.allSettled([
       ...upcomingMatches.map((match) =>
@@ -102,7 +141,44 @@ export class MatchLifecycleJob {
       ...inProgressMatches.map((match) =>
         this.tryFinalizeMatch(match as MatchWithParticipants, now),
       ),
+      ...reminder24hMatches.map((match) =>
+        this.sendTimedReminder(match as MatchWithParticipants, 'reminder_24h'),
+      ),
+      ...reminder2hMatches.map((match) =>
+        this.sendTimedReminder(match as MatchWithParticipants, 'reminder_2h'),
+      ),
     ]);
+  }
+
+  private async sendTimedReminder(
+    match: MatchWithParticipants,
+    type: 'reminder_24h' | 'reminder_2h',
+  ): Promise<void> {
+    const confirmedUserIds = match.participants
+      .filter((p) => p.status === 'CONFIRMED')
+      .map((p) => p.userId);
+
+    if (confirmedUserIds.length === 0) return;
+
+    try {
+      if (type === 'reminder_24h') {
+        await this.matchNotification.onReminder24h({
+          matchId: match.id,
+          matchTitle: match.title,
+          userIds: confirmedUserIds,
+        });
+      } else {
+        await this.matchNotification.onReminder2h({
+          matchId: match.id,
+          matchTitle: match.title,
+          userIds: confirmedUserIds,
+        });
+      }
+    } catch (err: unknown) {
+      this.logger.warn(
+        `[MatchLifecycle] ${type} reminder failed for match ${match.id}: ${(err as Error)?.message}`,
+      );
+    }
   }
 
   /**

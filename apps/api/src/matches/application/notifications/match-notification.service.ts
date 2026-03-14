@@ -13,7 +13,9 @@ export type MatchNotificationType =
   | 'match_started'
   | 'reminder_missing_players'
   | 'missing_players_alert'
-  | 'teams_auto_generated';
+  | 'teams_auto_generated'
+  | 'reminder_24h'
+  | 'reminder_2h';
 
 const COOLDOWN_MS: Partial<Record<MatchNotificationType, number>> = {
   invited: 30 * 60 * 1000,
@@ -23,7 +25,7 @@ const COOLDOWN_MS: Partial<Record<MatchNotificationType, number>> = {
   match_started: 60 * 60 * 1000,
   missing_players_alert: 5 * 60 * 1000,
   teams_auto_generated: 60 * 60 * 1000,
-  // reminder_missing_players uses bucket-based dedup (no time-window cooldown)
+  // reminder_missing_players, reminder_24h, reminder_2h use bucket-based dedup (no time-window cooldown)
 };
 
 export interface OnInvitedInput {
@@ -294,6 +296,58 @@ export class MatchNotificationService {
     });
 
     await this.recordDelivery(creatorId, matchId, 'teams_auto_generated');
+  }
+
+  async onReminder24h(input: {
+    matchId: string;
+    matchTitle: string;
+    userIds: string[];
+  }): Promise<void> {
+    await this.sendTimedReminder(
+      'reminder_24h',
+      't24h',
+      input.userIds,
+      input.matchId,
+      'Tu partido es mañana',
+      `"${input.matchTitle}" comienza en ~24 horas.`,
+      { type: 'reminder_24h', matchId: input.matchId },
+    );
+  }
+
+  async onReminder2h(input: {
+    matchId: string;
+    matchTitle: string;
+    userIds: string[];
+  }): Promise<void> {
+    await this.sendTimedReminder(
+      'reminder_2h',
+      't2h',
+      input.userIds,
+      input.matchId,
+      '¡Tu partido está por empezar!',
+      `"${input.matchTitle}" comienza en 2 horas. ¡Preparate!`,
+      { type: 'reminder_2h', matchId: input.matchId },
+    );
+  }
+
+  private async sendTimedReminder(
+    type: 'reminder_24h' | 'reminder_2h',
+    bucket: string,
+    userIds: string[],
+    matchId: string,
+    title: string,
+    body: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    await Promise.allSettled(
+      userIds.map(async (userId) => {
+        if (!(await this.shouldSend(userId, matchId, type, bucket))) return;
+
+        await this.provider.sendToUser(userId, { title, body, data });
+
+        await this.recordDelivery(userId, matchId, type, bucket);
+      }),
+    );
   }
 
   private async shouldSend(
