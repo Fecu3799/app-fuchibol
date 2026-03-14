@@ -2,12 +2,14 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { TokenService } from '../../infra/token.service';
 import { AuthAuditService } from '../../infra/auth-audit.service';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 @Injectable()
 export class RefreshUseCase {
@@ -18,6 +20,7 @@ export class RefreshUseCase {
     private readonly jwtService: JwtService,
     private readonly tokenService: TokenService,
     private readonly auditService: AuthAuditService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(rawToken: string) {
@@ -51,9 +54,11 @@ export class RefreshUseCase {
 
     const now = new Date();
     if (session.user.suspendedUntil && session.user.suspendedUntil > now) {
-      this.logger.warn(
-        `refresh_blocked userId=${session.userId} reason=account_suspended`,
-      );
+      this.logger.warn({
+        op: 'refreshBlocked',
+        actorUserId: session.userId,
+        reason: 'account_suspended',
+      });
       throw new ForbiddenException({
         message: 'account_suspended',
         suspendedUntil: session.user.suspendedUntil.toISOString(),
@@ -71,9 +76,12 @@ export class RefreshUseCase {
         where: { userId: session.userId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      this.logger.warn(
-        `refresh_reused_detected userId=${session.userId} sessionId=${sessionId}`,
-      );
+      this.logger.warn({
+        op: 'refreshReuseDetected',
+        actorUserId: session.userId,
+        sessionId,
+      });
+      this.metrics?.incCounter('auth_refresh_reuse_total');
       void this.auditService
         .log({
           eventType: 'refresh_reused_detected',
@@ -104,9 +112,12 @@ export class RefreshUseCase {
       sid: session.id,
     });
 
-    this.logger.log(
-      `refresh_success userId=${session.userId} sessionId=${session.id}`,
-    );
+    this.logger.log({
+      op: 'refreshSuccess',
+      actorUserId: session.userId,
+      sessionId: session.id,
+    });
+    this.metrics?.incCounter('auth_refresh_success_total');
     void this.auditService
       .log({
         eventType: 'refresh_success',

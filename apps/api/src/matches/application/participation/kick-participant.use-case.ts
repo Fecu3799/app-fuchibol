@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
@@ -13,6 +14,7 @@ import { lockMatchRow } from '../shared/lock-match-row';
 import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
 import { MatchNotificationService } from '../notifications/match-notification.service';
 import { releaseTeamSlot, autoAssignTeamSlot } from '../teams/team-slot-sync';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 export interface KickParticipantInput {
   matchId: string;
@@ -30,6 +32,7 @@ export class KickParticipantUseCase {
     private readonly snapshot: MatchSnapshotService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(input: KickParticipantInput): Promise<MatchSnapshot> {
@@ -93,12 +96,14 @@ export class KickParticipantUseCase {
       }
 
       // Promote FIFO from waitlist if a confirmed participant was kicked
+      let didPromote = false;
       if (wasConfirmed) {
         const next = await tx.matchParticipant.findFirst({
           where: { matchId: input.matchId, status: 'WAITLISTED' },
           orderBy: { waitlistPosition: 'asc' },
         });
         if (next) {
+          didPromote = true;
           await tx.matchParticipant.update({
             where: { id: next.id },
             data: {
@@ -141,6 +146,17 @@ export class KickParticipantUseCase {
       );
 
       const minutesToStart = (match.startsAt.getTime() - Date.now()) / 60_000;
+
+      this.logger.log({
+        op: 'kickParticipant',
+        matchId: input.matchId,
+        actorUserId: input.actorId,
+        userId: input.targetUserId,
+        wasConfirmed,
+      });
+      if (didPromote) {
+        this.metrics?.incCounter('match_waitlist_promotions_total');
+      }
 
       if (wasConfirmed && match.isLocked && minutesToStart <= 60) {
         const confirmedCount = await tx.matchParticipant.count({

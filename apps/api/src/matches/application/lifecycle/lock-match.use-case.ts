@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
@@ -19,6 +20,8 @@ export interface LockMatchInput {
 
 @Injectable()
 export class LockMatchUseCase {
+  private readonly logger = new Logger(LockMatchUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly snapshot: MatchSnapshotService,
@@ -53,6 +56,12 @@ export class LockMatchUseCase {
 
       // Idempotent: already locked -> return snapshot without changing anything
       if (match.isLocked) {
+        this.logger.log({
+          op: 'lockMatch',
+          matchId: input.matchId,
+          actorUserId: input.actorId,
+          result: 'idempotent_already_locked',
+        });
         return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
@@ -73,6 +82,12 @@ export class LockMatchUseCase {
         AuditLogType.MATCH_LOCKED,
         {},
       );
+
+      this.logger.log({
+        op: 'lockMatch',
+        matchId: input.matchId,
+        actorUserId: input.actorId,
+      });
 
       return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });

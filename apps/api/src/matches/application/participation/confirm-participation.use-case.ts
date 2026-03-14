@@ -1,7 +1,9 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { IdempotencyService } from '../../../common/idempotency/idempotency.service';
@@ -10,6 +12,7 @@ import { MatchSnapshotService } from '../shared/match-snapshot.service';
 import { lockMatchRow } from '../shared/lock-match-row';
 import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
 import { autoAssignTeamSlot } from '../teams/team-slot-sync';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 export interface ConfirmInput {
   matchId: string;
@@ -20,11 +23,14 @@ export interface ConfirmInput {
 
 @Injectable()
 export class ConfirmParticipationUseCase {
+  private readonly logger = new Logger(ConfirmParticipationUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly snapshot: MatchSnapshotService,
     private readonly idempotency: IdempotencyService,
     private readonly audit: MatchAuditService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(input: ConfirmInput): Promise<MatchSnapshot> {
@@ -70,10 +76,22 @@ export class ConfirmParticipationUseCase {
       // Idempotent: already in a terminal participation state → return snapshot
       // (bypass lock check — no state change needed)
       if (existing?.status === 'CONFIRMED') {
+        this.logger.log({
+          op: 'confirmParticipant',
+          matchId: input.matchId,
+          actorUserId: input.actorId,
+          result: 'idempotent_already_confirmed',
+        });
         return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
       if (existing?.status === 'WAITLISTED') {
+        this.logger.log({
+          op: 'confirmParticipant',
+          matchId: input.matchId,
+          actorUserId: input.actorId,
+          result: 'idempotent_already_waitlisted',
+        });
         return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
       }
 
@@ -141,6 +159,16 @@ export class ConfirmParticipationUseCase {
           newStatus,
         },
       );
+
+      this.logger.log({
+        op: 'confirmParticipant',
+        matchId: input.matchId,
+        actorUserId: input.actorId,
+        result: newStatus.toLowerCase(),
+      });
+      this.metrics?.incCounter('match_confirm_total', {
+        result: newStatus.toLowerCase(),
+      });
 
       if (newStatus === 'CONFIRMED' && match.teamsConfigured) {
         await autoAssignTeamSlot(

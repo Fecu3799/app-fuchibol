@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Server } from 'socket.io';
+import type { MetricsService } from '../../metrics/metrics.service';
 import type { MessageView } from '../application/messages/list-messages.use-case';
 
 export interface ConversationUpdatedPayload {
@@ -16,14 +17,26 @@ export interface ConversationUpdatedPayload {
 
 @Injectable()
 export class ChatRealtimePublisher {
+  private readonly logger = new Logger(ChatRealtimePublisher.name);
   private server: Server | null = null;
+
+  constructor(@Optional() private readonly metrics?: MetricsService) {}
 
   setServer(server: Server): void {
     this.server = server;
   }
 
   notifyNewMessage(conversationId: string, message: MessageView): void {
-    if (!this.server) return;
+    if (!this.server) {
+      this.logger.warn({
+        op: 'socketEmitFailed',
+        conversationId,
+        messageId: message.id,
+        errorCode: 'SOCKET_EMIT_FAILED',
+      });
+      this.metrics?.incCounter('chat_socket_emit_failures_total');
+      return;
+    }
     this.server
       .to(`conv:${conversationId}`)
       .emit('message.new', { conversationId, message });

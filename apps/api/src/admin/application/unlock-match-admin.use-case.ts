@@ -13,7 +13,9 @@ export class UnlockMatchAdminUseCase {
     private readonly realtimePublisher: MatchRealtimePublisher,
   ) {}
 
-  async execute(matchId: string): Promise<{ matchId: string; isLocked: boolean }> {
+  async execute(
+    matchId: string,
+  ): Promise<{ matchId: string; isLocked: boolean }> {
     const match = await this.prisma.client.match.findUnique({
       where: { id: matchId },
     });
@@ -27,7 +29,12 @@ export class UnlockMatchAdminUseCase {
 
     const updated = await this.prisma.client.match.update({
       where: { id: matchId },
-      data: { isLocked: false, lockedAt: null, lockedBy: null, revision: match.revision + 1 },
+      data: {
+        isLocked: false,
+        lockedAt: null,
+        lockedBy: null,
+        revision: match.revision + 1,
+      },
     });
 
     this.realtimePublisher.notifyMatchUpdated(matchId, updated.revision);

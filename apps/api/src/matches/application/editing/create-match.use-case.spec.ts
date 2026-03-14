@@ -16,13 +16,13 @@ const buildPrisma = () => {
       venuePitch: { findUnique: jest.fn() },
     },
   } as unknown as PrismaService;
-  (prisma.client as unknown as Record<string, unknown>)['$transaction'] = jest.fn(
-    (cb: (tx: unknown) => Promise<unknown>) =>
+  (prisma.client as unknown as Record<string, unknown>)['$transaction'] =
+    jest.fn((cb: (tx: unknown) => Promise<unknown>) =>
       cb({
         match: prisma.client.match,
         conversation: prisma.client.conversation,
       }),
-  );
+    );
   return prisma;
 };
 

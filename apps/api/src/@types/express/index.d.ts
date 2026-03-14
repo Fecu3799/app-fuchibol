@@ -6,5 +6,7 @@ declare namespace Express {
       sessionId?: string;
     };
     requestId?: string;
+    /** Unix timestamp (ms) set by requestIdMiddleware. Used for request duration logging. */
+    startTime?: number;
   }
 }

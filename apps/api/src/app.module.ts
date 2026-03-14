@@ -13,6 +13,8 @@ import { PushModule } from './push/push.module';
 import { VenuesModule } from './venues/venues.module';
 import { ChatModule } from './chat/chat.module';
 import { AdminModule } from './admin/admin.module';
+import { HealthModule } from './health/health.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { AdminModule } from './admin/admin.module';
     VenuesModule,
     ChatModule,
     AdminModule,
+    HealthModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [],

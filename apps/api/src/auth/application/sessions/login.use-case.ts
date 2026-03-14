@@ -2,6 +2,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -9,6 +10,7 @@ import * as argon2 from 'argon2';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
 import { TokenService } from '../../infra/token.service';
 import { AuthAuditService } from '../../infra/auth-audit.service';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
@@ -36,6 +38,7 @@ export class LoginUseCase {
     private readonly jwtService: JwtService,
     private readonly tokenService: TokenService,
     private readonly auditService: AuthAuditService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(input: LoginInput) {
@@ -49,9 +52,10 @@ export class LoginUseCase {
         });
 
     if (!user) {
-      this.logger.log(
-        `login_failed identifier=${input.identifier} reason=not_found`,
-      );
+      this.logger.warn({ op: 'loginFailed', reasonCode: 'USER_NOT_FOUND' });
+      this.metrics?.incCounter('auth_login_failed_total', {
+        reasonCode: 'USER_NOT_FOUND',
+      });
       void this.auditService
         .log({
           eventType: 'login_failed',
@@ -66,7 +70,14 @@ export class LoginUseCase {
 
     const valid = await argon2.verify(user.passwordHash, input.password);
     if (!valid) {
-      this.logger.log(`login_failed userId=${user.id} reason=wrong_password`);
+      this.logger.warn({
+        op: 'loginFailed',
+        actorUserId: user.id,
+        reasonCode: 'INVALID_PASSWORD',
+      });
+      this.metrics?.incCounter('auth_login_failed_total', {
+        reasonCode: 'INVALID_PASSWORD',
+      });
       void this.auditService
         .log({
           eventType: 'login_failed',
@@ -80,7 +91,14 @@ export class LoginUseCase {
     }
 
     if (user.bannedAt !== null) {
-      this.logger.log(`login_failed userId=${user.id} reason=banned`);
+      this.logger.warn({
+        op: 'loginFailed',
+        actorUserId: user.id,
+        reasonCode: 'USER_BANNED',
+      });
+      this.metrics?.incCounter('auth_login_failed_total', {
+        reasonCode: 'USER_BANNED',
+      });
       void this.auditService
         .log({
           eventType: 'login_failed',
@@ -94,9 +112,14 @@ export class LoginUseCase {
     }
 
     if (!user.emailVerifiedAt) {
-      this.logger.log(
-        `login_failed userId=${user.id} reason=email_not_verified`,
-      );
+      this.logger.warn({
+        op: 'loginFailed',
+        actorUserId: user.id,
+        reasonCode: 'EMAIL_NOT_VERIFIED',
+      });
+      this.metrics?.incCounter('auth_login_failed_total', {
+        reasonCode: 'EMAIL_NOT_VERIFIED',
+      });
       void this.auditService
         .log({
           eventType: 'login_failed',
@@ -111,9 +134,14 @@ export class LoginUseCase {
 
     const now = new Date();
     if (user.suspendedUntil && user.suspendedUntil > now) {
-      this.logger.log(
-        `login_failed userId=${user.id} reason=account_suspended`,
-      );
+      this.logger.warn({
+        op: 'loginFailed',
+        actorUserId: user.id,
+        reasonCode: 'ACCOUNT_SUSPENDED',
+      });
+      this.metrics?.incCounter('auth_login_failed_total', {
+        reasonCode: 'ACCOUNT_SUSPENDED',
+      });
       void this.auditService
         .log({
           eventType: 'login_failed',
@@ -163,7 +191,12 @@ export class LoginUseCase {
       sid: session.id,
     });
 
-    this.logger.log(`login_success userId=${user.id} sessionId=${session.id}`);
+    this.logger.log({
+      op: 'loginSuccess',
+      actorUserId: user.id,
+      sessionId: session.id,
+    });
+    this.metrics?.incCounter('auth_login_success_total');
     void this.auditService
       .log({
         eventType: 'login_success',

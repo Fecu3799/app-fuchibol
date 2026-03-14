@@ -16,7 +16,9 @@ export class GetSystemHealthQuery {
 
     const [dbStatus, lastTickAt, deliveredL1h, disabledDevices] =
       await Promise.all([
-        this.prisma.client.$queryRaw`SELECT 1`.then(() => 'ok').catch(() => 'error'),
+        this.prisma.client.$queryRaw`SELECT 1`
+          .then(() => 'ok')
+          .catch(() => 'error'),
         this.redis
           ? this.redis.get('lifecycle:lastTickAt').catch(() => null)
           : Promise.resolve(null),

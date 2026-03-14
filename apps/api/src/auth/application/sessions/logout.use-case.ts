@@ -32,7 +32,7 @@ export class LogoutUseCase {
       });
     }
 
-    this.logger.log(`logout userId=${userId} sessionId=${sessionId}`);
+    this.logger.log({ op: 'logout', actorUserId: userId, sessionId });
     void this.auditService
       .log({ eventType: 'logout', userId, sessionId })
       .catch((err) => this.logger.warn('audit_log_failed', err));

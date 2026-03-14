@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
@@ -14,6 +15,7 @@ import { MatchAuditService, AuditLogType } from '../audit/match-audit.service';
 import { MatchNotificationService } from '../notifications/match-notification.service';
 import { UserReliabilityService } from '../shared/user-reliability.service';
 import { releaseTeamSlot, autoAssignTeamSlot } from '../teams/team-slot-sync';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 const LATE_LEAVE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
@@ -44,6 +46,7 @@ export class LeaveMatchUseCase {
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
     private readonly userReliability: UserReliabilityService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(input: LeaveMatchInput): Promise<MatchSnapshot> {
@@ -181,6 +184,13 @@ export class LeaveMatchUseCase {
 
       const wasConfirmed = existing.status === 'CONFIRMED';
 
+      const confirmedCountBefore = await tx.matchParticipant.count({
+        where: { matchId: input.matchId, status: 'CONFIRMED' },
+      });
+      const waitlistCountBefore = await tx.matchParticipant.count({
+        where: { matchId: input.matchId, status: 'WAITLISTED' },
+      });
+
       // Late-leave penalty: if leaving within 1 hour of match start
       const timeUntilMatchMs = match.startsAt.getTime() - Date.now();
       const isLateleave =
@@ -267,9 +277,29 @@ export class LeaveMatchUseCase {
       }
 
       // Count confirmed after deletion (promotion may have changed the count)
-      const confirmedCount = await tx.matchParticipant.count({
+      const confirmedCountAfter = await tx.matchParticipant.count({
         where: { matchId: input.matchId, status: 'CONFIRMED' },
       });
+      const waitlistCountAfter = await tx.matchParticipant.count({
+        where: { matchId: input.matchId, status: 'WAITLISTED' },
+      });
+
+      this.logger.log({
+        op: 'leaveMatch',
+        matchId: input.matchId,
+        actorUserId: input.actorId,
+        wasConfirmed,
+        isLateLeave: isLateleave,
+        promotedUserId,
+        confirmedCountBefore,
+        confirmedCountAfter,
+        waitlistCountBefore,
+        waitlistCountAfter,
+      });
+      this.metrics?.incCounter('match_leave_total');
+      if (promotedUserId) {
+        this.metrics?.incCounter('match_waitlist_promotions_total');
+      }
 
       return {
         snapshot: await this.snapshot.buildInTx(
@@ -281,7 +311,7 @@ export class LeaveMatchUseCase {
         wasConfirmed,
         isLocked: match.isLocked,
         minutesToStart,
-        confirmedCount,
+        confirmedCount: confirmedCountAfter,
       };
     });
   }

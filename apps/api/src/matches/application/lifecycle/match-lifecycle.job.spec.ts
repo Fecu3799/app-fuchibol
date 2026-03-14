@@ -98,9 +98,9 @@ function buildJob(
       match: {
         findMany: jest
           .fn()
-          .mockResolvedValueOnce(upcomingMatches)    // upcoming (0–60min)
-          .mockResolvedValueOnce(overdueMatches)     // overdue (past startsAt)
-          .mockResolvedValueOnce(inProgressMatches)  // in_progress
+          .mockResolvedValueOnce(upcomingMatches) // upcoming (0–60min)
+          .mockResolvedValueOnce(overdueMatches) // overdue (past startsAt)
+          .mockResolvedValueOnce(inProgressMatches) // in_progress
           .mockResolvedValueOnce(reminder24hMatches) // T-24h window
           .mockResolvedValueOnce(reminder2hMatches), // T-2h window
       },
@@ -1021,9 +1021,7 @@ describe('MatchLifecycleJob — T-24h reminder', () => {
     const match = makeMatch({
       startsAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       capacity: 10,
-      participants: [
-        { userId: 'u1', status: 'INVITED', isMatchAdmin: false },
-      ],
+      participants: [{ userId: 'u1', status: 'INVITED', isMatchAdmin: false }],
     });
 
     const { prisma } = buildJob([], [], [], [match]);
@@ -1043,7 +1041,9 @@ describe('MatchLifecycleJob — T-24h reminder', () => {
   it('does NOT trigger reminder_24h for matches in the upcoming 60min window', async () => {
     const match = makeMatch({
       startsAt: new Date(Date.now() + 45 * 60 * 1000),
-      participants: [{ userId: CREATOR_ID, status: 'CONFIRMED', isMatchAdmin: false }],
+      participants: [
+        { userId: CREATOR_ID, status: 'CONFIRMED', isMatchAdmin: false },
+      ],
     });
 
     // match is in upcoming, not in reminder24h slot
@@ -1124,7 +1124,9 @@ describe('MatchLifecycleJob — T-2h reminder', () => {
   it('does NOT trigger reminder_2h for matches in the upcoming 60min window', async () => {
     const match = makeMatch({
       startsAt: new Date(Date.now() + 45 * 60 * 1000),
-      participants: [{ userId: CREATOR_ID, status: 'CONFIRMED', isMatchAdmin: false }],
+      participants: [
+        { userId: CREATOR_ID, status: 'CONFIRMED', isMatchAdmin: false },
+      ],
     });
 
     // match is in upcoming, not in reminder2h slot

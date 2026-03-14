@@ -59,7 +59,12 @@ export class ListAdminUsersQuery {
 
     return {
       items: users,
-      pageInfo: { total, page, pageSize, totalPages: Math.ceil(total / pageSize) },
+      pageInfo: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
     };
   }
 }

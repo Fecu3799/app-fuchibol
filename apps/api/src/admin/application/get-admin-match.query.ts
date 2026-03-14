@@ -11,7 +11,9 @@ export class GetAdminMatchQuery {
       include: {
         createdBy: { select: { id: true, username: true, email: true } },
         participants: {
-          include: { user: { select: { id: true, username: true, email: true } } },
+          include: {
+            user: { select: { id: true, username: true, email: true } },
+          },
           orderBy: { createdAt: 'asc' },
         },
       },
@@ -24,21 +26,33 @@ export class GetAdminMatchQuery {
         where: { matchId },
         orderBy: { createdAt: 'desc' },
         take: 50,
-        select: { id: true, userId: true, type: true, bucket: true, createdAt: true },
+        select: {
+          id: true,
+          userId: true,
+          type: true,
+          bucket: true,
+          createdAt: true,
+        },
       }),
       this.prisma.client.matchAuditLog.findMany({
         where: { matchId },
         orderBy: { createdAt: 'desc' },
         take: 30,
-        select: { id: true, type: true, actorId: true, metadata: true, createdAt: true },
+        select: {
+          id: true,
+          type: true,
+          actorId: true,
+          metadata: true,
+          createdAt: true,
+        },
       }),
     ]);
 
     const grouped = {
-      confirmed: match.participants.filter(p => p.status === 'CONFIRMED'),
-      invited: match.participants.filter(p => p.status === 'INVITED'),
-      waitlisted: match.participants.filter(p => p.status === 'WAITLISTED'),
-      spectators: match.participants.filter(p => p.status === 'SPECTATOR'),
+      confirmed: match.participants.filter((p) => p.status === 'CONFIRMED'),
+      invited: match.participants.filter((p) => p.status === 'INVITED'),
+      waitlisted: match.participants.filter((p) => p.status === 'WAITLISTED'),
+      spectators: match.participants.filter((p) => p.status === 'SPECTATOR'),
     };
 
     return {

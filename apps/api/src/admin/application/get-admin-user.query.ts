@@ -34,7 +34,10 @@ export class GetAdminUserQuery {
       }),
       this.prisma.client.match.count({ where: { createdById: userId } }),
       this.prisma.client.matchParticipant.count({
-        where: { userId, status: { in: ['CONFIRMED', 'INVITED', 'WAITLISTED'] } },
+        where: {
+          userId,
+          status: { in: ['CONFIRMED', 'INVITED', 'WAITLISTED'] },
+        },
       }),
     ]);
 

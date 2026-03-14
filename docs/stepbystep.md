@@ -59,6 +59,10 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 52. [Match Reminders: T-24h y T-2h para jugadores confirmados](#52-match-reminders-t-24h-y-t-2h-para-jugadores-confirmados)
 53. [Admin Panel: módulo de moderación y operación de sistema](#53-admin-panel-módulo-de-moderación-y-operación-de-sistema)
 54. [Admin Panel Frontend: web app Vite + React](#54-admin-panel-frontend-web-app-vite--react)
+55. [Mobile: bloqueo de login para cuentas ADMIN](#55-mobile-bloqueo-de-login-para-cuentas-admin)
+56. [Observabilidad Sprint 1 + Hardening: AppLogger, requestId, error-codes, health endpoints](#56-observabilidad-sprint-1--hardening-applogger-requestid-error-codes-health-endpoints)
+57. [Observabilidad Sprint 2: instrumentación de dominio con logs estructurados](#57-observabilidad-sprint-2-instrumentación-de-dominio-con-logs-estructurados)
+58. [Observabilidad Sprint 3: métricas operacionales Prometheus-style](#58-observabilidad-sprint-3-métricas-operacionales-prometheus-style)
 
 ---
 
@@ -2294,4 +2298,189 @@ apps/api/src/auth/application/sessions/login.use-case.ts (+banned check → 403 
 apps/api/src/matches/application/lifecycle/match-lifecycle.job.ts (+REDIS_CLIENT @Optional, lastTickAt write)
 apps/api/src/matches/application/lifecycle/match-lifecycle.job.spec.ts (null como arg Redis en todos los tests)
 apps/api/src/auth/application/sessions/login.use-case.spec.ts (+bannedAt: null en mock)
+```
+
+---
+
+## 55. Mobile: bloqueo de login para cuentas ADMIN
+
+### Que se hizo
+
+- Usuarios con `role === 'ADMIN'` son rechazados en el login mobile con mensaje claro.
+- Se eliminaron todas las pantallas de admin del mobile (`AdminHomeScreen`, `AdminVenuesScreen`, etc.) y el `adminClient.ts`.
+- Se limpió `AppNavigator.tsx` (eliminado `AdminNavigator`, `AdminStackParamList`, bypass por rol).
+
+### Decision
+
+Admin solo entra desde el panel web (`apps/admin`). El mobile nunca debio tener pantallas de admin.
+
+### Archivos modificados
+
+```
+apps/mobile/src/contexts/AuthContext.tsx (login(): si role=ADMIN → clear tokens → throw 'ADMIN_ROLE')
+apps/mobile/src/screens/LoginScreen.tsx (catch ADMIN_ROLE → mensaje de error específico)
+apps/mobile/src/navigation/AppNavigator.tsx (eliminado AdminNavigator + lógica de rol)
+apps/mobile/src/api/adminClient.ts (eliminado)
+apps/mobile/src/features/admin/ (directorio eliminado)
+```
+
+---
+
+## 56. Observabilidad Sprint 1 + Hardening: AppLogger, requestId, error-codes, health endpoints
+
+### Que se hizo
+
+**Sprint 1 — Fundación:**
+- `AppLogger` (`common/logger/app-logger.service.ts`): extiende `ConsoleLogger`. Dev → pretty NestJS. Prod → JSON lines a stdout con campos `level`, `ts`, `service`, `env`, `source`.
+- `requestIdMiddleware`: agrega `X-Request-Id` en cada respuesta y popula `req.requestId` + `req.startTime` en la request.
+- `HttpLoggingInterceptor`: log estructurado de cada request exitosa con `method`, `path`, `status`, `ms`, `rid`, `actorUserId`.
+- `ApiExceptionFilter` reescrito: maneja todas las excepciones, emite Problem Details con `code`, `requestId`, `suspendedUntil`. Diferencia 4xx (warn) de 5xx (error).
+- Health endpoints excluidos del global prefix `api/v1`: `GET /health/live` → always 200, `GET /health/ready` → DB ping + Redis ping (503 si DB falla, `degraded` si Redis falla).
+
+**Hardening:**
+- `ErrorCode` const object (`common/errors/error-codes.ts`): taxonomía centralizada de error codes (string estables).
+- `log-fields.ts` (`common/logger/`): convención de nombres de campos para logs estructurados.
+- Campos renombrados: `actor` → `actorUserId`, `context` → `source`. Campos globales `service`/`env` auto-añadidos por `AppLogger`.
+- `@types/express/index.d.ts` extendido con `requestId`, `startTime`, `user` en `Request`.
+
+### Archivos creados
+
+```
+apps/api/src/common/logger/app-logger.service.ts
+apps/api/src/common/logger/log-fields.ts
+apps/api/src/common/errors/error-codes.ts
+apps/api/src/common/middleware/request-id.middleware.ts
+apps/api/src/common/interceptors/http-logging.interceptor.ts
+apps/api/src/common/filters/api-exception.filter.ts
+apps/api/src/health/health.controller.ts
+apps/api/src/health/health.module.ts
+apps/api/@types/express/index.d.ts
+```
+
+### Archivos modificados
+
+```
+apps/api/src/main.ts (AppLogger, global prefix con exclude /health/*)
+apps/api/src/app.module.ts (+HealthModule, +RequestIdMiddleware, +HttpLoggingInterceptor, +ApiExceptionFilter)
+```
+
+---
+
+## 57. Observabilidad Sprint 2: instrumentación de dominio con logs estructurados
+
+### Que se hizo
+
+Instrumentación de las operaciones críticas del dominio con `this.logger.log({ op, matchId, actorUserId, ... })`. Todos los logs de dominio emiten objetos estructurados (no string interpolation), compatibles con el `AppLogger` que los despliega como top-level keys en JSON.
+
+**Operaciones instrumentadas:**
+
+| Módulo | Operación | op |
+|--------|-----------|-----|
+| Match | createMatch | `createMatch` |
+| Match | updateMatch (éxito + revision_conflict warn) | `updateMatch` |
+| Match | confirmParticipant (confirmed/waitlisted/idempotent) | `confirmParticipant` |
+| Match | leaveMatch (incluye isLateLeave, promotedUserId) | `leaveMatch` |
+| Match | kickParticipant | `kickParticipant` |
+| Match | lockMatch (incluye idempotent) | `lockMatch` |
+| Match | cancelMatch | `cancelMatch` |
+| Auth | loginSuccess | `loginSuccess` |
+| Auth | loginFailed (razón: not_found/wrong_password/banned/email_not_verified/suspended) | `loginFailed` |
+| Auth | refreshSuccess | `refreshSuccess` |
+| Auth | refreshReuseDetected | `refreshReuseDetected` |
+| Auth | refreshBlocked (suspended) | `refreshBlocked` |
+| Auth | logout | `logout` |
+| Chat | messagePersisted / messageDeduplicated | `messagePersisted` / `messageDeduplicated` |
+| Idempotency | replay hit | `idempotencyReplay` |
+| Idempotency | key reuse warn | `idempotencyKeyReuse` |
+
+### Convención de campos
+
+- `op`: nombre de la operación (camelCase)
+- `matchId`, `conversationId`: ID del agregado afectado
+- `actorUserId`: quien ejecuta la acción
+- `userId`: target (en kick, ban, etc.)
+- Campos contextuales: `reason`, `sessionId`, `wasConfirmed`, `isLateLeave`, `isMajorChange`, `result`, etc.
+
+### Archivos modificados
+
+```
+apps/api/src/matches/application/editing/create-match.use-case.ts (+Logger, log createMatch)
+apps/api/src/matches/application/editing/update-match.use-case.ts (+log updateMatch, +warn revision_conflict)
+apps/api/src/matches/application/participation/confirm-participation.use-case.ts (+Logger, log confirmParticipant)
+apps/api/src/matches/application/participation/leave-match.use-case.ts (+log leaveMatch)
+apps/api/src/matches/application/participation/kick-participant.use-case.ts (+log kickParticipant)
+apps/api/src/matches/application/lifecycle/lock-match.use-case.ts (+Logger, log lockMatch)
+apps/api/src/matches/application/lifecycle/cancel-match.use-case.ts (+log cancelMatch)
+apps/api/src/auth/application/sessions/login.use-case.ts (string interp → structured objects)
+apps/api/src/auth/application/sessions/refresh.use-case.ts (string interp → structured objects)
+apps/api/src/auth/application/sessions/logout.use-case.ts (string interp → structured object)
+apps/api/src/chat/application/messages/send-message.use-case.ts (+Logger, log messagePersisted/Deduplicated)
+apps/api/src/common/idempotency/idempotency.service.ts (+Logger, log idempotencyReplay/KeyReuse)
+```
+
+---
+
+## 58. Observabilidad Sprint 3: métricas operacionales Prometheus-style
+
+### Que se hizo
+
+Registry de métricas en memoria, compatible con el formato de texto Prometheus v0.0.4. Expone `GET /metrics` (excluido del global prefix `api/v1`). No usa librerías externas (prom-client, etc.).
+
+**Métricas expuestas:**
+
+| Nombre | Tipo | Labels |
+|--------|------|--------|
+| `match_created_total` | counter | — |
+| `match_confirm_total` | counter | `result` (confirmed/waitlisted) |
+| `match_leave_total` | counter | — |
+| `match_waitlist_promotions_total` | counter | — |
+| `match_revision_conflicts_total` | counter | — |
+| `match_major_changes_total` | counter | — |
+| `auth_login_success_total` | counter | — |
+| `auth_login_failed_total` | counter | `reasonCode` (USER_NOT_FOUND/INVALID_PASSWORD/USER_BANNED/EMAIL_NOT_VERIFIED/ACCOUNT_SUSPENDED) |
+| `auth_refresh_success_total` | counter | — |
+| `auth_refresh_reuse_total` | counter | — |
+| `chat_messages_sent_total` | counter | — |
+| `chat_messages_deduplicated_total` | counter | — |
+| `chat_socket_emit_failures_total` | counter | — |
+| `cron_jobs_runs_total` | counter | — |
+| `cron_jobs_failures_total` | counter | — |
+| `match_lifecycle_transitions_total` | counter | `toState` |
+| `http_request_duration_ms` | histogram | `method`, `path`, `status_class` |
+
+### Implementación
+
+- `MetricsService`: Map de counters + Map de histogramas. Serializa a texto Prometheus (`# HELP`, `# TYPE`, valores). Todos los counters conocidos se pre-inicializan a 0 en el constructor para que `/metrics` los muestre siempre.
+- `MetricsModule`: `@Global()` → disponible en todos los módulos sin importar explícitamente.
+- `MetricsController`: `GET /metrics` con `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
+- `HttpLoggingInterceptor` + `ApiExceptionFilter`: ambos observan `http_request_duration_ms` para cubrir 2xx y 4xx/5xx respectivamente. `path` usa `req.route?.path` (template, no instancia) para evitar alta cardinalidad.
+- Counters en use-cases: parámetro opcional `metrics?: MetricsService` como último arg del constructor → tests que usan `new UseCase(...)` no se afectan.
+- `MatchLifecycleJob` y `ChatRealtimePublisher` usan `@Optional()` para recibir MetricsService vía DI.
+- `main.ts`: `app.get(MetricsService)` para pasar el singleton a Interceptor y Filter instanciados con `new`.
+
+### Archivos creados
+
+```
+apps/api/src/metrics/metrics.service.ts
+apps/api/src/metrics/metrics.controller.ts
+apps/api/src/metrics/metrics.module.ts
+```
+
+### Archivos modificados
+
+```
+apps/api/src/main.ts (+MetricsService, exclude /metrics del prefix, pass a interceptor/filter)
+apps/api/src/app.module.ts (+MetricsModule)
+apps/api/src/common/interceptors/http-logging.interceptor.ts (+observeHistogram 2xx)
+apps/api/src/common/filters/api-exception.filter.ts (+observeHistogram 4xx/5xx)
+apps/api/src/matches/application/editing/create-match.use-case.ts (+match_created_total)
+apps/api/src/matches/application/editing/update-match.use-case.ts (+match_revision_conflicts_total, +match_major_changes_total)
+apps/api/src/matches/application/participation/confirm-participation.use-case.ts (+match_confirm_total)
+apps/api/src/matches/application/participation/leave-match.use-case.ts (+match_leave_total, +match_waitlist_promotions_total)
+apps/api/src/matches/application/participation/kick-participant.use-case.ts (+match_waitlist_promotions_total)
+apps/api/src/matches/application/lifecycle/match-lifecycle.job.ts (+cron_jobs_runs_total, +cron_jobs_failures_total, +match_lifecycle_transitions_total)
+apps/api/src/auth/application/sessions/login.use-case.ts (+auth_login_success_total, +auth_login_failed_total)
+apps/api/src/auth/application/sessions/refresh.use-case.ts (+auth_refresh_success_total, +auth_refresh_reuse_total)
+apps/api/src/chat/application/messages/send-message.use-case.ts (+chat_messages_sent_total, +chat_messages_deduplicated_total)
+apps/api/src/chat/realtime/chat-realtime.publisher.ts (+@Optional() MetricsService, +chat_socket_emit_failures_total)
 ```

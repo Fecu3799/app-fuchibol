@@ -1,7 +1,9 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
@@ -10,6 +12,7 @@ import { GroupChatAccessService } from '../access/group-chat-access.service';
 import { DirectChatAccessService } from '../access/direct-chat-access.service';
 import { StorageService } from '../../../infra/storage/storage.service';
 import type { MessageView } from './list-messages.use-case';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 export interface SendMessageInput {
   conversationId: string;
@@ -20,12 +23,15 @@ export interface SendMessageInput {
 
 @Injectable()
 export class SendMessageUseCase {
+  private readonly logger = new Logger(SendMessageUseCase.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: MatchChatAccessService,
     private readonly groupAccess: GroupChatAccessService,
     private readonly directAccess: DirectChatAccessService,
     private readonly storage: StorageService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(
@@ -65,6 +71,13 @@ export class SendMessageUseCase {
       if (!allowed) throw new ForbiddenException('CHAT_ACCESS_DENIED');
     }
 
+    this.logger.log({
+      op: 'sendMessageRequested',
+      conversationId: input.conversationId,
+      actorUserId: input.senderId,
+      clientMsgId: input.clientMsgId,
+    });
+
     // Idempotency via DB unique constraint on (conversationId, senderId, clientMsgId)
     let message = await this.prisma.client.message.findUnique({
       where: {
@@ -97,6 +110,17 @@ export class SendMessageUseCase {
         },
       });
       created = true;
+    }
+
+    this.logger.log({
+      op: created ? 'messagePersisted' : 'messageDeduplicated',
+      conversationId: input.conversationId,
+      actorUserId: input.senderId,
+    });
+    if (created) {
+      this.metrics?.incCounter('chat_messages_sent_total');
+    } else {
+      this.metrics?.incCounter('chat_messages_deduplicated_total');
     }
 
     return {

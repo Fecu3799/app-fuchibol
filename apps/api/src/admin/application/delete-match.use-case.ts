@@ -16,7 +16,9 @@ export class DeleteMatchUseCase {
     // All other related models (participants, auditLogs, teamSlots, conversation+messages)
     // have onDelete: Cascade and will be cleaned up automatically.
     await this.prisma.client.$transaction([
-      this.prisma.client.notificationDelivery.deleteMany({ where: { matchId } }),
+      this.prisma.client.notificationDelivery.deleteMany({
+        where: { matchId },
+      }),
       this.prisma.client.match.delete({ where: { id: matchId } }),
     ]);
   }

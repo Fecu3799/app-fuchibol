@@ -44,7 +44,9 @@ export class GetDashboardQuery {
         where: { status: 'INVITED' },
       }),
       this.prisma.client.notificationDelivery.count({
-        where: { createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } },
+        where: {
+          createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
+        },
       }),
       this.prisma.client.pushDevice.count({
         where: { disabledAt: { not: null } },

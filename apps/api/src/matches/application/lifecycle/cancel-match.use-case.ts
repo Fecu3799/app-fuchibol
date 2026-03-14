@@ -126,6 +126,12 @@ export class CancelMatchUseCase {
         {},
       );
 
+      this.logger.log({
+        op: 'cancelMatch',
+        matchId: input.matchId,
+        actorUserId: input.actorId,
+      });
+
       return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
   }

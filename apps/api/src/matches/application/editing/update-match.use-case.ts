@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { type Prisma } from '@prisma/client';
@@ -17,6 +18,7 @@ import type {
   VenueSnapshot,
   PitchSnapshot,
 } from '../shared/match-snapshot.service';
+import { MetricsService } from '../../../metrics/metrics.service';
 
 export interface UpdateMatchInput {
   matchId: string;
@@ -39,6 +41,7 @@ export class UpdateMatchUseCase {
     private readonly snapshot: MatchSnapshotService,
     private readonly audit: MatchAuditService,
     private readonly matchNotification: MatchNotificationService,
+    @Optional() private readonly metrics?: MetricsService,
   ) {}
 
   async execute(input: UpdateMatchInput): Promise<MatchSnapshot> {
@@ -125,6 +128,15 @@ export class UpdateMatchUseCase {
       }
 
       if (match.revision !== input.expectedRevision) {
+        this.logger.warn({
+          op: 'updateMatch',
+          matchId: input.matchId,
+          actorUserId: input.actorId,
+          msg: 'revision_conflict',
+          expected: input.expectedRevision,
+          actual: match.revision,
+        });
+        this.metrics?.incCounter('match_revision_conflicts_total');
         throw new ConflictException('REVISION_CONFLICT');
       }
 
@@ -224,6 +236,34 @@ export class UpdateMatchUseCase {
           },
         );
 
+        this.logger.log({
+          op: 'majorChangeTriggered',
+          matchId: input.matchId,
+          actorUserId: input.actorId,
+          previousStartsAt: match.startsAt.toISOString(),
+          newStartsAt: data.startsAt
+            ? (data.startsAt as Date).toISOString()
+            : match.startsAt.toISOString(),
+          previousCapacity: match.capacity,
+          newCapacity:
+            data.capacity !== undefined
+              ? (data.capacity as number)
+              : match.capacity,
+          affectedParticipantsCount: reconfirmResult.count,
+        });
+
+        if (capacityDecreased) {
+          this.logger.log({
+            op: 'capacityReduced',
+            matchId: input.matchId,
+            actorUserId: input.actorId,
+            oldCapacity: match.capacity,
+            newCapacity: data.capacity as number,
+            demotedUserIds: reconfirmUserIds,
+            demotedCount: reconfirmResult.count,
+          });
+        }
+
         // Major change invalidates teams entirely: slot structure may no longer match
         // new capacity, and confirmed players have changed. Drop all slots so the
         // creator reassigns cleanly.
@@ -244,6 +284,17 @@ export class UpdateMatchUseCase {
 
       return this.snapshot.buildInTx(tx, input.matchId, input.actorId);
     });
+
+    this.logger.log({
+      op: 'updateMatch',
+      matchId: input.matchId,
+      actorUserId: input.actorId,
+      isMajorChange: reconfirmUserIds.length > 0,
+      reconfirmCount: reconfirmUserIds.length,
+    });
+    if (reconfirmUserIds.length > 0) {
+      this.metrics?.incCounter('match_major_changes_total');
+    }
 
     if (reconfirmUserIds.length > 0) {
       void this.matchNotification

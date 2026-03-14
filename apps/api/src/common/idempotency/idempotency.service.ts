@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
@@ -21,6 +21,7 @@ export function computeRequestHash(body: unknown): string {
 
 @Injectable()
 export class IdempotencyService {
+  private readonly logger = new Logger(IdempotencyService.name);
   private readonly ttlMs: number;
 
   constructor(
@@ -51,9 +52,21 @@ export class IdempotencyService {
           where: { id: existing.id },
         });
       } else if (existing.requestHash !== requestHash) {
+        this.logger.warn({
+          op: 'idempotencyKeyReuse',
+          actorUserId: params.actorId,
+          route: params.route,
+          matchId: params.matchId,
+        });
         throw new ConflictException('IDEMPOTENCY_KEY_REUSE');
       } else {
         // Valid cache hit — replay
+        this.logger.log({
+          op: 'idempotencyReplay',
+          actorUserId: params.actorId,
+          route: params.route,
+          matchId: params.matchId,
+        });
         return existing.responseJson as T;
       }
     }

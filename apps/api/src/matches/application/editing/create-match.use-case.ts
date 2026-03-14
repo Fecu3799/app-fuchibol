@@ -1,6 +1,12 @@
-import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Optional,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { type Prisma, MatchStatus } from '@prisma/client';
 import { PrismaService } from '../../../infra/prisma/prisma.service';
+import { MetricsService } from '../../../metrics/metrics.service';
 import type {
   VenueSnapshot,
   PitchSnapshot,
@@ -23,7 +29,12 @@ export interface CreateMatchResult {
 
 @Injectable()
 export class CreateMatchUseCase {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CreateMatchUseCase.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly metrics?: MetricsService,
+  ) {}
 
   async execute(input: CreateMatchInput): Promise<CreateMatchResult> {
     if (input.capacity <= 0) {
@@ -106,7 +117,7 @@ export class CreateMatchUseCase {
       };
     }
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const result = await this.prisma.client.$transaction(async (tx) => {
       const match = await tx.match.create({
         data: {
           title: input.title,
@@ -139,5 +150,16 @@ export class CreateMatchUseCase {
 
       return match;
     });
+
+    this.logger.log({
+      op: 'createMatch',
+      matchId: result.id,
+      actorUserId: input.createdById,
+      capacity: input.capacity,
+      hasVenue: !!input.venueId,
+    });
+    this.metrics?.incCounter('match_created_total');
+
+    return result;
   }
 }

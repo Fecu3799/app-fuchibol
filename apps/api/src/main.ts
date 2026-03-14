@@ -1,14 +1,22 @@
-import { HttpStatus, ValidationPipe } from '@nestjs/common';
+import { HttpStatus, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { AppLogger } from './common/logger/app-logger.service';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { MetricsService } from './metrics/metrics.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const logger = new AppLogger('Bootstrap');
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+
+  app.useLogger(logger);
 
   // --- Helmet (security headers) ---
   app.use(helmet());
@@ -38,7 +46,16 @@ async function bootstrap() {
 
   app.use(requestIdMiddleware);
 
-  app.setGlobalPrefix('api/v1');
+  // Health endpoints excluded from global prefix so load balancers
+  // can reach /health/live and /health/ready without auth or prefix.
+  app.setGlobalPrefix('api/v1', {
+    exclude: [
+      { path: 'health/live', method: RequestMethod.GET },
+      { path: 'health/ready', method: RequestMethod.GET },
+      { path: 'metrics', method: RequestMethod.GET },
+    ],
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -47,11 +64,14 @@ async function bootstrap() {
       errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
     }),
   );
-  app.useGlobalInterceptors(new HttpLoggingInterceptor());
-  app.useGlobalFilters(new ApiExceptionFilter());
+  const metricsService = app.get(MetricsService);
+  app.useGlobalInterceptors(new HttpLoggingInterceptor(metricsService));
+  app.useGlobalFilters(new ApiExceptionFilter(metricsService));
 
   const port = process.env.PORT ?? 3000;
   const host = process.env.HOST ?? '0.0.0.0';
   await app.listen(port, host);
+
+  logger.log({ msg: 'API started', port, host });
 }
 void bootstrap();

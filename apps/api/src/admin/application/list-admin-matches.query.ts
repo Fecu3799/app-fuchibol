@@ -51,7 +51,12 @@ export class ListAdminMatchesQuery {
 
     return {
       items: matches,
-      pageInfo: { total, page, pageSize, totalPages: Math.ceil(total / pageSize) },
+      pageInfo: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
     };
   }
 }

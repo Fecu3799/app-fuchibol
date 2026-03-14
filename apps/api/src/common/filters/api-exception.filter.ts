@@ -7,6 +7,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { ErrorCode } from '../errors/error-codes';
+import type { MetricsService } from '../../metrics/metrics.service';
 
 interface ProblemDetails {
   type: string;
@@ -20,52 +22,48 @@ interface ProblemDetails {
 }
 
 const STATUS_CODE_MAP: Record<number, string> = {
-  400: 'BAD_REQUEST',
-  401: 'UNAUTHORIZED',
-  403: 'FORBIDDEN',
-  404: 'NOT_FOUND',
-  409: 'CONFLICT',
-  422: 'VALIDATION_ERROR',
-  429: 'RATE_LIMITED',
+  400: ErrorCode.BAD_REQUEST,
+  401: ErrorCode.UNAUTHORIZED,
+  403: ErrorCode.FORBIDDEN,
+  404: ErrorCode.NOT_FOUND,
+  409: ErrorCode.CONFLICT,
+  422: ErrorCode.VALIDATION_ERROR,
+  429: ErrorCode.RATE_LIMITED,
 };
 
-/** Known domain error codes sent as ConflictException message strings. */
-const DOMAIN_CONFLICT_CODES = new Set([
-  'REVISION_CONFLICT',
-  'MATCH_LOCKED',
-  'MATCH_CANCELLED',
-  'IDEMPOTENCY_KEY_REUSE',
-  'SELF_INVITE',
-  'ALREADY_PARTICIPANT',
+const DOMAIN_CONFLICT_CODES = new Set<string>([
+  ErrorCode.REVISION_CONFLICT,
+  ErrorCode.MATCH_LOCKED,
+  ErrorCode.MATCH_CANCELLED,
+  ErrorCode.IDEMPOTENCY_REPLAY, // wire: 'IDEMPOTENCY_KEY_REUSE'
+  ErrorCode.SELF_INVITE,
+  ErrorCode.ALREADY_PARTICIPANT,
 ]);
 
-/** Known domain error codes sent as UnprocessableEntityException message strings. */
-const DOMAIN_UNPROCESSABLE_CODES = new Set([
-  'CREATOR_WITHDRAW_REQUIRES_ADMIN',
-  'CREATOR_TRANSFER_REQUIRED',
-  'CANNOT_DEMOTE_CREATOR',
-  'NOT_PARTICIPANT',
-  'TERMS_NOT_ACCEPTED',
-  'invalid_content_type',
-  'file_too_large',
-  'invalid_avatar_key',
+const DOMAIN_UNPROCESSABLE_CODES = new Set<string>([
+  ErrorCode.CREATOR_WITHDRAW_REQUIRES_ADMIN,
+  ErrorCode.CREATOR_TRANSFER_REQUIRED,
+  ErrorCode.CANNOT_DEMOTE_CREATOR,
+  ErrorCode.NOT_PARTICIPANT,
+  ErrorCode.TERMS_NOT_ACCEPTED,
+  ErrorCode.INVALID_CONTENT_TYPE,
+  ErrorCode.FILE_TOO_LARGE,
+  ErrorCode.INVALID_AVATAR_KEY,
 ]);
 
-/** Known domain error codes sent as ForbiddenException message strings. */
-const DOMAIN_FORBIDDEN_CODES = new Set([
-  'EMAIL_NOT_VERIFIED',
-  'account_suspended',
+const DOMAIN_FORBIDDEN_CODES = new Set<string>([
+  ErrorCode.EMAIL_NOT_VERIFIED,
+  ErrorCode.ACCOUNT_SUSPENDED,
+  ErrorCode.USER_BANNED,
 ]);
 
-/** Known domain error codes sent as UnauthorizedException message strings. */
-const DOMAIN_UNAUTHORIZED_CODES = new Set([
-  'REFRESH_REUSED',
-  'SESSION_REVOKED',
-  'REFRESH_EXPIRED',
+const DOMAIN_UNAUTHORIZED_CODES = new Set<string>([
+  ErrorCode.REFRESH_REUSED,
+  ErrorCode.SESSION_REVOKED,
+  ErrorCode.REFRESH_EXPIRED,
 ]);
 
-/** Known domain error codes sent as NotFoundException message strings. */
-const DOMAIN_NOT_FOUND_CODES = new Set(['USER_NOT_FOUND']);
+const DOMAIN_NOT_FOUND_CODES = new Set<string>([ErrorCode.USER_NOT_FOUND]);
 
 function resolveCode(status: number, response: unknown): string {
   if (typeof response === 'object' && response !== null) {
@@ -74,7 +72,7 @@ function resolveCode(status: number, response: unknown): string {
       if (status === 409) {
         if (DOMAIN_CONFLICT_CODES.has(msg)) return msg;
         if (msg.startsWith('CAPACITY_BELOW_CONFIRMED'))
-          return 'CAPACITY_BELOW_CONFIRMED';
+          return ErrorCode.CAPACITY_BELOW_CONFIRMED;
       }
       if (status === 403 && DOMAIN_FORBIDDEN_CODES.has(msg)) return msg;
       if (status === 401 && DOMAIN_UNAUTHORIZED_CODES.has(msg)) return msg;
@@ -82,7 +80,7 @@ function resolveCode(status: number, response: unknown): string {
       if (status === 404 && DOMAIN_NOT_FOUND_CODES.has(msg)) return msg;
     }
   }
-  return STATUS_CODE_MAP[status] ?? 'INTERNAL';
+  return STATUS_CODE_MAP[status] ?? ErrorCode.UNEXPECTED_ERROR;
 }
 
 function resolveDetail(response: unknown): string | undefined {
@@ -117,12 +115,16 @@ function resolveSuspendedUntil(response: unknown): string | undefined {
 export class ApiExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
 
+  constructor(private readonly metrics?: MetricsService) {}
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
     const res = ctx.getResponse<Response>();
 
     const requestId = req.requestId ?? '-';
+    const ms = Date.now() - (req.startTime ?? Date.now());
+
     let status: number;
     let response: unknown;
 
@@ -133,7 +135,16 @@ export class ApiExceptionFilter implements ExceptionFilter {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       response = { message: 'Internal server error' };
       this.logger.error(
-        `Unhandled exception rid=${requestId}`,
+        {
+          msg: 'Unhandled exception',
+          source: 'ExceptionFilter',
+          method: req.method,
+          path: req.path,
+          rid: requestId,
+          actorUserId: req.user?.userId ?? '-',
+          ms,
+          errorCode: ErrorCode.UNEXPECTED_ERROR,
+        },
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
@@ -154,15 +165,24 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (errors) body.errors = errors;
     if (suspendedUntil) body.suspendedUntil = suspendedUntil;
 
-    const ms =
-      Date.now() -
-      ((req as unknown as Record<string, number>).__startTime ?? Date.now());
-    this.logger.log(
-      `${req.method} ${req.path} ${status} ${ms}ms` +
-        ` rid=${requestId}` +
-        ` actor=${req.user?.userId ?? '-'}` +
-        ` code=${code}`,
-    );
+    // Log 4xx as warn, 5xx as error
+    const logLevel = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'log';
+    this.logger[logLevel]({
+      source: 'ExceptionFilter',
+      method: req.method,
+      path: req.path,
+      status,
+      ms,
+      rid: requestId,
+      actorUserId: req.user?.userId ?? '-',
+      errorCode: code,
+    });
+
+    this.metrics?.observeHistogram('http_request_duration_ms', ms, {
+      method: req.method,
+      path: (req.route?.path as string | undefined) ?? req.path,
+      status_class: `${Math.floor(status / 100)}xx`,
+    });
 
     res.status(status).json(body);
   }
