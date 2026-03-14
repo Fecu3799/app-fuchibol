@@ -44,6 +44,8 @@ export default function LoginScreen({ navigation, route }: Props) {
           return;
         }
         setError(err.body.detail ?? err.body.message ?? 'Login failed');
+      } else if (err instanceof Error && err.message === 'ADMIN_ROLE') {
+        setError('Esta cuenta es de administrador. Ingresá desde el panel de administración.');
       } else {
         setError('Connection error. Please try again.');
       }

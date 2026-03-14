@@ -1,0 +1,1 @@
+ALTER TYPE "PitchType" RENAME VALUE 'F9' TO 'F8';

@@ -79,6 +79,20 @@ export class LoginUseCase {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (user.bannedAt !== null) {
+      this.logger.log(`login_failed userId=${user.id} reason=banned`);
+      void this.auditService
+        .log({
+          eventType: 'login_failed',
+          userId: user.id,
+          ip: input.ip,
+          userAgent: input.userAgent,
+          metadata: { reason: 'banned' },
+        })
+        .catch((err) => this.logger.warn('audit_log_failed', err));
+      throw new ForbiddenException('USER_BANNED');
+    }
+
     if (!user.emailVerifiedAt) {
       this.logger.log(
         `login_failed userId=${user.id} reason=email_not_verified`,

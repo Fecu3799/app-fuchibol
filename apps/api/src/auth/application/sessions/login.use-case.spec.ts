@@ -49,6 +49,8 @@ const verifiedUser = {
   passwordHash: 'hashed',
   role: 'USER',
   emailVerifiedAt: new Date('2025-01-01'),
+  bannedAt: null,
+  suspendedUntil: null,
 };
 
 describe('LoginUseCase', () => {

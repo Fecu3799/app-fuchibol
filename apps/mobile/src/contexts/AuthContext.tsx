@@ -177,6 +177,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setStoredRefreshToken(res.refreshToken);
 
     const user = await getMe();
+
+    if (user.role === 'ADMIN') {
+      setAccessToken(null);
+      await removeStoredRefreshToken();
+      throw new Error('ADMIN_ROLE');
+    }
+
     setState({ isLoading: false, isAuthenticated: true, token: res.accessToken, user });
   }, []);
 

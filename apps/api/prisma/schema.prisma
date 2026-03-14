@@ -17,7 +17,7 @@ enum MatchStatus {
 enum PitchType {
   F5
   F7
-  F9
+  F8
   F11
 }
 
@@ -64,6 +64,8 @@ model User {
   reliabilityScore           Int                @default(100) @db.SmallInt
   reliabilityWindowStartedAt DateTime?
   suspendedUntil             DateTime?
+  bannedAt                   DateTime?
+  banReason                  String?
   emailVerifiedAt            DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt

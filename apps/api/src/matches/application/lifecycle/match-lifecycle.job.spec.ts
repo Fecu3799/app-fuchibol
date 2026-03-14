@@ -140,6 +140,7 @@ describe('MatchLifecycleJob — Auto-lock rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -178,6 +179,7 @@ describe('MatchLifecycleJob — Auto-lock rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -207,6 +209,7 @@ describe('MatchLifecycleJob — Reminder rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -240,6 +243,7 @@ describe('MatchLifecycleJob — Reminder rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -272,6 +276,7 @@ describe('MatchLifecycleJob — Reminder rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -313,6 +318,7 @@ describe('MatchLifecycleJob — Overdue cancel rule', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -364,6 +370,7 @@ describe('MatchLifecycleJob — Overdue cancel rule', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -405,6 +412,7 @@ describe('MatchLifecycleJob — Overdue cancel rule', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -444,6 +452,7 @@ describe('MatchLifecycleJob — Overdue cancel rule', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -484,6 +493,7 @@ describe('MatchLifecycleJob — Overdue auto-start rule (in_progress)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -534,6 +544,7 @@ describe('MatchLifecycleJob — Overdue auto-start rule (in_progress)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -571,6 +582,7 @@ describe('MatchLifecycleJob — Overdue auto-start rule (in_progress)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -606,6 +618,7 @@ describe('MatchLifecycleJob — Overdue auto-start rule (in_progress)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -661,6 +674,7 @@ describe('MatchLifecycleJob — Overdue auto-start rule (in_progress)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -702,6 +716,7 @@ describe('MatchLifecycleJob — Finalize rule (played)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -738,6 +753,7 @@ describe('MatchLifecycleJob — Finalize rule (played)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -767,6 +783,7 @@ describe('MatchLifecycleJob — Finalize rule (played)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -807,6 +824,7 @@ describe('MatchLifecycleJob — Auto-generate teams rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -848,6 +866,7 @@ describe('MatchLifecycleJob — Auto-generate teams rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -874,6 +893,7 @@ describe('MatchLifecycleJob — Auto-generate teams rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -896,6 +916,7 @@ describe('MatchLifecycleJob — Auto-generate teams rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -925,6 +946,7 @@ describe('MatchLifecycleJob — Auto-generate teams rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -949,6 +971,7 @@ describe('MatchLifecycleJob — Auto-generate teams rule (upcoming)', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -979,6 +1002,7 @@ describe('MatchLifecycleJob — T-24h reminder', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -1009,6 +1033,7 @@ describe('MatchLifecycleJob — T-24h reminder', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -1029,6 +1054,7 @@ describe('MatchLifecycleJob — T-24h reminder', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -1059,6 +1085,7 @@ describe('MatchLifecycleJob — T-2h reminder', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -1087,6 +1114,7 @@ describe('MatchLifecycleJob — T-2h reminder', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 
@@ -1107,6 +1135,7 @@ describe('MatchLifecycleJob — T-2h reminder', () => {
       mockAudit,
       notification,
       mockRealtimePublisher,
+      null,
     );
     await job.runTick();
 

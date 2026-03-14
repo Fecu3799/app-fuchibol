@@ -55,6 +55,10 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 48. [Chat Push Notifications Sprint 1: fanout unificado por conversación](#48-chat-push-notifications-sprint-1-fanout-unificado-por-conversación)
 49. [Chat Push Notifications Sprint 2: unread tracking, push suppression, deep link robusto](#49-chat-push-notifications-sprint-2-unread-tracking-push-suppression-deep-link-robusto)
 50. [Chat UX: Unread badge en Home, tab por defecto, realtime FlatList fix](#50-chat-ux-unread-badge-en-home-tab-por-defecto-realtime-flatlist-fix)
+51. [Refactor: reorganización de application/ en módulos auth y chat](#51-refactor-reorganización-de-application-en-módulos-auth-y-chat)
+52. [Match Reminders: T-24h y T-2h para jugadores confirmados](#52-match-reminders-t-24h-y-t-2h-para-jugadores-confirmados)
+53. [Admin Panel: módulo de moderación y operación de sistema](#53-admin-panel-módulo-de-moderación-y-operación-de-sistema)
+54. [Admin Panel Frontend: web app Vite + React](#54-admin-panel-frontend-web-app-vite--react)
 
 ---
 
@@ -2122,4 +2126,172 @@ apps/mobile/src/features/chat/useChatRealtime.ts (seed cache, invalidate unread-
 apps/mobile/src/screens/MatchChatScreen.tsx (maintainVisibleContentPosition, scrollToOffset on send)
 apps/mobile/src/screens/GroupChatScreen.tsx (idem)
 apps/mobile/src/screens/DirectChatScreen.tsx (idem)
+```
+
+---
+
+## 51. Refactor: reorganización de application/ en módulos auth y chat
+
+### Qué se hizo
+
+Reorganización pura de archivos — sin cambios de lógica ni de comportamiento. Los módulos `auth` y `chat` tenían ~22 archivos planos cada uno en `application/`. Se crearon subcarpetas por responsabilidad para mejorar navegabilidad.
+
+### Estructura resultante
+
+**auth/application/**
+```
+sessions/   login, logout, logout-all, refresh, revoke-session, list-sessions
+password/   change-password, request-password-reset, confirm-password-reset
+email/      request-email-verify, confirm-email-verify
+profile/    register, get-me, update-me, prepare-avatar, confirm-avatar
+```
+
+**chat/application/**
+```
+conversations/  find-direct, get-or-create-direct, get-match, get-group, list-direct, list-group, list-user, send-first-direct
+messages/       send-message, list-messages
+read/           mark-conversation-read, get-unread-count
+access/         direct-chat-access.service, group-chat-access.service, match-chat-access.service
+notifications/  chat-notification.service
+```
+
+### Decisiones
+
+- Los `*-access.service` de chat se separaron porque son lógica de autorización distinta a los use-cases de conversación.
+- No se crearon barrel `index.ts` — imports directos al archivo.
+- Todos los imports en controllers, módulos, specs y archivos cruzados fueron actualizados.
+- Tests: 400 pasando sin cambios de lógica.
+
+### Archivos modificados
+
+```
+apps/api/src/auth/application/** (todos movidos a subcarpetas)
+apps/api/src/chat/application/** (todos movidos a subcarpetas)
+apps/api/src/auth/auth.module.ts (paths actualizados)
+apps/api/src/chat/chat.module.ts (paths actualizados)
+apps/api/src/auth/api/*.controller.ts (5 controllers — paths actualizados)
+apps/api/src/chat/api/chat.controller.ts (paths actualizados)
+apps/api/src/chat/realtime/chat-realtime.publisher.ts (paths actualizados)
+apps/api/src/chat/realtime/chat.gateway.ts (paths actualizados)
+```
+
+---
+
+## 52. Match Reminders: T-24h y T-2h para jugadores confirmados
+
+### Qué se hizo
+
+Extensión del sistema de reminders del `MatchLifecycleJob`. El sistema anterior solo cubría la ventana de 60 minutos previos al partido (buckets b0–b3) y notificaba solo a admins. Se agregaron dos nuevas ventanas temporales dirigidas a todos los jugadores confirmados.
+
+### Nuevas ventanas
+
+| Ventana | Rango de query | Bucket | Destinatarios |
+|---|---|---|---|
+| T-24h | startsAt in (now+23h, now+25h] | `t24h` | CONFIRMED participants |
+| T-2h | startsAt in (now+1.5h, now+2.5h] | `t2h` | CONFIRMED participants |
+
+Las ventanas tienen 2 horas de ancho para garantizar cobertura completa con el cron de 1 minuto. El bucket fijo previene reenvíos: máximo 1 notif por `(userId, matchId, type, bucket)`.
+
+### Dedup
+
+Mismo mecanismo que `reminder_missing_players` — bucket-based en `NotificationDelivery`. Sin cooldown por tiempo, solo por bucket. Sin migración de DB (columna `bucket` ya existía).
+
+### Mensajes
+
+- T-24h: "Tu partido es mañana" / `"${title}" comienza en ~24 horas.`
+- T-2h: "¡Tu partido está por empezar!" / `"${title}" comienza en 2 horas. ¡Preparate!`
+
+### Archivos modificados
+
+```
+apps/api/src/matches/application/notifications/match-notification.service.ts
+  +tipos reminder_24h, reminder_2h
+  +métodos onReminder24h, onReminder2h
+  +helper privado sendTimedReminder
+
+apps/api/src/matches/application/lifecycle/match-lifecycle.job.ts
+  +2 queries en runTick() (ventanas T-24h y T-2h)
+  +método privado sendTimedReminder
+  +Redis REDIS_CLIENT @Optional() — escribe lifecycle:lastTickAt en cada tick
+
+apps/api/src/matches/application/lifecycle/match-lifecycle.job.spec.ts
+  buildJob() ampliado a 5 parámetros (+ reminder24hMatches, reminder2hMatches)
+  buildMockNotification() + onReminder24h, onReminder2h
+  +6 tests nuevos (2 describe blocks: T-24h, T-2h)
+```
+
+---
+
+## 53. Admin Panel: módulo de moderación y operación de sistema
+
+### Qué se hizo
+
+Nuevo módulo `admin` con endpoints bajo `/api/v1/admin/*`. Todos protegidos por `JwtAuthGuard + RolesGuard + @Roles('ADMIN')`. El enum `Role { USER, ADMIN }` ya existía en schema. El módulo de venues ya tenía su propio `AdminVenuesController` en `/admin/venues` — no fue tocado.
+
+### Migración DB
+
+```
+User.bannedAt  DateTime?   — ban manual de moderación (distinto de suspendedUntil que es automático)
+User.banReason String?
+```
+
+### Endpoints
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | /admin/dashboard | Stats generales del sistema |
+| GET | /admin/users | Lista con search, filtro status, paginación |
+| GET | /admin/users/:id | Perfil completo + push tokens + stats de partidos |
+| POST | /admin/users/:id/ban | Ban con reason |
+| POST | /admin/users/:id/unban | Unban |
+| GET | /admin/matches | Lista con filtros status/fecha, paginación |
+| GET | /admin/matches/:id | Detalle completo: participants + notifs + audit log |
+| POST | /admin/matches/:id/cancel | Cancel sin expectedRevision (admin override) |
+| DELETE | /admin/matches/:id | Hard delete con cascade |
+| POST | /admin/matches/:id/unlock | Unlock + WS publish |
+| GET | /admin/system/health | Cron status (Redis lastTickAt), push stats, DB ping |
+
+### Decisiones
+
+- `bannedAt` separado de `suspendedUntil`: el primero es moderación manual, el segundo es el sistema de reliability automático.
+- `CancelMatchAdminUseCase` no reutiliza `CancelMatchUseCase` — el admin override no necesita expectedRevision ni idempotency key.
+- `DeleteMatchUseCase` elimina manualmente `NotificationDelivery` (no tiene FK cascade); el resto de relaciones tienen `onDelete: Cascade`.
+- `GetSystemHealthQuery` lee `lifecycle:lastTickAt` de Redis (TTL 120s). Si no existe o está expirado → `status: 'stale'`. Redis es `@Optional()` en todos los inyectores que lo usan.
+- Login actualizado: si `user.bannedAt !== null` → 403 `USER_BANNED`.
+- El admin panel frontend queda pendiente (ver `docs/future-implementations.md`).
+
+### Archivos creados
+
+```
+apps/api/src/admin/admin.module.ts
+apps/api/src/admin/api/admin-dashboard.controller.ts
+apps/api/src/admin/api/admin-users.controller.ts
+apps/api/src/admin/api/admin-matches.controller.ts
+apps/api/src/admin/api/admin-system.controller.ts
+apps/api/src/admin/api/dto/admin-ban.dto.ts
+apps/api/src/admin/api/dto/admin-users-query.dto.ts
+apps/api/src/admin/api/dto/admin-matches-query.dto.ts
+apps/api/src/admin/application/get-dashboard.query.ts
+apps/api/src/admin/application/list-admin-users.query.ts
+apps/api/src/admin/application/get-admin-user.query.ts
+apps/api/src/admin/application/ban-user.use-case.ts
+apps/api/src/admin/application/unban-user.use-case.ts
+apps/api/src/admin/application/list-admin-matches.query.ts
+apps/api/src/admin/application/get-admin-match.query.ts
+apps/api/src/admin/application/cancel-match-admin.use-case.ts
+apps/api/src/admin/application/delete-match.use-case.ts
+apps/api/src/admin/application/unlock-match-admin.use-case.ts
+apps/api/src/admin/application/get-system-health.query.ts
+apps/api/prisma/migrations/20260314005831_add_user_ban_fields/migration.sql
+```
+
+### Archivos modificados
+
+```
+apps/api/prisma/schema.prisma (+bannedAt, banReason en User)
+apps/api/src/app.module.ts (+AdminModule)
+apps/api/src/auth/application/sessions/login.use-case.ts (+banned check → 403 USER_BANNED)
+apps/api/src/matches/application/lifecycle/match-lifecycle.job.ts (+REDIS_CLIENT @Optional, lastTickAt write)
+apps/api/src/matches/application/lifecycle/match-lifecycle.job.spec.ts (null como arg Redis en todos los tests)
+apps/api/src/auth/application/sessions/login.use-case.spec.ts (+bannedAt: null en mock)
 ```
