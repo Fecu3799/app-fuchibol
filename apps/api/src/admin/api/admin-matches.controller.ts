@@ -3,6 +3,7 @@ import {
   Delete,
   Get,
   HttpCode,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
@@ -12,6 +13,8 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { Actor } from '../../auth/decorators/actor.decorator';
+import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
 import { ListAdminMatchesQuery } from '../application/list-admin-matches.query';
 import { GetAdminMatchQuery } from '../application/get-admin-match.query';
 import { CancelMatchAdminUseCase } from '../application/cancel-match-admin.use-case';
@@ -23,6 +26,8 @@ import { AdminMatchesQueryDto } from './dto/admin-matches-query.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 export class AdminMatchesController {
+  private readonly logger = new Logger(AdminMatchesController.name);
+
   constructor(
     private readonly listMatches: ListAdminMatchesQuery,
     private readonly getMatch: GetAdminMatchQuery,
@@ -43,19 +48,43 @@ export class AdminMatchesController {
 
   @Post(':id/cancel')
   @HttpCode(200)
-  async cancel(@Param('id', ParseUUIDPipe) id: string) {
+  async cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.logger.warn({
+      op: 'adminCancelMatch',
+      actorUserId: actor.userId,
+      matchId: id,
+    });
     return this.cancelMatch.execute(id);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  async delete(@Param('id', ParseUUIDPipe) id: string) {
+  async delete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.logger.warn({
+      op: 'adminDeleteMatch',
+      actorUserId: actor.userId,
+      matchId: id,
+    });
     await this.deleteMatch.execute(id);
   }
 
   @Post(':id/unlock')
   @HttpCode(200)
-  async unlock(@Param('id', ParseUUIDPipe) id: string) {
+  async unlock(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.logger.log({
+      op: 'adminUnlockMatch',
+      actorUserId: actor.userId,
+      matchId: id,
+    });
     return this.unlockMatch.execute(id);
   }
 }

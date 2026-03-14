@@ -1,6 +1,7 @@
 import { MatchNotificationService } from './match-notification.service';
 import type { PrismaService } from '../../../infra/prisma/prisma.service';
 import type { NotificationProvider } from '../../../push/notification-provider.interface';
+import type { PushService } from '../../../push/application/push.service';
 
 function buildService(prismaOverrides: Record<string, unknown> = {}) {
   const prisma = {
@@ -17,8 +18,16 @@ function buildService(prismaOverrides: Record<string, unknown> = {}) {
     sendToUser: jest.fn().mockResolvedValue(undefined),
   };
 
-  const service = new MatchNotificationService(prisma, provider);
-  return { service, prisma, provider };
+  const pushService: jest.Mocked<Pick<PushService, 'sendNotification'>> = {
+    sendNotification: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const service = new MatchNotificationService(
+    prisma,
+    provider,
+    pushService as unknown as PushService,
+  );
+  return { service, prisma, provider, pushService };
 }
 
 // ── onInvited ──────────────────────────────────────────────────────────────
@@ -67,31 +76,38 @@ describe('MatchNotificationService.onInvited', () => {
 // ── onPromoted ─────────────────────────────────────────────────────────────
 
 describe('MatchNotificationService.onPromoted', () => {
-  it('sends notification and records delivery for promoted user', async () => {
-    const { service, provider } = buildService();
+  it('delegates to pushService.sendNotification with revision-based dedupeKey', async () => {
+    const { service, pushService } = buildService();
 
     await service.onPromoted({
       matchId: 'match-1',
       matchTitle: 'Fútbol 5',
       promotedUserId: 'user-2',
+      revision: 7,
     });
 
-    expect(provider.sendToUser).toHaveBeenCalledWith('user-2', {
-      title: '¡Tenés lugar confirmado!',
-      body: 'Saliste de la lista de espera en "Fútbol 5".',
-      data: { type: 'promoted', matchId: 'match-1' },
+    expect(pushService.sendNotification).toHaveBeenCalledWith({
+      recipientUserId: 'user-2',
+      type: 'promoted',
+      dedupeKey: 'waitlist-promoted:match-1:user-2:7',
+      matchId: 'match-1',
+      payload: {
+        title: '¡Tenés lugar confirmado!',
+        body: 'Saliste de la lista de espera en "Fútbol 5".',
+        data: { type: 'promoted', matchId: 'match-1' },
+      },
     });
   });
 
-  it('does not send when no active devices (provider.sendToUser resolves without effect)', async () => {
+  it('does not call provider.sendToUser (migrated to PushService)', async () => {
     const { service, provider } = buildService();
-    // sendToUser is already mocked; verify it IS called (provider handles no-device internally)
     await service.onPromoted({
       matchId: 'match-1',
       matchTitle: 'Fútbol 5',
       promotedUserId: 'user-2',
+      revision: 7,
     });
-    expect(provider.sendToUser).toHaveBeenCalledTimes(1);
+    expect(provider.sendToUser).not.toHaveBeenCalled();
   });
 });
 
@@ -197,42 +213,34 @@ describe('MatchNotificationService.onCanceled — system cancel', () => {
 // ── onReminderMissingPlayers ────────────────────────────────────────────────
 
 describe('MatchNotificationService.onReminderMissingPlayers', () => {
-  it('sends reminder with correct body and records delivery with bucket', async () => {
-    const { service, prisma, provider } = buildService();
+  it('delegates to pushService.sendNotification with bucket-based dedupeKey', async () => {
+    const { service, pushService } = buildService();
 
     await service.onReminderMissingPlayers({
       matchId: 'match-1',
       matchTitle: 'Fútbol 5',
-      userIds: ['user-1'],
+      userIds: ['user-1', 'user-2'],
       missingCount: 3,
       minutesToStart: 45,
       bucket: 'b3',
     });
 
-    expect(provider.sendToUser).toHaveBeenCalledWith('user-1', {
-      title: 'Faltan jugadores',
-      body: 'Faltan 3 jugadores para "Fútbol 5" (45 min).',
-      data: { type: 'reminder_missing_players', matchId: 'match-1' },
-    });
-    expect(
-      (prisma.client as any).notificationDelivery.create,
-    ).toHaveBeenCalledWith({
-      data: {
-        userId: 'user-1',
-        matchId: 'match-1',
-        type: 'reminder_missing_players',
-        bucket: 'b3',
+    expect(pushService.sendNotification).toHaveBeenCalledTimes(2);
+    expect(pushService.sendNotification).toHaveBeenCalledWith({
+      recipientUserId: 'user-1',
+      type: 'reminder_missing_players',
+      dedupeKey: 'match-reminder:match-1:user-1:b3',
+      matchId: 'match-1',
+      payload: {
+        title: 'Faltan jugadores',
+        body: 'Faltan 3 jugadores para "Fútbol 5" (45 min).',
+        data: { type: 'reminder_missing_players', matchId: 'match-1' },
       },
     });
   });
 
-  it('skips notification when bucket delivery already exists', async () => {
-    const { service, provider } = buildService({
-      notificationDelivery: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'existing' }),
-        create: jest.fn(),
-      },
-    });
+  it('does not call provider.sendToUser (migrated to PushService)', async () => {
+    const { service, provider } = buildService();
 
     await service.onReminderMissingPlayers({
       matchId: 'match-1',
@@ -292,20 +300,45 @@ describe('MatchNotificationService.onMissingPlayersAlert', () => {
 // ── onReconfirmRequired ────────────────────────────────────────────────────
 
 describe('MatchNotificationService.onReconfirmRequired', () => {
-  it('sends notification to each affected user', async () => {
-    const { service, provider } = buildService();
+  it('delegates to pushService.sendNotification for each user with revision-based dedupeKey', async () => {
+    const { service, pushService } = buildService();
 
     await service.onReconfirmRequired({
       matchId: 'match-1',
       matchTitle: 'Fútbol 5',
       userIds: ['user-1', 'user-2'],
+      revision: 12,
     });
 
-    expect(provider.sendToUser).toHaveBeenCalledTimes(2);
-    expect(provider.sendToUser).toHaveBeenCalledWith('user-1', {
-      title: 'Reconfirmación requerida',
-      body: 'Hubo cambios importantes en "Fútbol 5". Por favor reconfirmá tu participación.',
-      data: { type: 'reconfirm_required', matchId: 'match-1' },
+    expect(pushService.sendNotification).toHaveBeenCalledTimes(2);
+    expect(pushService.sendNotification).toHaveBeenCalledWith({
+      recipientUserId: 'user-1',
+      type: 'reconfirm_required',
+      dedupeKey: 'major-change:match-1:user-1:12',
+      matchId: 'match-1',
+      payload: {
+        title: 'Reconfirmación requerida',
+        body: 'Hubo cambios importantes en "Fútbol 5". Por favor reconfirmá tu participación.',
+        data: { type: 'reconfirm_required', matchId: 'match-1' },
+      },
     });
+    expect(pushService.sendNotification).toHaveBeenCalledWith({
+      recipientUserId: 'user-2',
+      type: 'reconfirm_required',
+      dedupeKey: 'major-change:match-1:user-2:12',
+      matchId: 'match-1',
+      payload: expect.objectContaining({ title: 'Reconfirmación requerida' }),
+    });
+  });
+
+  it('does not call provider.sendToUser (migrated to PushService)', async () => {
+    const { service, provider } = buildService();
+    await service.onReconfirmRequired({
+      matchId: 'match-1',
+      matchTitle: 'Fútbol 5',
+      userIds: ['user-1'],
+      revision: 12,
+    });
+    expect(provider.sendToUser).not.toHaveBeenCalled();
   });
 });

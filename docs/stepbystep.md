@@ -63,6 +63,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 56. [Observabilidad Sprint 1 + Hardening: AppLogger, requestId, error-codes, health endpoints](#56-observabilidad-sprint-1--hardening-applogger-requestid-error-codes-health-endpoints)
 57. [Observabilidad Sprint 2: instrumentación de dominio con logs estructurados](#57-observabilidad-sprint-2-instrumentación-de-dominio-con-logs-estructurados)
 58. [Observabilidad Sprint 3: métricas operacionales Prometheus-style](#58-observabilidad-sprint-3-métricas-operacionales-prometheus-style)
+59. [Security Hardening Sprint 4: cardinality, rate limits, WS auth, chat validation, admin logs](#59-security-hardening-sprint-4-cardinality-rate-limits-ws-auth-chat-validation-admin-logs)
 
 ---
 
@@ -2483,4 +2484,56 @@ apps/api/src/auth/application/sessions/login.use-case.ts (+auth_login_success_to
 apps/api/src/auth/application/sessions/refresh.use-case.ts (+auth_refresh_success_total, +auth_refresh_reuse_total)
 apps/api/src/chat/application/messages/send-message.use-case.ts (+chat_messages_sent_total, +chat_messages_deduplicated_total)
 apps/api/src/chat/realtime/chat-realtime.publisher.ts (+@Optional() MetricsService, +chat_socket_emit_failures_total)
+```
+
+---
+
+## 59. Security Hardening Sprint 4: cardinality, rate limits, WS auth, chat validation, admin logs Security Hardening Sprint 4: cardinality, rate limits, WS auth, chat validation, admin logs
+
+### Qué se hizo
+
+Sprint de hardening sin librerías nuevas. Siete áreas cubiertas:
+
+**Cardinality control en métricas HTTP**
+- `http-logging.interceptor.ts` y `api-exception.filter.ts`: el label `path` ahora usa `req.baseUrl + req.route.path` (template route) con fallback `"unknown"`.
+- Antes: `req.path` podía contener IDs reales (`/api/v1/matches/123`). Ahora: siempre template (`/api/v1/matches/:id`).
+
+**Authorization match (auditado — ya estaba correcto)**
+- `update-match`: solo creator. `lock/unlock`: creator o matchAdmin. `kick`: solo creator.
+- Sin cambios necesarios, guardrails confirmados.
+
+**Admin endpoints (ya protegidos — se agregaron logs)**
+- Todos los controllers `admin/*` tienen `@UseGuards(JwtAuthGuard, RolesGuard) @Roles('ADMIN')`.
+- Se agregó `Logger` + logs estructurados (`op: adminBanUser/adminUnbanUser/adminCancelMatch/adminDeleteMatch/adminUnlockMatch`) con `actorUserId` para trazabilidad.
+
+**Login abuse protection (ajuste de throttle)**
+- Login: TTL reducido de 10 min → 1 min, límite de 5 → 10 (10 req/min por IP+identifier).
+- Refresh: cambiado de throttle `login` → throttle `mutations` (30 req/min). Antes era 5/10min.
+- Chat send: ya usaba `mutations` (30/min). Sin cambios.
+- Config via env: `THROTTLE_LOGIN_TTL`, `THROTTLE_LOGIN_LIMIT` (override sin redeploy).
+
+**Socket.IO security (join rejection explícito)**
+- `match.gateway.ts` y `chat.gateway.ts`: al denegar un join, se emite `client.emit('error', { errorCode })` además del log.
+- Error codes: `MATCH_NOT_FOUND`, `UNAUTHORIZED_ROOM`, `CONVERSATION_NOT_FOUND`.
+- Logs estructurados con `op`, `reason`, `actorUserId`, resource ID.
+
+**Chat message validation (error codes)**
+- `SendMessageDto`: `@MaxLength(2000, { message: 'MESSAGE_TOO_LARGE' })`, `@IsNotEmpty({ message: 'INVALID_MESSAGE' })`.
+- Validación ya existía; se agregaron mensajes descriptivos para que el error llegue al cliente.
+
+**Refresh token reuse (ya implementado)**
+- `RefreshUseCase`: ya revocaba todas las sesiones, logueaba `op: refreshReuseDetected` y llamaba al audit service. Sin cambios.
+
+### Archivos modificados
+
+```
+apps/api/src/common/interceptors/http-logging.interceptor.ts (path template con baseUrl, fallback unknown)
+apps/api/src/common/filters/api-exception.filter.ts (mismo fix cardinality)
+apps/api/src/common/throttle/throttle.module.ts (login: 60s/10, era 600s/5)
+apps/api/src/auth/api/auth.controller.ts (refresh: @Throttle({ mutations: {} }), era login)
+apps/api/src/matches/realtime/match.gateway.ts (emit error on unauthorized join + logs estructurados)
+apps/api/src/chat/realtime/chat.gateway.ts (emit error on unauthorized join + logs estructurados)
+apps/api/src/chat/api/dto/send-message.dto.ts (MESSAGE_TOO_LARGE / INVALID_MESSAGE en validators)
+apps/api/src/admin/api/admin-users.controller.ts (+Logger, +@Actor, logs ban/unban)
+apps/api/src/admin/api/admin-matches.controller.ts (+Logger, +@Actor, logs cancel/delete/unlock)
 ```

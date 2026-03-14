@@ -302,6 +302,7 @@ export class UpdateMatchUseCase {
           matchId: input.matchId,
           matchTitle: snapshot.title,
           userIds: reconfirmUserIds,
+          revision: snapshot.revision,
         })
         .catch((err: unknown) =>
           this.logger.warn(

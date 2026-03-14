@@ -68,6 +68,7 @@ export class LeaveMatchUseCase {
           matchId: input.matchId,
           matchTitle: result.snapshot.title,
           promotedUserId: result.promotedUserId,
+          revision: result.snapshot.revision,
         })
         .catch((err: unknown) =>
           this.logger.warn(

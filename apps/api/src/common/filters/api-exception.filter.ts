@@ -180,7 +180,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
     this.metrics?.observeHistogram('http_request_duration_ms', ms, {
       method: req.method,
-      path: (req.route?.path as string | undefined) ?? req.path,
+      path: req.route?.path
+        ? `${req.baseUrl}${req.route.path as string}`
+        : 'unknown',
       status_class: `${Math.floor(status / 100)}xx`,
     });
 

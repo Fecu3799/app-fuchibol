@@ -72,7 +72,13 @@ export class MatchGateway
     });
 
     if (!match) {
-      this.logger.warn(`WS subscribe: match ${data.matchId} not found`);
+      this.logger.warn({
+        op: 'wsSubscribeDenied',
+        reason: 'match_not_found',
+        matchId: data.matchId,
+        actorUserId: userId,
+      });
+      client.emit('error', { errorCode: 'MATCH_NOT_FOUND' });
       return;
     }
 
@@ -83,9 +89,13 @@ export class MatchGateway
         select: { id: true },
       });
       if (!participant) {
-        this.logger.warn(
-          `WS subscribe: user ${userId} not member of match ${data.matchId}`,
-        );
+        this.logger.warn({
+          op: 'wsSubscribeDenied',
+          reason: 'not_member',
+          matchId: data.matchId,
+          actorUserId: userId,
+        });
+        client.emit('error', { errorCode: 'UNAUTHORIZED_ROOM' });
         return;
       }
     }

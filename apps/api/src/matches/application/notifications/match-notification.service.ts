@@ -4,6 +4,7 @@ import {
   NOTIFICATION_PROVIDER,
   type NotificationProvider,
 } from '../../../push/notification-provider.interface';
+import { PushService } from '../../../push/application/push.service';
 
 export type MatchNotificationType =
   | 'invited'
@@ -17,15 +18,15 @@ export type MatchNotificationType =
   | 'reminder_24h'
   | 'reminder_2h';
 
+// Cooldown windows for non-migrated cases (time-window dedup via NotificationDelivery legacy rows)
 const COOLDOWN_MS: Partial<Record<MatchNotificationType, number>> = {
   invited: 30 * 60 * 1000,
-  promoted: 5 * 60 * 1000,
-  reconfirm_required: 60 * 60 * 1000,
   canceled: 60 * 60 * 1000,
   match_started: 60 * 60 * 1000,
   missing_players_alert: 5 * 60 * 1000,
   teams_auto_generated: 60 * 60 * 1000,
-  // reminder_missing_players, reminder_24h, reminder_2h use bucket-based dedup (no time-window cooldown)
+  // promoted, reconfirm_required → migrated to PushService (revision-based dedup)
+  // reminder_missing_players → migrated to PushService (bucket-based dedup via dedupeKey)
 };
 
 export interface OnInvitedInput {
@@ -38,12 +39,14 @@ export interface OnPromotedInput {
   matchId: string;
   matchTitle: string;
   promotedUserId: string;
+  revision: number;
 }
 
 export interface OnReconfirmRequiredInput {
   matchId: string;
   matchTitle: string;
   userIds: string[];
+  revision: number;
 }
 
 export interface OnCanceledInput {
@@ -90,6 +93,7 @@ export class MatchNotificationService {
     private readonly prisma: PrismaService,
     @Inject(NOTIFICATION_PROVIDER)
     private readonly provider: NotificationProvider,
+    private readonly pushService: PushService,
   ) {}
 
   async onInvited(input: OnInvitedInput): Promise<void> {
@@ -105,41 +109,44 @@ export class MatchNotificationService {
     await this.recordDelivery(invitedUserId, matchId, 'invited');
   }
 
+  // MIGRATED to PushService — revision-based dedup via dedupeKey
   async onPromoted(input: OnPromotedInput): Promise<void> {
-    const { matchId, matchTitle, promotedUserId } = input;
-    if (!(await this.shouldSend(promotedUserId, matchId, 'promoted'))) return;
-
-    await this.provider.sendToUser(promotedUserId, {
-      title: '¡Tenés lugar confirmado!',
-      body: `Saliste de la lista de espera en "${matchTitle}".`,
-      data: { type: 'promoted', matchId },
+    const { matchId, matchTitle, promotedUserId, revision } = input;
+    await this.pushService.sendNotification({
+      recipientUserId: promotedUserId,
+      type: 'promoted',
+      dedupeKey: `waitlist-promoted:${matchId}:${promotedUserId}:${revision}`,
+      matchId,
+      payload: {
+        title: '¡Tenés lugar confirmado!',
+        body: `Saliste de la lista de espera en "${matchTitle}".`,
+        data: { type: 'promoted', matchId },
+      },
     });
-
-    await this.recordDelivery(promotedUserId, matchId, 'promoted');
   }
 
+  // MIGRATED to PushService — revision-based dedup via dedupeKey
   async onReconfirmRequired(input: OnReconfirmRequiredInput): Promise<void> {
-    const { matchId, matchTitle, userIds } = input;
-
+    const { matchId, matchTitle, userIds, revision } = input;
     await Promise.allSettled(
-      userIds.map(async (userId) => {
-        if (!(await this.shouldSend(userId, matchId, 'reconfirm_required')))
-          return;
-
-        await this.provider.sendToUser(userId, {
-          title: 'Reconfirmación requerida',
-          body: `Hubo cambios importantes en "${matchTitle}". Por favor reconfirmá tu participación.`,
-          data: { type: 'reconfirm_required', matchId },
-        });
-
-        await this.recordDelivery(userId, matchId, 'reconfirm_required');
-      }),
+      userIds.map((userId) =>
+        this.pushService.sendNotification({
+          recipientUserId: userId,
+          type: 'reconfirm_required',
+          dedupeKey: `major-change:${matchId}:${userId}:${revision}`,
+          matchId,
+          payload: {
+            title: 'Reconfirmación requerida',
+            body: `Hubo cambios importantes en "${matchTitle}". Por favor reconfirmá tu participación.`,
+            data: { type: 'reconfirm_required', matchId },
+          },
+        }),
+      ),
     );
   }
 
   async onCanceled(input: OnCanceledInput): Promise<void> {
     const { matchId, matchTitle, userIds, actorId } = input;
-    // actorId == null means system cancel → notify all; otherwise skip the actor
     const targets =
       actorId !== null ? userIds.filter((id) => id !== actorId) : userIds;
 
@@ -163,43 +170,27 @@ export class MatchNotificationService {
     );
   }
 
+  // MIGRATED to PushService — bucket-based dedup via dedupeKey
   async onReminderMissingPlayers(
     input: OnReminderMissingPlayersInput,
   ): Promise<void> {
-    const {
-      matchId,
-      matchTitle,
-      userIds,
-      missingCount,
-      minutesToStart,
-      bucket,
-    } = input;
+    const { matchId, matchTitle, userIds, missingCount, minutesToStart, bucket } =
+      input;
 
     await Promise.allSettled(
-      userIds.map(async (userId) => {
-        if (
-          !(await this.shouldSend(
-            userId,
-            matchId,
-            'reminder_missing_players',
-            bucket,
-          ))
-        )
-          return;
-
-        await this.provider.sendToUser(userId, {
-          title: 'Faltan jugadores',
-          body: `Faltan ${missingCount} jugadores para "${matchTitle}" (${Math.round(minutesToStart)} min).`,
-          data: { type: 'reminder_missing_players', matchId },
-        });
-
-        await this.recordDelivery(
-          userId,
+      userIds.map((userId) =>
+        this.pushService.sendNotification({
+          recipientUserId: userId,
+          type: 'reminder_missing_players',
+          dedupeKey: `match-reminder:${matchId}:${userId}:${bucket}`,
           matchId,
-          'reminder_missing_players',
-          bucket,
-        );
-      }),
+          payload: {
+            title: 'Faltan jugadores',
+            body: `Faltan ${missingCount} jugadores para "${matchTitle}" (${Math.round(minutesToStart)} min).`,
+            data: { type: 'reminder_missing_players', matchId },
+          },
+        }),
+      ),
     );
   }
 
@@ -243,11 +234,6 @@ export class MatchNotificationService {
     );
   }
 
-  /**
-   * Notify creator + all match admins that a player left or was kicked and the
-   * match is now under capacity. Handles admin lookup internally so callers
-   * don't duplicate that query.
-   */
   async onMissingPlayersAlertWithLookup(input: {
     matchId: string;
     matchTitle: string;
@@ -357,7 +343,6 @@ export class MatchNotificationService {
     bucket?: string,
   ): Promise<boolean> {
     if (bucket !== undefined) {
-      // Bucket-based dedup: one notification per (userId, matchId, type, bucket)
       const existing = await this.prisma.client.notificationDelivery.findFirst({
         where: { userId, matchId, type, bucket },
       });

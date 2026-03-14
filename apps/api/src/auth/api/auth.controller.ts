@@ -50,7 +50,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @Throttle({ login: {} })
+  @Throttle({ mutations: {} })
   async refresh(@Body() dto: RefreshDto) {
     return this.refreshUseCase.execute(dto.refreshToken);
   }

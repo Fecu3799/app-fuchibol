@@ -261,14 +261,24 @@ model PushDevice {
 }
 
 model NotificationDelivery {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  matchId   String?  @db.Uuid
-  groupId   String?  @db.Uuid
-  type      String
-  bucket    String?
-  createdAt DateTime @default(now())
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  matchId           String?   @db.Uuid
+  groupId           String?   @db.Uuid
+  type              String
+  bucket            String?
+  createdAt         DateTime  @default(now())
+  // v2 orchestration fields (nullable for backward compat with legacy rows)
+  channel           String?
+  dedupeKey         String?
+  status            String?
+  reason            String?
+  conversationId    String?   @db.Uuid
+  payload           Json?
+  providerMessageId String?
+  sentAt            DateTime?
 
+  @@unique([channel, dedupeKey])
   @@index([userId, matchId, type, createdAt])
   @@index([userId, groupId, type, createdAt])
   @@index([userId, matchId, type, bucket])

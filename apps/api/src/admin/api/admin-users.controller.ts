@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   ParseUUIDPipe,
   Post,
@@ -11,6 +12,8 @@ import {
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { Actor } from '../../auth/decorators/actor.decorator';
+import type { ActorPayload } from '../../auth/interfaces/actor-payload.interface';
 import { ListAdminUsersQuery } from '../application/list-admin-users.query';
 import { GetAdminUserQuery } from '../application/get-admin-user.query';
 import { BanUserUseCase } from '../application/ban-user.use-case';
@@ -22,6 +25,8 @@ import { AdminBanDto } from './dto/admin-ban.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 export class AdminUsersController {
+  private readonly logger = new Logger(AdminUsersController.name);
+
   constructor(
     private readonly listUsers: ListAdminUsersQuery,
     private readonly getUser: GetAdminUserQuery,
@@ -40,12 +45,30 @@ export class AdminUsersController {
   }
 
   @Post(':id/ban')
-  async ban(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AdminBanDto) {
+  async ban(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminBanDto,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.logger.warn({
+      op: 'adminBanUser',
+      actorUserId: actor.userId,
+      targetUserId: id,
+      reason: dto.reason,
+    });
     return this.banUser.execute({ userId: id, reason: dto.reason });
   }
 
   @Post(':id/unban')
-  async unban(@Param('id', ParseUUIDPipe) id: string) {
+  async unban(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Actor() actor: ActorPayload,
+  ) {
+    this.logger.log({
+      op: 'adminUnbanUser',
+      actorUserId: actor.userId,
+      targetUserId: id,
+    });
     return this.unbanUser.execute(id);
   }
 }

@@ -27,8 +27,8 @@ import { AppThrottleGuard } from '../guards/app-throttle.guard';
           throttlers: [
             {
               name: 'login',
-              ttl: config.get<number>('THROTTLE_LOGIN_TTL', 600_000),
-              limit: config.get<number>('THROTTLE_LOGIN_LIMIT', 5),
+              ttl: config.get<number>('THROTTLE_LOGIN_TTL', 60_000),
+              limit: config.get<number>('THROTTLE_LOGIN_LIMIT', 10),
             },
             {
               name: 'mutations',

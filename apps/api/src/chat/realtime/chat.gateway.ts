@@ -96,9 +96,13 @@ export class ChatGateway
     });
 
     if (!conversation) {
-      this.logger.warn(
-        `WS chat.subscribe: conversation ${data.conversationId} not found`,
-      );
+      this.logger.warn({
+        op: 'wsChatSubscribeDenied',
+        reason: 'conversation_not_found',
+        conversationId: data.conversationId,
+        actorUserId: userId,
+      });
+      client.emit('error', { errorCode: 'CONVERSATION_NOT_FOUND' });
       return;
     }
 
@@ -122,9 +126,13 @@ export class ChatGateway
 
         const activeStatuses = ['CONFIRMED', 'WAITLISTED', 'SPECTATOR'];
         if (!participant || !activeStatuses.includes(participant.status)) {
-          this.logger.warn(
-            `WS chat.subscribe: user ${userId} denied access to conv ${data.conversationId}`,
-          );
+          this.logger.warn({
+            op: 'wsChatSubscribeDenied',
+            reason: 'not_match_member',
+            conversationId: data.conversationId,
+            actorUserId: userId,
+          });
+          client.emit('error', { errorCode: 'UNAUTHORIZED_ROOM' });
           return;
         }
       }
@@ -136,18 +144,26 @@ export class ChatGateway
         select: { groupId: true },
       });
       if (!member) {
-        this.logger.warn(
-          `WS chat.subscribe: user ${userId} denied access to group conv ${data.conversationId}`,
-        );
+        this.logger.warn({
+          op: 'wsChatSubscribeDenied',
+          reason: 'not_group_member',
+          conversationId: data.conversationId,
+          actorUserId: userId,
+        });
+        client.emit('error', { errorCode: 'UNAUTHORIZED_ROOM' });
         return;
       }
     }
 
     if (conversation.type === 'DIRECT') {
       if (conversation.userAId !== userId && conversation.userBId !== userId) {
-        this.logger.warn(
-          `WS chat.subscribe: user ${userId} denied access to direct conv ${data.conversationId}`,
-        );
+        this.logger.warn({
+          op: 'wsChatSubscribeDenied',
+          reason: 'not_direct_member',
+          conversationId: data.conversationId,
+          actorUserId: userId,
+        });
+        client.emit('error', { errorCode: 'UNAUTHORIZED_ROOM' });
         return;
       }
     }
