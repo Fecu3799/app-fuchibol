@@ -1,6 +1,6 @@
 # ⚽ Fuchibol
 
-> **Organizar un partido no debería requerir 47 mensajes de WhatsApp.**
+> **Organizar un partido no debería requerir 30 mensajes de WhatsApp.**
 
 Fuchibol es una app mobile-first para gestionar partidos de fútbol amateur entre amigos: cupo, confirmaciones, waitlist automática, chat en tiempo real y notificaciones — todo en un solo lugar.
 
@@ -223,10 +223,11 @@ pnpm dev:mobile
 
 ## Contexto
 
-Este proyecto empezó como "hagamos algo mejor que el grupo de WhatsApp" y terminó siendo un sistema con estado distribuido consistente, lógica de dominio no trivial y una UX mobile pensada para uso real.
+Este proyecto empezó como "hagamos algo mejor que el grupo de WhatsApp" y terminó siendo un sistema con estado distribuido consistente y lógica de dominio no trivial.
+Sigue en desarrollo, principalmente lo que es front-end (UX/UI).
 
 Cada decisión técnica tiene un *por qué*. El código está para demostrarlo.
 
 ---
 
-*Built with production mindset — by [Facundo](https://github.com/tu-usuario)*
+*Built with production mindset — by [Facundo](https://github.com/fecu3799)*
