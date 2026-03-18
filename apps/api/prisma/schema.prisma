@@ -84,6 +84,7 @@ model User {
   authSessions        AuthSession[]
   emailTokens         EmailVerificationToken[]
   passwordResetTokens PasswordResetToken[]
+  settings           UserSettings?
 }
 
 model UserAvatar {
@@ -412,4 +413,15 @@ model AuthAuditEvent {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([eventType, createdAt(sort: Desc)])
+}
+
+model UserSettings {
+  userId             String   @id @db.Uuid
+  pushMatchReminders Boolean  @default(true)
+  pushMatchChanges   Boolean  @default(true)
+  pushChatMessages   Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

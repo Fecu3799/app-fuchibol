@@ -4,10 +4,17 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { UsersController } from './api/users.controller';
 import { LookupUserQuery } from './application/lookup-user.query';
 import { GetPublicProfileQuery } from './application/get-public-profile.query';
+import { GetUserSettingsQuery } from './application/get-user-settings.query';
+import { UpdateUserSettingsUseCase } from './application/update-user-settings.use-case';
 
 @Module({
   imports: [PrismaModule, StorageModule],
   controllers: [UsersController],
-  providers: [LookupUserQuery, GetPublicProfileQuery],
+  providers: [
+    LookupUserQuery,
+    GetPublicProfileQuery,
+    GetUserSettingsQuery,
+    UpdateUserSettingsUseCase,
+  ],
 })
 export class UsersModule {}

@@ -411,6 +411,14 @@ export interface MatchConversationListItem {
   updatedAt: string;
 }
 
+// ── User Settings ──
+
+export interface UserSettings {
+  pushMatchReminders: boolean;
+  pushMatchChanges: boolean;
+  pushChatMessages: boolean;
+}
+
 // ── Errors ──
 
 export interface ApiErrorBody {

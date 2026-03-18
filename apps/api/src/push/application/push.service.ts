@@ -5,6 +5,45 @@ import { PrismaService } from '../../infra/prisma/prisma.service';
 const EXPO_PUSH_ENDPOINT = 'https://exp.host/--/api/v2/push/send';
 const PUSH_CHANNEL = 'push';
 
+type UserPrefFlag =
+  | 'pushMatchReminders'
+  | 'pushMatchChanges'
+  | 'pushChatMessages';
+
+/**
+ * Notification types that bypass user preference settings.
+ * These are always delivered regardless of per-flag configuration.
+ */
+const CRITICAL_NOTIFICATION_TYPES = new Set(['canceled']);
+
+/**
+ * Maps a notification type to the user settings flag that controls it.
+ * Returns null for unmapped types (always deliver).
+ */
+function getPreferenceFlag(type: string): UserPrefFlag | null {
+  if (
+    type === 'reminder_24h' ||
+    type === 'reminder_2h' ||
+    type === 'reminder_missing_players'
+  ) {
+    return 'pushMatchReminders';
+  }
+  if (
+    type === 'promoted' ||
+    type === 'reconfirm_required' ||
+    type === 'invited' ||
+    type === 'missing_players_alert' ||
+    type === 'match_started' ||
+    type === 'teams_auto_generated'
+  ) {
+    return 'pushMatchChanges';
+  }
+  if (type === 'chat_message') {
+    return 'pushChatMessages';
+  }
+  return null;
+}
+
 interface SendExpoPushInput {
   toToken: string;
   title: string;
@@ -103,7 +142,37 @@ export class PushService {
       matchId: input.matchId,
     });
 
-    // 3. Get active tokens
+    // 3. Check user preferences (critical types bypass this check)
+    if (!CRITICAL_NOTIFICATION_TYPES.has(input.type)) {
+      const prefFlag = getPreferenceFlag(input.type);
+      if (prefFlag !== null) {
+        const settings = await this.prisma.client.userSettings.findUnique({
+          where: { userId: input.recipientUserId },
+          select: {
+            pushMatchReminders: true,
+            pushMatchChanges: true,
+            pushChatMessages: true,
+          },
+        });
+        // No record = default true; explicit false = suppress
+        const isEnabled = settings ? settings[prefFlag] : true;
+        if (!isEnabled) {
+          await this.prisma.client.notificationDelivery.update({
+            where: { id: deliveryId },
+            data: { status: 'suppressed', reason: 'PREFERENCE_DISABLED' },
+          });
+          this.logger.log({
+            op: 'pushSuppressedByPreference',
+            recipientUserId: input.recipientUserId,
+            type: input.type,
+            dedupeKey: input.dedupeKey,
+          });
+          return;
+        }
+      }
+    }
+
+    // 5. Get active tokens
     const tokens = await this.getActiveTokensForUser(input.recipientUserId);
 
     if (!tokens.length) {
@@ -121,7 +190,7 @@ export class PushService {
       return;
     }
 
-    // 4. Send to all active devices
+    // 6. Send to all active devices
     try {
       const results = await Promise.allSettled(
         tokens.map((token) =>

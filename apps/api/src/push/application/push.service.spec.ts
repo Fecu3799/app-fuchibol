@@ -9,14 +9,25 @@ function buildMockPrisma() {
     .fn()
     .mockResolvedValue({ id: 'delivery-1', status: 'pending' });
   const update = jest.fn().mockResolvedValue({});
+  // userSettings.findUnique returns null by default (no record = defaults true)
+  const settingsFindUnique = jest.fn().mockResolvedValue(null);
 
   const prisma = {
     client: {
       pushDevice: { updateMany, findMany },
       notificationDelivery: { findFirst, create, update },
+      userSettings: { findUnique: settingsFindUnique },
     },
   } as unknown as PrismaService;
-  return { prisma, updateMany, findMany, findFirst, create, update };
+  return {
+    prisma,
+    updateMany,
+    findMany,
+    findFirst,
+    create,
+    update,
+    settingsFindUnique,
+  };
 }
 
 const validToken = 'ExponentPushToken[test-token-123]';

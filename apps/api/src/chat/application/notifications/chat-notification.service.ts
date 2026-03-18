@@ -96,11 +96,33 @@ export class ChatNotificationService {
 
     const payload = this.buildPayload(conversation, message);
 
+    // Filter out users who have disabled chat push notifications
+    const preferenceRecipients =
+      await this.filterChatPreference(activeRecipients);
+    if (preferenceRecipients.length === 0) return;
+
     await Promise.allSettled(
-      activeRecipients.map((userId) =>
+      preferenceRecipients.map((userId) =>
         this.notificationProvider.sendToUser(userId, payload),
       ),
     );
+  }
+
+  /**
+   * Returns only the userIds that have pushChatMessages enabled (or no settings row = default true).
+   */
+  private async filterChatPreference(userIds: string[]): Promise<string[]> {
+    if (userIds.length === 0) return [];
+
+    const disabled = await this.prisma.client.userSettings.findMany({
+      where: { userId: { in: userIds }, pushChatMessages: false },
+      select: { userId: true },
+    });
+
+    if (disabled.length === 0) return userIds;
+
+    const disabledSet = new Set(disabled.map((s) => s.userId));
+    return userIds.filter((id) => !disabledSet.has(id));
   }
 
   /**

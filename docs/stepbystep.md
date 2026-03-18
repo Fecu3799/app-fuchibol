@@ -64,6 +64,7 @@ Registro cronologico del desarrollo. Cada seccion documenta que se hizo, archivo
 57. [Observabilidad Sprint 2: instrumentación de dominio con logs estructurados](#57-observabilidad-sprint-2-instrumentación-de-dominio-con-logs-estructurados)
 58. [Observabilidad Sprint 3: métricas operacionales Prometheus-style](#58-observabilidad-sprint-3-métricas-operacionales-prometheus-style)
 59. [Security Hardening Sprint 4: cardinality, rate limits, WS auth, chat validation, admin logs](#59-security-hardening-sprint-4-cardinality-rate-limits-ws-auth-chat-validation-admin-logs)
+60. [User Settings: preferencias de notificaciones end-to-end](#60-user-settings-preferencias-de-notificaciones-end-to-end)
 
 ---
 
@@ -2536,4 +2537,79 @@ apps/api/src/chat/realtime/chat.gateway.ts (emit error on unauthorized join + lo
 apps/api/src/chat/api/dto/send-message.dto.ts (MESSAGE_TOO_LARGE / INVALID_MESSAGE en validators)
 apps/api/src/admin/api/admin-users.controller.ts (+Logger, +@Actor, logs ban/unban)
 apps/api/src/admin/api/admin-matches.controller.ts (+Logger, +@Actor, logs cancel/delete/unlock)
+```
+
+---
+
+## 60. User Settings: preferencias de notificaciones end-to-end
+
+### Qué se hizo
+
+Settings de notificaciones por usuario: tabla `UserSettings`, endpoints REST, y respeto de preferencias en `push.service.ts` y `chat-notification.service.ts`. UI con 3 toggles en SettingsScreen mobile.
+
+### Migración
+
+`20260318012603_add_user_settings` — nueva tabla `UserSettings` (1:1 con User, onDelete Cascade).
+
+### Modelo
+
+```prisma
+model UserSettings {
+  userId             String   @id @db.Uuid
+  pushMatchReminders Boolean  @default(true)
+  pushMatchChanges   Boolean  @default(true)
+  pushChatMessages   Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+```
+
+Si no existe registro → defaults all true (backward compat garantizado).
+
+### Endpoints
+
+```
+GET  /api/v1/users/me/settings   → { pushMatchReminders, pushMatchChanges, pushChatMessages }
+PATCH /api/v1/users/me/settings  → misma shape (PATCH parcial, upsert)
+```
+
+### Mapeo de tipos → flags
+
+| Tipo de notificación | Flag |
+|---|---|
+| `reminder_24h`, `reminder_2h`, `reminder_missing_players` | `pushMatchReminders` |
+| `promoted`, `reconfirm_required`, `invited`, `missing_players_alert`, `match_started`, `teams_auto_generated` | `pushMatchChanges` |
+| `chat_message` | `pushChatMessages` |
+| `canceled` | **CRÍTICO** — siempre se envía |
+
+### Integración push
+
+- `push.service.ts` → `sendNotification()` verifica settings antes de enviar (paso 3, post-dedup, pre-tokens). Delivery record se crea igual con `status='suppressed', reason='PREFERENCE_DISABLED'`. Log: `pushSuppressedByPreference`.
+- `chat-notification.service.ts` → `filterChatPreference()` filtra recipients con `pushChatMessages=false` via batch query.
+- Tipos no mapeados (ej. `group_added`) siempre se envían.
+
+### Mobile
+
+- `features/users/settingsClient.ts` — `getUserSettings()` / `patchUserSettings()`
+- `features/users/useUserSettings.ts` — `useUserSettings()` (React Query) + `useUpdateUserSettings()` (mutation con optimistic update + rollback)
+- `screens/SettingsScreen.tsx` — nueva sección "Preferencias de notificaciones" con 3 toggles (`Switch` nativo), loading/error/retry state
+
+### Archivos modificados
+
+```
+apps/api/prisma/schema.prisma
+apps/api/src/users/application/get-user-settings.query.ts (nuevo)
+apps/api/src/users/application/update-user-settings.use-case.ts (nuevo)
+apps/api/src/users/api/dto/update-user-settings.dto.ts (nuevo)
+apps/api/src/users/api/users.controller.ts
+apps/api/src/users/users.module.ts
+apps/api/src/push/application/push.service.ts
+apps/api/src/push/application/push.service.spec.ts (mock userSettings)
+apps/api/src/chat/application/notifications/chat-notification.service.ts
+apps/api/src/chat/application/notifications/chat-notification.service.spec.ts (mock userSettings)
+apps/mobile/src/types/api.ts
+apps/mobile/src/features/users/settingsClient.ts (nuevo)
+apps/mobile/src/features/users/useUserSettings.ts (nuevo)
+apps/mobile/src/screens/SettingsScreen.tsx
 ```

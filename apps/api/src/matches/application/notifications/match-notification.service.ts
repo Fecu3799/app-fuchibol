@@ -174,8 +174,14 @@ export class MatchNotificationService {
   async onReminderMissingPlayers(
     input: OnReminderMissingPlayersInput,
   ): Promise<void> {
-    const { matchId, matchTitle, userIds, missingCount, minutesToStart, bucket } =
-      input;
+    const {
+      matchId,
+      matchTitle,
+      userIds,
+      missingCount,
+      minutesToStart,
+      bucket,
+    } = input;
 
     await Promise.allSettled(
       userIds.map((userId) =>

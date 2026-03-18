@@ -38,6 +38,8 @@ describe('ChatNotificationService', () => {
         conversation: { findUnique: jest.fn() },
         matchParticipant: { findMany: jest.fn() },
         groupMember: { findMany: jest.fn() },
+        // userSettings.findMany returns [] by default (no preferences disabled)
+        userSettings: { findMany: jest.fn().mockResolvedValue([]) },
       },
     };
 
